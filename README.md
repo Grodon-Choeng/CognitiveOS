@@ -159,23 +159,33 @@ CognitiveOS/
 │   │   ├── __init__.py
 │   │   ├── model.py               # 基础模型 (BaseModel, TimestampMixin)
 │   │   └── repository.py          # 基础仓储 (BaseRepository)
+│   ├── im/                        # IM 适配器
+│   │   ├── __init__.py
+│   │   ├── base.py                # 基础接口
+│   │   ├── wecom.py               # 企业微信
+│   │   ├── dingtalk.py            # 钉钉
+│   │   ├── feishu.py              # 飞书
+│   │   └── discord.py             # Discord
 │   ├── models/
 │   │   └── knowledge_item.py      # 知识项模型
 │   ├── repositories/
 │   │   └── knowledge_item_repo.py # 知识项仓储
 │   ├── routes/
 │   │   ├── health.py              # 健康检查
+│   │   ├── im.py                  # IM 测试路由
 │   │   ├── items.py               # 知识项路由
 │   │   └── webhook.py             # Webhook 路由
 │   ├── schemas/
 │   │   └── webhook.py             # 请求/响应 DTO
 │   ├── services/
 │   │   ├── capture_service.py     # 自动记录
+│   │   ├── notification_service.py # IM 通知
 │   │   ├── structuring_service.py # 结构化输出
 │   │   ├── retrieval_service.py   # 关联检索 (TODO)
 │   │   ├── reflection_service.py  # 反思总结 (TODO)
 │   │   └── reminder_service.py    # 提醒系统 (TODO)
 │   └── utils/
+│       ├── jsons.py               # JSON 工具
 │       ├── logging.py             # 日志系统
 │       └── times.py               # 工具函数
 ├── storage/
@@ -219,6 +229,40 @@ uv run uvicorn app.main:app --reload
 ```
 
 服务将在 http://127.0.0.1:8000 启动。
+
+### 配置 IM 通知（可选）
+
+支持以下 IM 平台：
+
+| 平台 | Provider | 安全机制 |
+|------|----------|---------|
+| 企业微信 | `wecom` | 无签名 |
+| 钉钉 | `dingtalk` | 签名校验 |
+| 飞书 | `feishu` | 签名校验 |
+| Discord | `discord` | 无签名 |
+
+**企业微信配置：**
+```bash
+IM_ENABLED=true
+IM_PROVIDER=wecom
+IM_WEBHOOK_URL=https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=YOUR_KEY
+```
+
+**钉钉配置（推荐，支持签名）：**
+```bash
+IM_ENABLED=true
+IM_PROVIDER=dingtalk
+IM_WEBHOOK_URL=https://oapi.dingtalk.com/robot/send?access_token=YOUR_TOKEN
+IM_SECRET=SECxxx  # 加签密钥
+```
+
+**飞书配置：**
+```bash
+IM_ENABLED=true
+IM_PROVIDER=feishu
+IM_WEBHOOK_URL=https://open.feishu.cn/open-apis/bot/v2/hook/YOUR_HOOK
+IM_SECRET=your_secret  # 可选
+```
 
 ### 常用命令 (Makefile)
 

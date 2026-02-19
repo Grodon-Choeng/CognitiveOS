@@ -10,6 +10,7 @@ from app.config import settings
 from app.container import AppProvider
 from app.core.exceptions import AppException
 from app.routes.health import health
+from app.routes.im import test_im, notify_item
 from app.routes.items import get_item, list_items, structure_item
 from app.routes.webhook import webhook
 from app.utils.logging import logger
@@ -51,7 +52,15 @@ def setup_cache() -> None:
 container = make_async_container(AppProvider())
 
 app = Litestar(
-    route_handlers=[health, webhook, get_item, list_items, structure_item],
+    route_handlers=[
+        health,
+        webhook,
+        get_item,
+        list_items,
+        structure_item,
+        test_im,
+        notify_item,
+    ],
     exception_handlers={
         AppException: exception_handler,
         HTTPException: exception_handler,
@@ -64,3 +73,6 @@ setup_cache()
 
 logger.info(f"CognitiveOS started in {settings.environment.value} mode")
 logger.info(f"Markdown debug mode: {settings.markdown_debug_mode}")
+logger.info(
+    f"IM enabled: {settings.im_enabled}, provider: {settings.im_provider.value}"
+)

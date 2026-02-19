@@ -159,23 +159,33 @@ CognitiveOS/
 │   │   ├── __init__.py
 │   │   ├── model.py               # Base models
 │   │   └── repository.py          # Base repository
+│   ├── im/                        # IM adapters
+│   │   ├── __init__.py
+│   │   ├── base.py                # Base interface
+│   │   ├── wecom.py               # WeCom
+│   │   ├── dingtalk.py            # DingTalk
+│   │   ├── feishu.py              # Feishu
+│   │   └── discord.py             # Discord
 │   ├── models/
 │   │   └── knowledge_item.py      # Knowledge item model
 │   ├── repositories/
 │   │   └── knowledge_item_repo.py # Knowledge item repository
 │   ├── routes/
 │   │   ├── health.py              # Health check
+│   │   ├── im.py                  # IM test routes
 │   │   ├── items.py               # Knowledge item routes
 │   │   └── webhook.py             # Webhook route
 │   ├── schemas/
 │   │   └── webhook.py             # Request/Response DTOs
 │   ├── services/
 │   │   ├── capture_service.py     # Auto capture
+│   │   ├── notification_service.py # IM notification
 │   │   ├── structuring_service.py # Structured output
 │   │   ├── retrieval_service.py   # Associative retrieval (TODO)
 │   │   ├── reflection_service.py  # Reflection (TODO)
 │   │   └── reminder_service.py    # Reminder system (TODO)
 │   └── utils/
+│       ├── jsons.py               # JSON utilities
 │       ├── logging.py             # Logging system
 │       └── times.py               # Utility functions
 ├── storage/
@@ -219,6 +229,40 @@ uv run uvicorn app.main:app --reload
 ```
 
 Service will start at http://127.0.0.1:8000.
+
+### Configure IM Notifications (Optional)
+
+Supported IM platforms:
+
+| Platform | Provider | Security |
+|----------|----------|----------|
+| WeCom | `wecom` | No signature |
+| DingTalk | `dingtalk` | Signature verification |
+| Feishu | `feishu` | Signature verification |
+| Discord | `discord` | No signature |
+
+**WeCom configuration:**
+```bash
+IM_ENABLED=true
+IM_PROVIDER=wecom
+IM_WEBHOOK_URL=https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=YOUR_KEY
+```
+
+**DingTalk configuration (recommended, with signature):**
+```bash
+IM_ENABLED=true
+IM_PROVIDER=dingtalk
+IM_WEBHOOK_URL=https://oapi.dingtalk.com/robot/send?access_token=YOUR_TOKEN
+IM_SECRET=SECxxx  # Signing secret
+```
+
+**Feishu configuration:**
+```bash
+IM_ENABLED=true
+IM_PROVIDER=feishu
+IM_WEBHOOK_URL=https://open.feishu.cn/open-apis/bot/v2/hook/YOUR_HOOK
+IM_SECRET=your_secret  # Optional
+```
 
 ### Common Commands (Makefile)
 

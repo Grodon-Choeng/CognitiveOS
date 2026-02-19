@@ -11,6 +11,13 @@ class Environment(str, Enum):
     PRODUCTION = "production"
 
 
+class IMProvider(str, Enum):
+    WECOM = "wecom"
+    DINGTALK = "dingtalk"
+    FEISHU = "feishu"
+    DISCORD = "discord"
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -31,6 +38,11 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
 
     markdown_debug_mode: bool = False
+
+    im_provider: IMProvider = IMProvider.WECOM
+    im_webhook_url: str = ""
+    im_secret: str = ""
+    im_enabled: bool = False
 
     @property
     def raw_path(self) -> Path:

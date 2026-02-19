@@ -1,12 +1,13 @@
-import json
+import re
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from app.config import settings
 from app.core.exceptions import StorageException
 from app.utils.logging import logger
+from app.utils.jsons import parse_json_field
 
 if TYPE_CHECKING:
     from app.models.knowledge_item import KnowledgeItem
@@ -60,20 +61,8 @@ class StructuringService:
             return True
         return False
 
-    def _parse_json_field(self, value: Any) -> list:
-        if value is None:
-            return []
-        if isinstance(value, list):
-            return value
-        if isinstance(value, str):
-            try:
-                parsed = json.loads(value)
-                return parsed if isinstance(parsed, list) else []
-            except json.JSONDecodeError:
-                return []
-        return []
-
-    def _generate_title(self, item: "KnowledgeItem") -> str:
+    @staticmethod
+    def _generate_title(item: "KnowledgeItem") -> str:
         if item.structured_text:
             first_line = item.structured_text.split("\n")[0]
             return first_line[:50] if len(first_line) > 50 else first_line
@@ -81,9 +70,8 @@ class StructuringService:
         raw_first_line = item.raw_text.split("\n")[0]
         return raw_first_line[:50] if len(raw_first_line) > 50 else raw_first_line
 
-    def _slugify(self, text: str) -> str:
-        import re
-
+    @staticmethod
+    def _slugify(text: str) -> str:
         slug = re.sub(r"[^\w\s-]", "", text.lower())
         slug = re.sub(r"[\s_-]+", "-", slug)
         return slug.strip("-")[:30]
@@ -98,12 +86,12 @@ class StructuringService:
             "",
         ]
 
-        tags = self._parse_json_field(item.tags)
+        tags = parse_json_field(item.tags)
         if tags:
             tags_str = " ".join(f"#{tag}" for tag in tags)
             lines.extend(["## Tags", "", tags_str, ""])
 
-        links = self._parse_json_field(item.links)
+        links = parse_json_field(item.links)
         if links:
             links_str = " ".join(f"[[{link}]]" for link in links)
             lines.extend(["## Links", "", links_str, ""])
@@ -119,7 +107,8 @@ class StructuringService:
 
         return "\n".join(lines)
 
-    def _format_datetime(self, dt: datetime) -> str:
+    @staticmethod
+    def _format_datetime(dt: datetime) -> str:
         if dt:
             return dt.strftime("%Y-%m-%d %H:%M")
         return "Unknown"

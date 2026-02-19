@@ -85,7 +85,8 @@ class KnowledgeItemService:
     ) -> list[KnowledgeItem]:
         return await self.repo.search_by_tags(tags, limit)
 
-    def _serialize_item(self, item: KnowledgeItem) -> dict:
+    @staticmethod
+    def _serialize_item(item: KnowledgeItem) -> dict:
         return {
             "id": item.id,
             "uuid": str(item.uuid),
