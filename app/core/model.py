@@ -1,7 +1,7 @@
 from uuid import uuid4
 
+from piccolo.columns import UUID, Serial, Timestamp
 from piccolo.table import Table
-from piccolo.columns import UUID, Timestamp, Serial
 
 from app.utils.times import utc_time
 

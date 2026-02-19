@@ -1,8 +1,5 @@
 from piccolo.apps.migrations.auto.migration_manager import MigrationManager
-from piccolo.columns.column_types import Integer
-from piccolo.columns.column_types import Serial
-from piccolo.columns.column_types import Timestamp
-from piccolo.columns.column_types import Varchar
+from piccolo.columns.column_types import Integer, Serial, Timestamp, Varchar
 from piccolo.columns.defaults.timestamp import TimestampOffset
 from piccolo.columns.indexes import IndexMethod
 
@@ -12,13 +9,9 @@ DESCRIPTION = ""
 
 
 async def forwards():
-    manager = MigrationManager(
-        migration_id=ID, app_name="cognitive", description=DESCRIPTION
-    )
+    manager = MigrationManager(migration_id=ID, app_name="cognitive", description=DESCRIPTION)
 
-    manager.add_table(
-        class_name="Sessions", tablename="sessions", schema=None, columns=None
-    )
+    manager.add_table(class_name="Sessions", tablename="sessions", schema=None, columns=None)
 
     manager.add_column(
         table_class_name="Sessions",

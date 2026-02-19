@@ -1,13 +1,9 @@
 from piccolo.apps.migrations.auto.migration_manager import MigrationManager
-from app.utils.times import utc_time
-from piccolo.columns.column_types import JSON
-from piccolo.columns.column_types import Serial
-from piccolo.columns.column_types import Text
-from piccolo.columns.column_types import Timestamp
-from piccolo.columns.column_types import UUID
-from piccolo.columns.column_types import Varchar
+from piccolo.columns.column_types import JSON, UUID, Serial, Text, Timestamp, Varchar
 from piccolo.columns.defaults.uuid import UUID4
 from piccolo.columns.indexes import IndexMethod
+
+from app.utils.times import utc_time
 
 ID = "2026-02-19T13:37:33:956455"
 VERSION = "1.32.0"
@@ -15,9 +11,7 @@ DESCRIPTION = ""
 
 
 async def forwards():
-    manager = MigrationManager(
-        migration_id=ID, app_name="cognitive", description=DESCRIPTION
-    )
+    manager = MigrationManager(migration_id=ID, app_name="cognitive", description=DESCRIPTION)
 
     manager.add_table(
         class_name="KnowledgeItem",

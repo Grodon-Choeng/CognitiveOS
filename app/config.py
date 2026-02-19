@@ -1,21 +1,10 @@
-from enum import Enum
 from functools import lru_cache
 from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-
-class Environment(str, Enum):
-    DEVELOPMENT = "development"
-    STAGING = "staging"
-    PRODUCTION = "production"
-
-
-class IMProvider(str, Enum):
-    WECOM = "wecom"
-    DINGTALK = "dingtalk"
-    FEISHU = "feishu"
-    DISCORD = "discord"
+from app.constants import CACHE_DEFAULT_TTL, DEFAULT_EMBEDDING_DIMENSION
+from app.enums import Environment, IMProvider
 
 
 class Settings(BaseSettings):
@@ -33,7 +22,7 @@ class Settings(BaseSettings):
 
     cache_url: str = "redis://localhost:6379/0"
     cache_enabled: bool = False
-    cache_default_ttl: int = 300
+    cache_default_ttl: int = CACHE_DEFAULT_TTL
 
     log_level: str = "INFO"
 
@@ -48,9 +37,12 @@ class Settings(BaseSettings):
     llm_api_key: str = ""
     llm_base_url: str = ""
     embedding_model: str = "openai/text-embedding-3-small"
-    embedding_dimension: int = 1536
+    embedding_dimension: int = DEFAULT_EMBEDDING_DIMENSION
 
     vector_index_path: str = "storage/vectors/index.faiss"
+
+    api_key: str = ""
+    api_key_header: str = "X-API-Key"
 
     @property
     def raw_path(self) -> Path:

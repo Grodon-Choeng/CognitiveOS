@@ -1,19 +1,16 @@
-from datetime import datetime, timezone
-from typing import TYPE_CHECKING
+from datetime import UTC, datetime
 from uuid import UUID
 
 from cashews import cache
 
 from app.config import settings
-from app.core.exceptions import StorageException
+from app.core.exceptions import StorageError
+from app.services.knowledge_item_service import KnowledgeItemService
 from app.utils.logging import logger
-
-if TYPE_CHECKING:
-    from app.services.knowledge_item_service import KnowledgeItemService
 
 
 class CaptureService:
-    def __init__(self, knowledge_service: "KnowledgeItemService") -> None:
+    def __init__(self, knowledge_service: KnowledgeItemService) -> None:
         self.knowledge_service = knowledge_service
 
     async def capture(self, raw_text: str, source: str) -> UUID:
@@ -27,16 +24,16 @@ class CaptureService:
             return item.uuid
         except Exception as e:
             logger.error(f"Failed to capture item: {e}")
-            raise StorageException("capture", str(e))
+            raise StorageError("capture", str(e)) from e
 
     async def _append_to_raw_markdown(self, raw_text: str, source: str) -> None:
         try:
-            date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+            date = datetime.now(UTC).strftime("%Y-%m-%d")
             folder = settings.raw_path
             folder.mkdir(parents=True, exist_ok=True)
 
             file_path = folder / f"{date}.md"
-            timestamp = datetime.now(timezone.utc).strftime("%H:%M")
+            timestamp = datetime.now(UTC).strftime("%H:%M")
 
             entry = self._format_entry(raw_text, source, timestamp)
 
@@ -46,7 +43,7 @@ class CaptureService:
             logger.debug(f"Appended to raw markdown: {file_path}")
         except Exception as e:
             logger.error(f"Failed to write markdown: {e}")
-            raise StorageException("write_markdown", str(e))
+            raise StorageError("write_markdown", str(e)) from e
 
     @staticmethod
     async def _invalidate_list_cache() -> None:

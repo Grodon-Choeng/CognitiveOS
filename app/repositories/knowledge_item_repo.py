@@ -17,9 +17,7 @@ class KnowledgeItemRepository(BaseRepository[KnowledgeItem]):
         )
         return result is not None
 
-    async def search_by_tags(
-        self, tags: list[str], limit: int = 10
-    ) -> list[KnowledgeItem]:
+    async def search_by_tags(self, tags: list[str], limit: int = 10) -> list[KnowledgeItem]:
         query = self.model.objects()
         for tag in tags:
             query = query.where(self.get_col("tags").contains(tag))

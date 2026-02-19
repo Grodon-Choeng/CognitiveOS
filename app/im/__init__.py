@@ -1,14 +1,13 @@
 from app.config import IMProvider
+
 from .base import IMAdapter, IMMessage, IMSendResult, MessageType
-from .wecom import WeComAdapter
 from .dingtalk import DingTalkAdapter
-from .feishu import FeishuAdapter
 from .discord import DiscordAdapter
+from .feishu import FeishuAdapter
+from .wecom import WeComAdapter
 
 
-def create_adapter(
-    provider: IMProvider, webhook_url: str, secret: str = ""
-) -> IMAdapter:
+def create_adapter(provider: IMProvider, webhook_url: str, secret: str = "") -> IMAdapter:
     adapters = {
         IMProvider.WECOM: WeComAdapter,
         IMProvider.DINGTALK: DingTalkAdapter,

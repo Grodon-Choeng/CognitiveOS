@@ -1,4 +1,4 @@
-from dishka import Provider, Scope, provide
+from dishka import Provider, Scope, make_async_container, provide
 
 from app.config import settings
 from app.im import create_adapter
@@ -25,15 +25,11 @@ class AppProvider(Provider):
         return PromptRepository()
 
     @provide(scope=Scope.APP)
-    def knowledge_item_service(
-        self, repo: KnowledgeItemRepository
-    ) -> KnowledgeItemService:
+    def knowledge_item_service(self, repo: KnowledgeItemRepository) -> KnowledgeItemService:
         return KnowledgeItemService(repo)
 
     @provide(scope=Scope.APP)
-    def capture_service(
-        self, knowledge_service: KnowledgeItemService
-    ) -> CaptureService:
+    def capture_service(self, knowledge_service: KnowledgeItemService) -> CaptureService:
         return CaptureService(knowledge_service)
 
     @provide(scope=Scope.APP)
@@ -57,9 +53,9 @@ class AppProvider(Provider):
 
     @provide(scope=Scope.APP)
     def embedding_service(
-        self, llm_service: LLMService, repo: KnowledgeItemRepository
+        self, llm_service: LLMService, knowledge_service: KnowledgeItemService
     ) -> EmbeddingService:
-        return EmbeddingService(llm_service, repo)
+        return EmbeddingService(llm_service, knowledge_service)
 
     @provide(scope=Scope.APP)
     def vector_store(self) -> VectorStore:
@@ -85,3 +81,30 @@ class AppProvider(Provider):
             vector_store,
             prompt_service,
         )
+
+
+_container = None
+
+
+async def get_prompt_service() -> PromptService:
+    global _container
+    if _container is None:
+        _container = make_async_container(AppProvider())
+    async with _container() as request_container:
+        return await request_container.get(PromptService)
+
+
+async def get_knowledge_item_service() -> KnowledgeItemService:
+    global _container
+    if _container is None:
+        _container = make_async_container(AppProvider())
+    async with _container() as request_container:
+        return await request_container.get(KnowledgeItemService)
+
+
+async def get_embedding_service() -> EmbeddingService:
+    global _container
+    if _container is None:
+        _container = make_async_container(AppProvider())
+    async with _container() as request_container:
+        return await request_container.get(EmbeddingService)

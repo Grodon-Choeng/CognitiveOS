@@ -7,6 +7,7 @@ from typing import Any
 import httpx
 
 from app.utils.logging import logger
+
 from .base import IMAdapter, IMMessage, IMSendResult, MessageType
 
 

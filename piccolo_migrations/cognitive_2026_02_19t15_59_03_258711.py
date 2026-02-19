@@ -8,9 +8,7 @@ DESCRIPTION = ""
 
 
 async def forwards():
-    manager = MigrationManager(
-        migration_id=ID, app_name="cognitive", description=DESCRIPTION
-    )
+    manager = MigrationManager(migration_id=ID, app_name="cognitive", description=DESCRIPTION)
 
     manager.add_column(
         table_class_name="KnowledgeItem",

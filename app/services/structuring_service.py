@@ -2,15 +2,12 @@ import re
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 from app.config import settings
-from app.core.exceptions import StorageException
-from app.utils.logging import logger
+from app.core.exceptions import StorageError
+from app.models.knowledge_item import KnowledgeItem
 from app.utils.jsons import parse_json_field
-
-if TYPE_CHECKING:
-    from app.models.knowledge_item import KnowledgeItem
+from app.utils.logging import logger
 
 
 @dataclass
@@ -26,7 +23,7 @@ class StructuringService:
         self.output_dir = settings.structured_path
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
-    async def generate_markdown(self, item: "KnowledgeItem") -> StructuredOutput:
+    async def generate_markdown(self, item: KnowledgeItem) -> StructuredOutput:
         title = self._generate_title(item)
         content = self._build_content(item, title)
 
@@ -40,13 +37,13 @@ class StructuringService:
                 logger.info(f"Generated structured markdown: {file_path}")
             except Exception as e:
                 logger.error(f"Failed to generate markdown: {e}")
-                raise StorageException("generate_markdown", str(e))
+                raise StorageError("generate_markdown", str(e)) from e
         else:
             logger.debug(f"Debug mode: skipping file write for item {item.uuid}")
 
         return StructuredOutput(title=title, content=content, file_path=file_path)
 
-    async def update_markdown(self, item: "KnowledgeItem") -> StructuredOutput:
+    async def update_markdown(self, item: KnowledgeItem) -> StructuredOutput:
         return await self.generate_markdown(item)
 
     async def delete_markdown(self, item_id: int) -> bool:
@@ -62,7 +59,7 @@ class StructuringService:
         return False
 
     @staticmethod
-    def _generate_title(item: "KnowledgeItem") -> str:
+    def _generate_title(item: KnowledgeItem) -> str:
         if item.structured_text:
             first_line = item.structured_text.split("\n")[0]
             return first_line[:50] if len(first_line) > 50 else first_line
@@ -76,7 +73,7 @@ class StructuringService:
         slug = re.sub(r"[\s_-]+", "-", slug)
         return slug.strip("-")[:30]
 
-    def _build_content(self, item: "KnowledgeItem", title: str) -> str:
+    def _build_content(self, item: KnowledgeItem, title: str) -> str:
         lines = [
             f"# {title}",
             "",

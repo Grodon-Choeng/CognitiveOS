@@ -3,6 +3,7 @@ from typing import Any
 import httpx
 
 from app.utils.logging import logger
+
 from .base import IMAdapter, IMMessage, IMSendResult, MessageType
 
 
@@ -41,9 +42,7 @@ class DiscordAdapter(IMAdapter):
 
     async def send_markdown(self, title: str, content: str) -> IMSendResult:
         full_content = f"**{title}**\n\n{content}"
-        return await self.send(
-            IMMessage(content=full_content, msg_type=MessageType.MARKDOWN)
-        )
+        return await self.send(IMMessage(content=full_content, msg_type=MessageType.MARKDOWN))
 
     @staticmethod
     def _build_payload(message: IMMessage) -> dict[str, Any]:

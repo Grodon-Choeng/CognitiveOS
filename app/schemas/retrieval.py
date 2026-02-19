@@ -47,9 +47,7 @@ class RAGRequest:
 class RAGResponse:
     query: str = field(metadata={"description": "原始问题"})
     answer: str = field(metadata={"description": "LLM 生成的回答"})
-    sources: list[KnowledgeItemResponse] = field(
-        metadata={"description": "引用的知识项列表"}
-    )
+    sources: list[KnowledgeItemResponse] = field(metadata={"description": "引用的知识项列表"})
 
 
 @dataclass

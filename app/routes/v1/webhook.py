@@ -1,6 +1,6 @@
-from litestar import post
 from dishka import FromDishka
 from dishka.integrations.litestar import inject
+from litestar import post
 
 from app.schemas.webhook import CaptureRequest, CaptureResponse
 from app.services.capture_service import CaptureService

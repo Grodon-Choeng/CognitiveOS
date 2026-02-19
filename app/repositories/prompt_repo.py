@@ -7,11 +7,7 @@ class PromptRepository(BaseRepository[Prompt]):
         super().__init__(Prompt)
 
     async def get_by_name(self, name: str) -> Prompt | None:
-        return (
-            await self.model.objects().where(self.get_col("name") == name).first().run()
-        )
+        return await self.model.objects().where(self.get_col("name") == name).first().run()
 
     async def get_by_category(self, category: str) -> list[Prompt]:
-        return (
-            await self.model.objects().where(self.get_col("category") == category).run()
-        )
+        return await self.model.objects().where(self.get_col("category") == category).run()

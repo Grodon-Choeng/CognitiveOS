@@ -1,6 +1,6 @@
-from piccolo.columns import Varchar, Text, JSON
+from piccolo.columns import JSON, Text, Varchar
 
-from app.core.model import BaseModel, TimestampMixin
+from app.core import BaseModel, TimestampMixin
 
 
 class KnowledgeItem(BaseModel, TimestampMixin):

@@ -2,6 +2,7 @@ from dataclasses import dataclass
 
 from litestar import get
 
+from app.constants import API_VERSION
 from app.utils.times import utc_time
 
 
@@ -10,6 +11,7 @@ class HealthResponse:
     status: str
     timestamp: str
     version: str = "0.1.0"
+    api_version: str = API_VERSION
 
 
 @get(
@@ -20,4 +22,7 @@ class HealthResponse:
     tags=["系统"],
 )
 def health() -> HealthResponse:
-    return HealthResponse(status="healthy", timestamp=utc_time().isoformat())
+    return HealthResponse(
+        status="healthy",
+        timestamp=utc_time().isoformat(),
+    )

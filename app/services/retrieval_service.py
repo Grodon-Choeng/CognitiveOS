@@ -1,14 +1,12 @@
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
+from app.models.knowledge_item import KnowledgeItem
 from app.services.embedding_service import EmbeddingService
 from app.services.knowledge_item_service import KnowledgeItemService
 from app.services.llm_service import LLMService
 from app.services.prompt_service import PromptService
 from app.services.vector_store import VectorStore
 from app.utils.logging import logger
-
-if TYPE_CHECKING:
-    from app.models.knowledge_item import KnowledgeItem
 
 
 class RetrievalService:
@@ -31,9 +29,7 @@ class RetrievalService:
         results = self.vector_store.search(query_embedding, top_k)
         return results
 
-    async def search_and_retrieve(
-        self, query: str, top_k: int = 5
-    ) -> list["KnowledgeItem"]:
+    async def search_and_retrieve(self, query: str, top_k: int = 5) -> list[KnowledgeItem]:
         results = await self.search_similar(query, top_k)
 
         items = []
@@ -44,9 +40,7 @@ class RetrievalService:
         logger.info(f"Retrieved {len(items)} items for query")
         return items
 
-    async def rag_query(
-        self, query: str, top_k: int = 5, max_context_tokens: int = 2000
-    ) -> str:
+    async def rag_query(self, query: str, top_k: int = 5, max_context_tokens: int = 2000) -> str:
         items = await self.search_and_retrieve(query, top_k)
 
         if not items:
@@ -66,7 +60,7 @@ class RetrievalService:
         return response
 
     @staticmethod
-    def _build_context(items: list["KnowledgeItem"], max_tokens: int) -> str:
+    def _build_context(items: list[KnowledgeItem], max_tokens: int) -> str:
         context_parts = []
         current_length = 0
 
@@ -83,27 +77,23 @@ class RetrievalService:
 
         return "\n".join(context_parts)
 
-    async def index_item(self, item: "KnowledgeItem") -> None:
+    async def index_item(self, item: KnowledgeItem) -> None:
         embedding = await self.embedding_service.generate_and_store(item)
         self.vector_store.add(item, embedding)
         self.vector_store.save()
         logger.info(f"Indexed item {item.id}")
 
     async def rebuild_index(self) -> int:
-        items = await self.knowledge_service.get_recent(limit=1000)
+        items = await self.knowledge_service.filter_without_embedding(limit=1000)
 
-        items_to_index = [item for item in items if not item.embedding]
-
-        if not items_to_index:
+        if not items:
             logger.info("No items need indexing")
             return 0
 
-        embeddings = await self.embedding_service.batch_generate_and_store(
-            items_to_index
-        )
+        embeddings = await self.embedding_service.batch_generate_and_store(items)
 
-        self.vector_store.add_batch(items_to_index, embeddings)
+        self.vector_store.add_batch(items, embeddings)
         self.vector_store.save()
 
-        logger.info(f"Rebuilt index with {len(items_to_index)} items")
-        return len(items_to_index)
+        logger.info(f"Rebuilt index with {len(items)} items")
+        return len(items)

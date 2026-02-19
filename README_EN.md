@@ -359,19 +359,50 @@ curl -X POST http://127.0.0.1:8000/webhook \
 
 ### GET /items
 
-Get recent knowledge items list
+Cursor paginated knowledge items list
+
+**Query Parameters**:
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| limit | int | No | 20 | Items per page, max 100 |
+| cursor | string | No | null | Cursor (next_cursor from previous page) |
+| sort_field | string | No | "created_at" | Sort field: created_at / updated_at |
+| sort_order | string | No | "desc" | Sort order: asc / desc |
 
 **Response**:
 ```json
-[
-  {
-    "uuid": "e238a58f-3d25-49fb-b80b-f8c0e33b76f3",
-    "raw_text": "Learned a new concept today...",
-    "source": "telegram",
-    "tags": [],
-    "created_at": "2026-02-19T06:00:00+00:00"
-  }
-]
+{
+  "items": [
+    {
+      "uuid": "e238a58f-3d25-49fb-b80b-f8c0e33b76f3",
+      "raw_text": "Learned a new concept today...",
+      "source": "telegram",
+      "tags": [],
+      "created_at": "2026-02-19T06:00:00+00:00"
+    }
+  ],
+  "next_cursor": "63996705-da46-4bad-ac58-236de1f1abf1",
+  "has_more": true
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| items | array | Knowledge items list |
+| next_cursor | string | Next page cursor, null when no more data |
+| has_more | bool | Whether more data exists |
+
+**Examples**:
+```bash
+# First page
+curl "http://127.0.0.1:8000/items?limit=10"
+
+# Next page (use returned next_cursor)
+curl "http://127.0.0.1:8000/items?limit=10&cursor=63996705-da46-4bad-ac58-236de1f1abf1"
+
+# Sort by updated_at ascending
+curl "http://127.0.0.1:8000/items?sort_field=updated_at&sort_order=asc"
 ```
 
 ### GET /items/{item_uuid}

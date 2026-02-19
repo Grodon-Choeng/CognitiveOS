@@ -1,18 +1,18 @@
-from litestar import get, post, put, delete
 from dishka import FromDishka
 from dishka.integrations.litestar import inject
+from litestar import delete, get, post, put
 
-from app.models.prompt import Prompt
+from app.core.exceptions import NotFoundException
 from app.schemas.prompt import (
-    PromptResponse,
     PromptCreateRequest,
-    PromptUpdateRequest,
     PromptDeleteResponse,
+    PromptResponse,
+    PromptUpdateRequest,
 )
 from app.services.prompt_service import PromptService
 
 
-def _to_response(prompt: Prompt) -> PromptResponse:
+def _to_response(prompt) -> PromptResponse:
     return PromptResponse(
         id=prompt.id,
         name=prompt.name,
@@ -35,11 +35,7 @@ async def list_prompts(
     prompt_service: FromDishka[PromptService],
     category: str | None = None,
 ) -> list[PromptResponse]:
-    prompts = (
-        await prompt_service.repo.get_by_category(category)
-        if category
-        else await prompt_service.repo.list()
-    )
+    prompts = await prompt_service.list(category)
     return [_to_response(p) for p in prompts]
 
 
@@ -56,8 +52,6 @@ async def get_prompt(
 ) -> PromptResponse:
     prompt = await prompt_service.get_prompt(prompt_name)
     if not prompt:
-        from app.core.exceptions import NotFoundException
-
         raise NotFoundException("Prompt", prompt_name)
     return _to_response(prompt)
 
@@ -73,7 +67,7 @@ async def create_prompt(
     data: PromptCreateRequest,
     prompt_service: FromDishka[PromptService],
 ) -> PromptResponse:
-    prompt = await prompt_service.repo.create(
+    prompt = await prompt_service.create(
         name=data.name,
         content=data.content,
         description=data.description,
@@ -94,22 +88,13 @@ async def update_prompt(
     data: PromptUpdateRequest,
     prompt_service: FromDishka[PromptService],
 ) -> PromptResponse:
-    prompt = await prompt_service.get_prompt(prompt_name)
-    if not prompt:
-        from app.core.exceptions import NotFoundException
-
-        raise NotFoundException("Prompt", prompt_name)
-
-    await prompt_service.repo.update_by_id(
-        prompt.id,
+    prompt = await prompt_service.update(
+        name=prompt_name,
         content=data.content,
         description=data.description,
     )
-
-    prompt.content = data.content
-    prompt.description = data.description
-    prompt_service.clear_cache()
-
+    if not prompt:
+        raise NotFoundException("Prompt", prompt_name)
     return _to_response(prompt)
 
 
@@ -125,13 +110,7 @@ async def delete_prompt(
     prompt_name: str,
     prompt_service: FromDishka[PromptService],
 ) -> PromptDeleteResponse:
-    prompt = await prompt_service.get_prompt(prompt_name)
-    if not prompt:
-        from app.core.exceptions import NotFoundException
-
+    deleted = await prompt_service.delete(prompt_name)
+    if not deleted:
         raise NotFoundException("Prompt", prompt_name)
-
-    await prompt_service.repo.delete_by_id(prompt.id)
-    prompt_service.clear_cache()
-
     return PromptDeleteResponse(status="deleted", name=prompt_name)

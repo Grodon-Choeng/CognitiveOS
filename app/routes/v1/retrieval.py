@@ -1,16 +1,16 @@
 from uuid import UUID
 
-from litestar import post
 from dishka import FromDishka
 from dishka.integrations.litestar import inject
+from litestar import post
 
 from app.schemas.retrieval import (
-    SearchRequest,
-    SearchResult,
+    IndexResponse,
     RAGRequest,
     RAGResponse,
-    IndexResponse,
     RebuildIndexResponse,
+    SearchRequest,
+    SearchResult,
 )
 from app.schemas.webhook import KnowledgeItemResponse
 from app.services.retrieval_service import RetrievalService

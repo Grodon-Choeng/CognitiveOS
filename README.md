@@ -359,19 +359,50 @@ curl -X POST http://127.0.0.1:8000/webhook \
 
 ### GET /items
 
-获取最近的知识项列表
+游标分页获取知识项列表
+
+**查询参数**:
+
+| 参数 | 类型 | 必填 | 默认值 | 说明 |
+|------|------|------|--------|------|
+| limit | int | 否 | 20 | 每页数量，最大 100 |
+| cursor | string | 否 | null | 游标（上一页返回的 next_cursor） |
+| sort_field | string | 否 | "created_at" | 排序字段：created_at / updated_at |
+| sort_order | string | 否 | "desc" | 排序方向：asc / desc |
 
 **响应**:
 ```json
-[
-  {
-    "uuid": "e238a58f-3d25-49fb-b80b-f8c0e33b76f3",
-    "raw_text": "今天学到了一个新概念...",
-    "source": "telegram",
-    "tags": [],
-    "created_at": "2026-02-19T06:00:00+00:00"
-  }
-]
+{
+  "items": [
+    {
+      "uuid": "e238a58f-3d25-49fb-b80b-f8c0e33b76f3",
+      "raw_text": "今天学到了一个新概念...",
+      "source": "telegram",
+      "tags": [],
+      "created_at": "2026-02-19T06:00:00+00:00"
+    }
+  ],
+  "next_cursor": "63996705-da46-4bad-ac58-236de1f1abf1",
+  "has_more": true
+}
+```
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| items | array | 知识项列表 |
+| next_cursor | string | 下一页游标，无更多数据时为 null |
+| has_more | bool | 是否还有更多数据 |
+
+**示例**:
+```bash
+# 第一页
+curl "http://127.0.0.1:8000/items?limit=10"
+
+# 下一页（使用返回的 next_cursor）
+curl "http://127.0.0.1:8000/items?limit=10&cursor=63996705-da46-4bad-ac58-236de1f1abf1"
+
+# 按更新时间升序
+curl "http://127.0.0.1:8000/items?sort_field=updated_at&sort_order=asc"
 ```
 
 ### GET /items/{item_uuid}

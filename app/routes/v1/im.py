@@ -1,10 +1,10 @@
 from uuid import UUID
 
-from litestar import post
 from dishka import FromDishka
 from dishka.integrations.litestar import inject
+from litestar import post
 
-from app.schemas.im import IMTestResponse, IMNotifyResponse
+from app.schemas.im import IMNotifyResponse, IMTestResponse
 from app.services.notification_service import NotificationService
 
 

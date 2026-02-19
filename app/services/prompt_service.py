@@ -1,13 +1,6 @@
-from typing import TYPE_CHECKING
-
-
 from app.models.prompt import Prompt
 from app.repositories.prompt_repo import PromptRepository
 from app.utils.logging import logger
-
-if TYPE_CHECKING:
-    pass
-
 
 DEFAULT_PROMPTS = {
     "rag_system": {
@@ -34,7 +27,7 @@ Please answer based on the context above.""",
 
 class PromptService:
     def __init__(self, repo: PromptRepository) -> None:
-        self.repo = repo
+        self._repo = repo
         self._cache: dict[str, Prompt] = {}
 
     async def get(self, name: str) -> str:
@@ -59,11 +52,63 @@ class PromptService:
         template = await self.get(name)
         return template.format(**kwargs)
 
+    async def list(self, category: str | None = None) -> list[Prompt]:
+        if category:
+            return await self._repo.get_by_category(category)
+        return await self._repo.list()
+
+    async def create(
+        self,
+        name: str,
+        content: str,
+        description: str | None = None,
+        category: str = "general",
+    ) -> Prompt:
+        prompt = await self._repo.create(
+            name=name,
+            content=content,
+            description=description,
+            category=category,
+        )
+        logger.info(f"Created prompt: {name}")
+        return prompt
+
+    async def update(
+        self, name: str, content: str, description: str | None = None
+    ) -> Prompt | None:
+        prompt = await self._get_cached(name)
+        if not prompt:
+            return None
+
+        await self._repo.update_by_id(
+            prompt.id,
+            content=content,
+            description=description,
+        )
+
+        prompt.content = content
+        prompt.description = description
+        self._cache[name] = prompt
+
+        logger.info(f"Updated prompt: {name}")
+        return prompt
+
+    async def delete(self, name: str) -> bool:
+        prompt = await self._get_cached(name)
+        if not prompt:
+            return False
+
+        await self._repo.delete_by_id(prompt.id)
+        self._cache.pop(name, None)
+
+        logger.info(f"Deleted prompt: {name}")
+        return True
+
     async def _get_cached(self, name: str) -> Prompt | None:
         if name in self._cache:
             return self._cache[name]
 
-        prompt = await self.repo.get_by_name(name)
+        prompt = await self._repo.get_by_name(name)
         if prompt:
             self._cache[name] = prompt
 
@@ -76,9 +121,9 @@ class PromptService:
     async def seed_defaults(self) -> int:
         count = 0
         for name, data in DEFAULT_PROMPTS.items():
-            existing = await self.repo.get_by_name(name)
+            existing = await self._repo.get_by_name(name)
             if not existing:
-                await self.repo.create(**data)
+                await self._repo.create(**data)
                 count += 1
                 logger.info(f"Seeded prompt: {name}")
 

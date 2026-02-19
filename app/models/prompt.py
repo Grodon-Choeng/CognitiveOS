@@ -1,4 +1,4 @@
-from piccolo.columns import Varchar, Text
+from piccolo.columns import Text, Varchar
 
 from app.core.model import BaseModel, TimestampMixin
 

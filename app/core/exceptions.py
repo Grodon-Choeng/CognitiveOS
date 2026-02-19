@@ -1,17 +1,9 @@
-from enum import Enum
 from typing import Any
 
-
-class ErrorCode(str, Enum):
-    VALIDATION_ERROR = "VALIDATION_ERROR"
-    NOT_FOUND = "NOT_FOUND"
-    DUPLICATE_ERROR = "DUPLICATE_ERROR"
-    STORAGE_ERROR = "STORAGE_ERROR"
-    DATABASE_ERROR = "DATABASE_ERROR"
-    INTERNAL_ERROR = "INTERNAL_ERROR"
+from app.enums import ErrorCode
 
 
-class AppException(Exception):
+class AppError(Exception):
     def __init__(
         self,
         code: ErrorCode,
@@ -33,7 +25,7 @@ class AppException(Exception):
         return result
 
 
-class NotFoundException(AppException):
+class NotFoundError(AppError):
     def __init__(self, resource: str, identifier: Any) -> None:
         super().__init__(
             code=ErrorCode.NOT_FOUND,
@@ -42,7 +34,16 @@ class NotFoundException(AppException):
         )
 
 
-class StorageException(AppException):
+class ValidationError(AppError):
+    def __init__(self, message: str, detail: Any = None) -> None:
+        super().__init__(
+            code=ErrorCode.VALIDATION_ERROR,
+            message=message,
+            detail=detail,
+        )
+
+
+class StorageError(AppError):
     def __init__(self, operation: str, detail: str | None = None) -> None:
         super().__init__(
             code=ErrorCode.STORAGE_ERROR,
@@ -51,10 +52,66 @@ class StorageException(AppException):
         )
 
 
-class DatabaseException(AppException):
+class LLMError(AppError):
     def __init__(self, operation: str, detail: str | None = None) -> None:
         super().__init__(
-            code=ErrorCode.DATABASE_ERROR,
-            message=f"Database operation failed: {operation}",
+            code=ErrorCode.LLM_ERROR,
+            message=f"LLM operation failed: {operation}",
             detail=detail,
         )
+
+
+class EmbeddingError(AppError):
+    def __init__(self, operation: str, detail: str | None = None) -> None:
+        super().__init__(
+            code=ErrorCode.EMBEDDING_ERROR,
+            message=f"Embedding operation failed: {operation}",
+            detail=detail,
+        )
+
+
+class AuthenticationError(AppError):
+    def __init__(self, message: str = "Authentication failed") -> None:
+        super().__init__(
+            code=ErrorCode.AUTHENTICATION_ERROR,
+            message=message,
+        )
+
+
+class AuthorizationError(AppError):
+    def __init__(self, message: str = "Access denied") -> None:
+        super().__init__(
+            code=ErrorCode.AUTHORIZATION_ERROR,
+            message=message,
+        )
+
+
+class RateLimitError(AppError):
+    def __init__(self, retry_after: int | None = None) -> None:
+        detail = {"retry_after": retry_after} if retry_after else None
+        super().__init__(
+            code=ErrorCode.RATE_LIMIT_ERROR,
+            message="Rate limit exceeded",
+            detail=detail,
+        )
+
+
+class InternalError(AppError):
+    def __init__(self, message: str = "Internal server error", detail: Any = None) -> None:
+        super().__init__(
+            code=ErrorCode.INTERNAL_ERROR,
+            message=message,
+            detail=detail,
+        )
+
+
+AppException = AppError
+NotFoundException = NotFoundError
+ValidationException = ValidationError
+StorageException = StorageError
+LLMException = LLMError
+EmbeddingException = EmbeddingError
+AuthenticationException = AuthenticationError
+AuthorizationException = AuthorizationError
+RateLimitException = RateLimitError
+InternalException = InternalError

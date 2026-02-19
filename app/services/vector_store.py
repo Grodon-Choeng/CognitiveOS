@@ -1,15 +1,13 @@
 import json
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 import faiss
 import numpy as np
 
 from app.config import settings
+from app.models.knowledge_item import KnowledgeItem
 from app.utils.logging import logger
-
-if TYPE_CHECKING:
-    from app.models.knowledge_item import KnowledgeItem
 
 
 class VectorStore:
@@ -34,7 +32,7 @@ class VectorStore:
     def _load_id_map(self):
         map_path = self.index_path.with_suffix(".json")
         if map_path.exists():
-            with open(map_path, "r") as f:
+            with open(map_path) as f:
                 self.id_map = json.load(f)
             logger.info(f"Loaded ID map with {len(self.id_map)} entries")
 
@@ -43,7 +41,7 @@ class VectorStore:
         with open(map_path, "w") as f:
             json.dump(self.id_map, f)
 
-    def add(self, item: "KnowledgeItem", embedding: list[float]) -> None:
+    def add(self, item: KnowledgeItem, embedding: list[float]) -> None:
         if not embedding:
             logger.warning(f"No embedding for item {item.id}, skipping")
             return
@@ -57,9 +55,7 @@ class VectorStore:
 
         logger.debug(f"Added vector for item {item.id} as FAISS ID {faiss_id}")
 
-    def add_batch(
-        self, items: list["KnowledgeItem"], embeddings: list[list[float]]
-    ) -> None:
+    def add_batch(self, items: list[KnowledgeItem], embeddings: list[list[float]]) -> None:
         if not items or not embeddings:
             return
 
@@ -74,9 +70,7 @@ class VectorStore:
         self._save_id_map()
         logger.info(f"Added {len(items)} vectors to index")
 
-    def search(
-        self, query_embedding: list[float], top_k: int = 5
-    ) -> list[dict[str, Any]]:
+    def search(self, query_embedding: list[float], top_k: int = 5) -> list[dict[str, Any]]:
         if not query_embedding:
             return []
 
@@ -84,7 +78,7 @@ class VectorStore:
         distances, indices = self.index.search(query_vector, top_k)
 
         results = []
-        for distance, faiss_id in zip(distances[0], indices[0]):
+        for distance, faiss_id in zip(distances[0], indices[0], strict=False):
             if faiss_id == -1:
                 continue
             item_id = self.id_map.get(faiss_id)
