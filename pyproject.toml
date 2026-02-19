@@ -1,0 +1,23 @@
+[project]
+name = "cognitiveos"
+version = "0.1.0"
+description = "Personal Cognitive Operating System - A computable external brain"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "aiosqlite>=0.22.1",
+    "cashews[redis]>=7.0.0",
+    "dishka>=1.8.0",
+    "litestar>=2.21.0",
+    "piccolo>=1.32.0",
+    "pydantic-settings>=2.0.0",
+    "redis>=5.0.0",
+    "uvicorn>=0.41.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+    "ruff>=0.4.0",
+]
