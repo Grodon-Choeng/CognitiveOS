@@ -25,9 +25,11 @@ Gateway Layer（Webhook / Auth / Routing）
 Core Service Layer（规则优先）
    ├── Capture Service      # 自动记录
    ├── Structuring Service  # 半自动整理
-   ├── Retrieval Service    # 关联检索
-   ├── Reflection Service   # 反思总结
-   └── Reminder Service     # 提醒系统
+   ├── Retrieval Service    # 关联检索 (RAG)
+   ├── Prompt Service       # 提示词管理
+   ├── Notification Service # IM 通知
+   ├── Reflection Service   # 反思总结 (TODO)
+   └── Reminder Service     # 提醒系统 (TODO)
    ↓
 Memory Layer
    ├── Raw Markdown         # 原始记录
@@ -35,10 +37,10 @@ Memory Layer
    ├── Embedding Index      # 语义索引 (FAISS)
    └── Metadata DB          # 元数据 (SQLite)
    ↓
-LLM Layer
-   ├── Basic Extraction     # 基础提取
-   ├── Contextual Reasoning # 上下文推理
-   └── Reflective Thinking  # 反思思考
+LLM Layer (LiteLLM 统一接口)
+   ├── OpenAI / Azure       # 国际模型
+   ├── Qwen / GLM / DeepSeek # 国产模型
+   └── Embedding            # 向量化
 ```
 
 ## 核心能力模块
@@ -101,6 +103,12 @@ class KnowledgeItem:
     embedding: vector       # 向量
     created_at: datetime
     updated_at: datetime
+
+class Prompt:
+    name: str               # 提示词名称
+    description: str        # 描述
+    content: str            # 提示词内容
+    category: str           # 分类
 ```
 
 Markdown 是展示层，不是唯一真相。
@@ -113,11 +121,12 @@ Markdown 是展示层，不是唯一真相。
 - [x] JSON 结构化
 - [x] Markdown 输出
 
-### 阶段 2：记忆增强
+### 阶段 2：记忆增强 ✅ (已完成)
 
-- [ ] embedding 生成
-- [ ] FAISS 向量索引
-- [ ] RAG 检索模式
+- [x] embedding 生成 (LiteLLM)
+- [x] FAISS 向量索引
+- [x] RAG 检索模式
+- [x] 提示词数据库存储
 
 ### 阶段 3：认知增强
 
@@ -141,7 +150,7 @@ Markdown 是展示层，不是唯一真相。
 | ORM | Piccolo + SQLite | 元数据存储 |
 | 缓存 | Cashews + Redis | 数据缓存 |
 | 向量索引 | FAISS | 语义记忆 |
-| LLM | OpenAI / GLM / Qwen | 认知计算 |
+| LLM 接口 | LiteLLM | 统一调用 OpenAI/Qwen/GLM/DeepSeek |
 | 展示层 | Markdown | 知识呈现 |
 | 版本控制 | Git | 历史追溯 |
 | 定时任务 | Cron | 提醒系统 |
@@ -157,6 +166,7 @@ CognitiveOS/
 │   ├── main.py                    # 应用入口
 │   ├── core/
 │   │   ├── __init__.py
+│   │   ├── exceptions.py          # 异常定义
 │   │   ├── model.py               # 基础模型 (BaseModel, TimestampMixin)
 │   │   └── repository.py          # 基础仓储 (BaseRepository)
 │   ├── im/                        # IM 适配器
@@ -167,21 +177,30 @@ CognitiveOS/
 │   │   ├── feishu.py              # 飞书
 │   │   └── discord.py             # Discord
 │   ├── models/
-│   │   └── knowledge_item.py      # 知识项模型
+│   │   ├── knowledge_item.py      # 知识项模型
+│   │   └── prompt.py              # 提示词模型
 │   ├── repositories/
-│   │   └── knowledge_item_repo.py # 知识项仓储
+│   │   ├── knowledge_item_repo.py # 知识项仓储
+│   │   └── prompt_repo.py         # 提示词仓储
 │   ├── routes/
 │   │   ├── health.py              # 健康检查
 │   │   ├── im.py                  # IM 测试路由
 │   │   ├── items.py               # 知识项路由
+│   │   ├── prompts.py             # 提示词管理路由
+│   │   ├── retrieval.py           # RAG 检索路由
 │   │   └── webhook.py             # Webhook 路由
 │   ├── schemas/
 │   │   └── webhook.py             # 请求/响应 DTO
 │   ├── services/
 │   │   ├── capture_service.py     # 自动记录
+│   │   ├── embedding_service.py   # Embedding 生成
+│   │   ├── knowledge_item_service.py # 知识项服务
+│   │   ├── llm_service.py         # LLM 统一接口 (LiteLLM)
 │   │   ├── notification_service.py # IM 通知
+│   │   ├── prompt_service.py      # 提示词服务
+│   │   ├── retrieval_service.py   # RAG 检索
 │   │   ├── structuring_service.py # 结构化输出
-│   │   ├── retrieval_service.py   # 关联检索 (TODO)
+│   │   ├── vector_store.py        # FAISS 向量存储
 │   │   ├── reflection_service.py  # 反思总结 (TODO)
 │   │   └── reminder_service.py    # 提醒系统 (TODO)
 │   └── utils/
@@ -190,7 +209,8 @@ CognitiveOS/
 │       └── times.py               # 工具函数
 ├── storage/
 │   ├── raw/                       # 原始 Markdown
-│   └── structured/                # 结构化 Markdown
+│   ├── structured/                # 结构化 Markdown
+│   └── vectors/                   # FAISS 索引
 ├── piccolo_conf.py                # 数据库配置
 ├── piccolo_migrations/            # 迁移文件
 ├── pyproject.toml                 # 项目依赖
@@ -229,6 +249,31 @@ uv run uvicorn app.main:app --reload
 ```
 
 服务将在 http://127.0.0.1:8000 启动。
+
+### 配置 LLM
+
+使用 LiteLLM 统一接口，切换模型只需修改配置：
+
+```bash
+# OpenAI
+LLM_MODEL=openai/gpt-4o-mini
+LLM_API_KEY=sk-xxx
+EMBEDDING_MODEL=openai/text-embedding-3-small
+
+# 通义千问
+LLM_MODEL=qwen/qwen-turbo
+LLM_API_KEY=sk-xxx
+EMBEDDING_MODEL=qwen/text-embedding-v3
+
+# 智谱 GLM
+LLM_MODEL=zhipu/glm-4-flash
+LLM_API_KEY=xxx
+EMBEDDING_MODEL=zhipu/embedding-3
+
+# DeepSeek
+LLM_MODEL=deepseek/deepseek-chat
+LLM_API_KEY=sk-xxx
+```
 
 ### 配置 IM 通知（可选）
 
@@ -356,7 +401,82 @@ curl -X POST http://127.0.0.1:8000/webhook \
 }
 ```
 
+### POST /search
+
+语义搜索知识库
+
+**请求体**:
+```json
+{
+  "query": "学习笔记",
+  "top_k": 5
+}
+```
+
+**响应**:
+```json
+[
+  {
+    "item": { "uuid": "xxx", "raw_text": "...", ... },
+    "distance": 0.123
+  }
+]
+```
+
+### POST /rag
+
+RAG 问答
+
+**请求体**:
+```json
+{
+  "query": "我学过什么关于 Python 的内容？",
+  "top_k": 5
+}
+```
+
+**响应**:
+```json
+{
+  "query": "我学过什么关于 Python 的内容？",
+  "answer": "根据你的知识库...",
+  "sources": [...]
+}
+```
+
+### POST /index/{item_uuid}
+
+为单个知识项生成向量索引
+
+### POST /index/rebuild
+
+重建全部向量索引
+
+### 提示词管理 API
+
+| 端点 | 方法 | 说明 |
+|------|------|------|
+| `/prompts` | GET | 列出所有提示词 |
+| `/prompts/{name}` | GET | 获取单个提示词 |
+| `/prompts` | POST | 创建提示词 |
+| `/prompts/{name}` | PUT | 更新提示词 |
+| `/prompts/{name}` | DELETE | 删除提示词 |
+
+**更新提示词示例**:
+```bash
+curl -X PUT http://127.0.0.1:8000/prompts/rag_system \
+  -H "Content-Type: application/json" \
+  -d '{"content": "新的提示词内容...", "description": "更新描述"}'
+```
+
 ## 设计决策
+
+### 为什么用 LiteLLM？
+
+统一接口调用所有 LLM，切换模型只需修改配置：
+- 支持 OpenAI、Qwen、GLM、DeepSeek 等 100+ 模型
+- 统一的 embedding 接口
+- 无需修改代码
 
 ### 为什么不用 LangChain / LangGraph？
 
@@ -367,6 +487,12 @@ curl -X POST http://127.0.0.1:8000/webhook \
 - 容易污染知识库
 
 这是知识系统，不是聊天机器人。
+
+### 为什么提示词存数据库？
+
+- 修改提示词无需重启服务
+- 可通过 API 动态调整
+- 支持版本追溯
 
 ### 为什么需要向量库？
 
@@ -382,17 +508,23 @@ Markdown 是展示层。真正的知识需要：
 
 ## 当前状态
 
-项目处于 **阶段 1：确定性系统** 的初期实现。
+项目处于 **阶段 2：记忆增强** 已完成。
 
 已完成：
 - Webhook 接收
 - Raw Markdown 保存
 - SQLite 元数据存储
+- IM 多平台适配（企业微信/钉钉/飞书/Discord）
+- LiteLLM 统一接口
+- Embedding 生成
+- FAISS 向量索引
+- RAG 检索模式
+- 提示词数据库存储
 
 下一步：
-- 完善结构化输出
-- 集成 LLM 进行半自动整理
-- 添加向量索引支持
+- 自动发现主题聚类
+- 自动生成索引页
+- 周期性总结
 
 ---
 

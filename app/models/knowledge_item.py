@@ -9,6 +9,7 @@ class KnowledgeItem(BaseModel, TimestampMixin):
     source = Varchar(length=100)
     tags = JSON(default=list)
     links = JSON(default=list)
+    embedding = JSON(null=True, default=None)
 
     class Meta:
         tablename = "knowledge_item"

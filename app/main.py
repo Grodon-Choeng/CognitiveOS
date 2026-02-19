@@ -12,6 +12,14 @@ from app.core.exceptions import AppException
 from app.routes.health import health
 from app.routes.im import test_im, notify_item
 from app.routes.items import get_item, list_items, structure_item
+from app.routes.prompts import (
+    list_prompts,
+    get_prompt,
+    create_prompt,
+    update_prompt,
+    delete_prompt,
+)
+from app.routes.retrieval import search, rag_query, index_item, rebuild_index
 from app.routes.webhook import webhook
 from app.utils.logging import logger
 
@@ -49,6 +57,17 @@ def setup_cache() -> None:
         logger.info("Cache disabled, using in-memory fallback")
 
 
+async def seed_prompts() -> None:
+    from app.repositories.prompt_repo import PromptRepository
+    from app.services.prompt_service import PromptService
+
+    repo = PromptRepository()
+    service = PromptService(repo)
+    count = await service.seed_defaults()
+    if count > 0:
+        logger.info(f"Seeded {count} default prompts")
+
+
 container = make_async_container(AppProvider())
 
 app = Litestar(
@@ -60,12 +79,22 @@ app = Litestar(
         structure_item,
         test_im,
         notify_item,
+        search,
+        rag_query,
+        index_item,
+        rebuild_index,
+        list_prompts,
+        get_prompt,
+        create_prompt,
+        update_prompt,
+        delete_prompt,
     ],
     exception_handlers={
         AppException: exception_handler,
         HTTPException: exception_handler,
     },
     debug=settings.debug,
+    on_startup=[seed_prompts],
 )
 
 setup_dishka(container, app)
@@ -76,3 +105,4 @@ logger.info(f"Markdown debug mode: {settings.markdown_debug_mode}")
 logger.info(
     f"IM enabled: {settings.im_enabled}, provider: {settings.im_provider.value}"
 )
+logger.info(f"LLM model: {settings.llm_model}, embedding: {settings.embedding_model}")

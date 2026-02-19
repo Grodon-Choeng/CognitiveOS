@@ -2,16 +2,16 @@
 
 English | [简体中文](README.md)
 
-An evolvable Personal Cognitive Operating System for building a computable cognitive external brain.
+An evolvable personal cognitive operating system for building a computable cognitive external brain.
 
 ## Design Philosophy
 
-This is not a note-taking tool, but a system that is:
+This is not a note-taking tool, but a:
 
 - **Searchable** - Semantic search via vector indexing
-- **Reasonable** - Associative thinking combined with existing knowledge
-- **Reflective** - Periodic summarization and theme discovery
-- **Evolvable** - Progressive evolution from deterministic system to autonomous agent
+- **Reasonable** - Associative thinking based on existing knowledge
+- **Reflective** - Periodic summarization and topic discovery
+- **Evolvable** - Gradually evolving from deterministic systems to autonomous agents
 
 Core Principle: **Rules control the flow, LLM only handles cognitive computation.**
 
@@ -22,12 +22,14 @@ IM Layer
    ↓
 Gateway Layer (Webhook / Auth / Routing)
    ↓
-Core Service Layer (Rule-first)
+Core Service Layer (Rule-First)
    ├── Capture Service      # Auto capture
    ├── Structuring Service  # Semi-auto structuring
-   ├── Retrieval Service    # Associative retrieval
-   ├── Reflection Service   # Reflective summarization
-   └── Reminder Service     # Reminder system
+   ├── Retrieval Service    # Associative retrieval (RAG)
+   ├── Prompt Service       # Prompt management
+   ├── Notification Service # IM notification
+   ├── Reflection Service   # Reflection (TODO)
+   └── Reminder Service     # Reminder system (TODO)
    ↓
 Memory Layer
    ├── Raw Markdown         # Raw records
@@ -35,10 +37,10 @@ Memory Layer
    ├── Embedding Index      # Semantic index (FAISS)
    └── Metadata DB          # Metadata (SQLite)
    ↓
-LLM Layer
-   ├── Basic Extraction     # Basic extraction
-   ├── Contextual Reasoning # Contextual reasoning
-   └── Reflective Thinking  # Reflective thinking
+LLM Layer (LiteLLM Unified Interface)
+   ├── OpenAI / Azure       # International models
+   ├── Qwen / GLM / DeepSeek # Chinese models
+   └── Embedding            # Vectorization
 ```
 
 ## Core Capability Modules
@@ -46,20 +48,20 @@ LLM Layer
 ### 1. Auto Capture (Deterministic)
 
 ```
-IM → Raw Save → Return Confirmation
+IM → Raw save → Return confirmation
 ```
 
 - No LLM calls
 - Always traceable
 - Always rollbackable
 
-This is the underlying safety net ensuring all inputs are completely preserved.
+This is the safety net ensuring all inputs are completely preserved.
 
 ### 2. Semi-auto Structuring
 
 Triggers:
 - Long text
-- Special markers (e.g., `#structure`)
+- Contains special markers (e.g., `#整理`)
 
 ```
 Raw → LLM outputs JSON → Markdown Builder → Bidirectional link generation
@@ -71,12 +73,12 @@ Raw → LLM outputs JSON → Markdown Builder → Bidirectional link generation
 New input → embedding → FAISS retrieve top-k → Construct context prompt → LLM analysis
 ```
 
-Uses past thoughts as searchable semantic memory for "combining existing system" thinking.
+Using past thoughts as searchable semantic memory to achieve "thinking based on existing system".
 
 ### 4. Reflection Layer
 
-Periodic automation:
-- Discover similar themes
+Periodic automatic:
+- Discover similar topics
 - Discover repeated viewpoints
 - Discover unresolved questions
 - Generate weekly summaries
@@ -89,7 +91,7 @@ Periodic automation:
 
 LLM only handles intent understanding, rule engine handles execution.
 
-## Data Structure
+## Data Structures
 
 ```python
 class KnowledgeItem:
@@ -101,9 +103,15 @@ class KnowledgeItem:
     embedding: vector       # Vector
     created_at: datetime
     updated_at: datetime
+
+class Prompt:
+    name: str               # Prompt name
+    description: str        # Description
+    content: str            # Prompt content
+    category: str           # Category
 ```
 
-Markdown is the presentation layer, not the single source of truth.
+Markdown is presentation layer, not the single source of truth.
 
 ## Evolution Path
 
@@ -113,15 +121,16 @@ Markdown is the presentation layer, not the single source of truth.
 - [x] JSON structuring
 - [x] Markdown output
 
-### Phase 2: Memory Enhancement
+### Phase 2: Memory Enhancement ✅ (Completed)
 
-- [ ] Embedding generation
-- [ ] FAISS vector index
-- [ ] RAG retrieval mode
+- [x] Embedding generation (LiteLLM)
+- [x] FAISS vector index
+- [x] RAG retrieval mode
+- [x] Prompt database storage
 
 ### Phase 3: Cognitive Enhancement
 
-- [ ] Auto-discover theme clustering
+- [ ] Auto-discover topic clustering
 - [ ] Auto-generate index pages
 - [ ] Periodic summarization
 
@@ -141,10 +150,10 @@ Markdown is the presentation layer, not the single source of truth.
 | ORM | Piccolo + SQLite | Metadata storage |
 | Cache | Cashews + Redis | Data caching |
 | Vector Index | FAISS | Semantic memory |
-| LLM | OpenAI / GLM / Qwen | Cognitive computation |
+| LLM Interface | LiteLLM | Unified call to OpenAI/Qwen/GLM/DeepSeek |
 | Presentation | Markdown | Knowledge presentation |
 | Version Control | Git | History tracing |
-| Scheduler | Cron | Reminder system |
+| Scheduling | Cron | Reminder system |
 
 ## Project Structure
 
@@ -152,11 +161,12 @@ Markdown is the presentation layer, not the single source of truth.
 CognitiveOS/
 ├── app/
 │   ├── __init__.py
-│   ├── config.py                  # Configuration
+│   ├── config.py                  # Configuration management
 │   ├── container.py               # DI container
 │   ├── main.py                    # Application entry
 │   ├── core/
 │   │   ├── __init__.py
+│   │   ├── exceptions.py          # Exception definitions
 │   │   ├── model.py               # Base models
 │   │   └── repository.py          # Base repository
 │   ├── im/                        # IM adapters
@@ -167,21 +177,30 @@ CognitiveOS/
 │   │   ├── feishu.py              # Feishu
 │   │   └── discord.py             # Discord
 │   ├── models/
-│   │   └── knowledge_item.py      # Knowledge item model
+│   │   ├── knowledge_item.py      # Knowledge item model
+│   │   └── prompt.py              # Prompt model
 │   ├── repositories/
-│   │   └── knowledge_item_repo.py # Knowledge item repository
+│   │   ├── knowledge_item_repo.py # Knowledge item repository
+│   │   └── prompt_repo.py         # Prompt repository
 │   ├── routes/
 │   │   ├── health.py              # Health check
 │   │   ├── im.py                  # IM test routes
 │   │   ├── items.py               # Knowledge item routes
+│   │   ├── prompts.py             # Prompt management routes
+│   │   ├── retrieval.py           # RAG retrieval routes
 │   │   └── webhook.py             # Webhook route
 │   ├── schemas/
 │   │   └── webhook.py             # Request/Response DTOs
 │   ├── services/
 │   │   ├── capture_service.py     # Auto capture
+│   │   ├── embedding_service.py   # Embedding generation
+│   │   ├── knowledge_item_service.py # Knowledge item service
+│   │   ├── llm_service.py         # LLM unified interface (LiteLLM)
 │   │   ├── notification_service.py # IM notification
+│   │   ├── prompt_service.py      # Prompt service
+│   │   ├── retrieval_service.py   # RAG retrieval
 │   │   ├── structuring_service.py # Structured output
-│   │   ├── retrieval_service.py   # Associative retrieval (TODO)
+│   │   ├── vector_store.py        # FAISS vector store
 │   │   ├── reflection_service.py  # Reflection (TODO)
 │   │   └── reminder_service.py    # Reminder system (TODO)
 │   └── utils/
@@ -190,7 +209,8 @@ CognitiveOS/
 │       └── times.py               # Utility functions
 ├── storage/
 │   ├── raw/                       # Raw Markdown
-│   └── structured/                # Structured Markdown
+│   ├── structured/                # Structured Markdown
+│   └── vectors/                   # FAISS index
 ├── piccolo_conf.py                # Database config
 ├── piccolo_migrations/            # Migration files
 ├── pyproject.toml                 # Dependencies
@@ -229,6 +249,31 @@ uv run uvicorn app.main:app --reload
 ```
 
 Service will start at http://127.0.0.1:8000.
+
+### Configure LLM
+
+Using LiteLLM unified interface, switch models by changing config:
+
+```bash
+# OpenAI
+LLM_MODEL=openai/gpt-4o-mini
+LLM_API_KEY=sk-xxx
+EMBEDDING_MODEL=openai/text-embedding-3-small
+
+# Qwen
+LLM_MODEL=qwen/qwen-turbo
+LLM_API_KEY=sk-xxx
+EMBEDDING_MODEL=qwen/text-embedding-v3
+
+# Zhipu GLM
+LLM_MODEL=zhipu/glm-4-flash
+LLM_API_KEY=xxx
+EMBEDDING_MODEL=zhipu/embedding-3
+
+# DeepSeek
+LLM_MODEL=deepseek/deepseek-chat
+LLM_API_KEY=sk-xxx
+```
 
 ### Configure IM Notifications (Optional)
 
@@ -352,11 +397,86 @@ Generate structured Markdown file
 {
   "uuid": "e238a58f-3d25-49fb-b80b-f8c0e33b76f3",
   "title": "Learned a new concept today",
-  "file_path": "storage/structured/10-learned-a-new-concept-today.md"
+  "file_path": "storage/structured/10-xxx.md"
 }
 ```
 
+### POST /search
+
+Semantic search knowledge base
+
+**Request Body**:
+```json
+{
+  "query": "study notes",
+  "top_k": 5
+}
+```
+
+**Response**:
+```json
+[
+  {
+    "item": { "uuid": "xxx", "raw_text": "...", ... },
+    "distance": 0.123
+  }
+]
+```
+
+### POST /rag
+
+RAG Q&A
+
+**Request Body**:
+```json
+{
+  "query": "What have I learned about Python?",
+  "top_k": 5
+}
+```
+
+**Response**:
+```json
+{
+  "query": "What have I learned about Python?",
+  "answer": "Based on your knowledge base...",
+  "sources": [...]
+}
+```
+
+### POST /index/{item_uuid}
+
+Generate vector index for single knowledge item
+
+### POST /index/rebuild
+
+Rebuild all vector indexes
+
+### Prompt Management API
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/prompts` | GET | List all prompts |
+| `/prompts/{name}` | GET | Get single prompt |
+| `/prompts` | POST | Create prompt |
+| `/prompts/{name}` | PUT | Update prompt |
+| `/prompts/{name}` | DELETE | Delete prompt |
+
+**Update prompt example**:
+```bash
+curl -X PUT http://127.0.0.1:8000/prompts/rag_system \
+  -H "Content-Type: application/json" \
+  -d '{"content": "New prompt content...", "description": "Updated description"}'
+```
+
 ## Design Decisions
+
+### Why LiteLLM?
+
+Unified interface to call all LLMs, switch models by changing config:
+- Supports OpenAI, Qwen, GLM, DeepSeek and 100+ models
+- Unified embedding interface
+- No code changes needed
 
 ### Why not LangChain / LangGraph?
 
@@ -368,33 +488,43 @@ No need for Agent framework in early stage:
 
 This is a knowledge system, not a chatbot.
 
+### Why store prompts in database?
+
+- Modify prompts without service restart
+- Dynamic adjustment via API
+- Version tracing support
+
 ### Why vector database?
 
-LLM has no "long-term self-system". Vector database makes past thoughts searchable semantic memory, enabling "combining existing system" thinking. Otherwise, every thought starts from scratch.
+LLM has no "long-term self-system". Vector database makes past thoughts searchable semantic memory, achieving "thinking based on existing system", otherwise every time is fresh thinking.
 
-### Why is Markdown not the single source of truth?
+### Why Markdown is not the single source of truth?
 
-Markdown is the presentation layer. True knowledge requires:
+Markdown is presentation layer. True knowledge needs:
 - Structured data
-- Vector indexing
+- Vector index
 - Metadata management
 - Version control
 
 ## Current Status
 
-Project is at **Phase 1: Deterministic System** initial implementation.
+Project is at **Phase 2: Memory Enhancement** completed.
 
 Completed:
 - Webhook receiving
 - Raw Markdown saving
 - SQLite metadata storage
-- UUID-based API
-- Dual-layer caching
+- IM multi-platform adaptation (WeCom/DingTalk/Feishu/Discord)
+- LiteLLM unified interface
+- Embedding generation
+- FAISS vector index
+- RAG retrieval mode
+- Prompt database storage
 
 Next steps:
-- Refine structured output
-- Integrate LLM for semi-auto structuring
-- Add vector index support
+- Auto-discover topic clustering
+- Auto-generate index pages
+- Periodic summarization
 
 ---
 

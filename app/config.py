@@ -44,6 +44,14 @@ class Settings(BaseSettings):
     im_secret: str = ""
     im_enabled: bool = False
 
+    llm_model: str = "openai/gpt-4o-mini"
+    llm_api_key: str = ""
+    llm_base_url: str = ""
+    embedding_model: str = "openai/text-embedding-3-small"
+    embedding_dimension: int = 1536
+
+    vector_index_path: str = "storage/vectors/index.faiss"
+
     @property
     def raw_path(self) -> Path:
         return self.storage_path / "raw"
@@ -51,6 +59,10 @@ class Settings(BaseSettings):
     @property
     def structured_path(self) -> Path:
         return self.storage_path / "structured"
+
+    @property
+    def vector_path(self) -> Path:
+        return self.storage_path / "vectors"
 
     @property
     def is_production(self) -> bool:
