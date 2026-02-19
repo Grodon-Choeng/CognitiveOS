@@ -178,7 +178,8 @@ CognitiveOS/
 │   │   └── discord.py             # Discord
 │   ├── models/
 │   │   ├── knowledge_item.py      # Knowledge item model
-│   │   └── prompt.py              # Prompt model
+│   │   ├── prompt.py              # Prompt model
+│   │   └── sessions.py            # Session model
 │   ├── repositories/
 │   │   ├── knowledge_item_repo.py # Knowledge item repository
 │   │   └── prompt_repo.py         # Prompt repository
@@ -190,7 +191,10 @@ CognitiveOS/
 │   │   ├── retrieval.py           # RAG retrieval routes
 │   │   └── webhook.py             # Webhook route
 │   ├── schemas/
-│   │   └── webhook.py             # Request/Response DTOs
+│   │   ├── im.py                  # IM response DTOs
+│   │   ├── prompt.py              # Prompt DTOs
+│   │   ├── retrieval.py           # Retrieval DTOs
+│   │   └── webhook.py             # Webhook DTOs
 │   ├── services/
 │   │   ├── capture_service.py     # Auto capture
 │   │   ├── embedding_service.py   # Embedding generation

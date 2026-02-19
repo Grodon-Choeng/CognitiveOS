@@ -178,7 +178,8 @@ CognitiveOS/
 │   │   └── discord.py             # Discord
 │   ├── models/
 │   │   ├── knowledge_item.py      # 知识项模型
-│   │   └── prompt.py              # 提示词模型
+│   │   ├── prompt.py              # 提示词模型
+│   │   └── sessions.py            # 会话模型
 │   ├── repositories/
 │   │   ├── knowledge_item_repo.py # 知识项仓储
 │   │   └── prompt_repo.py         # 提示词仓储
@@ -190,7 +191,10 @@ CognitiveOS/
 │   │   ├── retrieval.py           # RAG 检索路由
 │   │   └── webhook.py             # Webhook 路由
 │   ├── schemas/
-│   │   └── webhook.py             # 请求/响应 DTO
+│   │   ├── im.py                  # IM 响应 DTO
+│   │   ├── prompt.py              # 提示词 DTO
+│   │   ├── retrieval.py           # 检索 DTO
+│   │   └── webhook.py             # Webhook DTO
 │   ├── services/
 │   │   ├── capture_service.py     # 自动记录
 │   │   ├── embedding_service.py   # Embedding 生成

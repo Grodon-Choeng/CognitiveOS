@@ -14,7 +14,12 @@ from app.services.structuring_service import StructuringService
 from app.utils.jsons import parse_json_field
 
 
-@post("/items/{item_uuid:uuid}/structure")
+@post(
+    "/items/{item_uuid:uuid}/structure",
+    summary="生成结构化笔记",
+    description="调用 LLM 对原始笔记进行结构化处理，生成 Markdown 文件并提取标题、标签、双链等元数据。",
+    tags=["知识管理"],
+)
 @inject
 async def structure_item(
     item_uuid: UUID,
@@ -31,7 +36,12 @@ async def structure_item(
     )
 
 
-@get("/items/{item_uuid:uuid}")
+@get(
+    "/items/{item_uuid:uuid}",
+    summary="获取知识项详情",
+    description="根据 UUID 获取单个知识项的完整信息，包括原始文本、结构化文本、标签、双链等。",
+    tags=["知识管理"],
+)
 @inject
 async def get_item(
     item_uuid: UUID,
@@ -51,7 +61,12 @@ async def get_item(
     )
 
 
-@get("/items")
+@get(
+    "/items",
+    summary="获取知识项列表",
+    description="获取最近的知识项列表，按创建时间倒序排列。raw_text 会被截断至 100 字符。",
+    tags=["知识管理"],
+)
 @inject
 async def list_items(
     knowledge_service: FromDishka[KnowledgeItemService],
