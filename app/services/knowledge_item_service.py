@@ -56,6 +56,8 @@ class KnowledgeItemService:
     async def create(
         self, raw_text: str, source: str, tags: list[str] | None = None
     ) -> KnowledgeItem:
+        if tags is None:
+            tags = []
         item = await self.repo.create(raw_text=raw_text, source=source, tags=tags)
         logger.info(f"Created knowledge item: uuid={item.uuid}, source={source}")
 
