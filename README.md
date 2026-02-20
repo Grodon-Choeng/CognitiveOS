@@ -83,13 +83,28 @@ Raw → LLM 输出 JSON → Markdown Builder → 双链生成
 - 发现未完成问题
 - 生成周总结
 
-### 5. 提醒系统
+### 5. 提醒系统 ✅
 
-- metadata 中存 `due_date`
-- cron 任务扫描
-- 推送到 IM
+通过 Discord Bot 设置提醒，支持自然语言时间表达式：
 
-LLM 只负责理解意图，规则引擎负责执行。
+```
+!remind 5分钟后 提交代码
+!remind 明天 10:00 发日报
+!remind 下班前 提交PR
+```
+
+后台任务每 30 秒扫描待发送提醒，到时自动推送。
+
+详见 [docs/reminder.md](docs/reminder.md)
+
+### 6. Discord Bot ✅
+
+双向交互模式，支持：
+- 接收消息并处理
+- 设置提醒
+- 知识捕获
+
+详见 [docs/discord_bot.md](docs/discord_bot.md)
 
 ## 数据结构
 
@@ -543,7 +558,7 @@ Markdown 是展示层。真正的知识需要：
 
 ## 当前状态
 
-项目处于 **阶段 2：记忆增强** 已完成。
+项目处于 **阶段 2：记忆增强** 已完成，**提醒系统** 已完成。
 
 已完成：
 - Webhook 接收
@@ -555,6 +570,8 @@ Markdown 是展示层。真正的知识需要：
 - FAISS 向量索引
 - RAG 检索模式
 - 提示词数据库存储
+- Discord Bot 双向交互
+- 提醒系统（自然语言时间表达式）
 
 下一步：
 - 自动发现主题聚类

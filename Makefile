@@ -37,11 +37,9 @@ help:
 	@echo "  make clean      Remove cache and compiled files"
 
 dev:
-	cp .env.development .env
 	uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
 prod:
-	cp .env.production .env
 	uv run uvicorn app.main:app --host 0.0.0.0 --port 8000
 
 start:

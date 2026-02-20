@@ -13,7 +13,7 @@ class IMConfig:
     def __init__(
         self,
         provider: IMProvider,
-        webhook_url: str,
+        webhook_url: str = "",
         secret: str = "",
         enabled: bool = True,
         **kwargs: Any,
@@ -78,6 +78,8 @@ class Settings(BaseSettings):
     im_provider: str = ""
     im_webhook_url: str = ""
     im_secret: str = ""
+
+    proxy_url: str = ""
 
     llm_model: str = "openai/gpt-4o-mini"
     llm_api_key: str = ""

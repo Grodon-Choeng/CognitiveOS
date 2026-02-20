@@ -83,13 +83,28 @@ Periodic automatic:
 - Discover unresolved questions
 - Generate weekly summaries
 
-### 5. Reminder System
+### 5. Reminder System ✅
 
-- Store `due_date` in metadata
-- Cron job scanning
-- Push to IM
+Set reminders via Discord Bot with natural language time expressions:
 
-LLM only handles intent understanding, rule engine handles execution.
+```
+!remind 5 minutes later submit code
+!remind tomorrow 10:00 send daily report
+!remind before work end submit PR
+```
+
+Background task scans pending reminders every 30 seconds and auto-pushes when due.
+
+See [docs/reminder.md](docs/reminder.md)
+
+### 6. Discord Bot ✅
+
+Bidirectional interaction mode, supports:
+- Receive and process messages
+- Set reminders
+- Knowledge capture
+
+See [docs/discord_bot.md](docs/discord_bot.md)
 
 ## Data Structures
 
@@ -543,7 +558,7 @@ Markdown is presentation layer. True knowledge needs:
 
 ## Current Status
 
-Project is at **Phase 2: Memory Enhancement** completed.
+Project is at **Phase 2: Memory Enhancement** completed, **Reminder System** completed.
 
 Completed:
 - Webhook receiving
@@ -555,6 +570,8 @@ Completed:
 - FAISS vector index
 - RAG retrieval mode
 - Prompt database storage
+- Discord Bot bidirectional interaction
+- Reminder system (natural language time expressions)
 
 Next steps:
 - Auto-discover topic clustering

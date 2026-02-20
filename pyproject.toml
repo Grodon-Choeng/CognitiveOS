@@ -9,6 +9,7 @@ dependencies = [
     "arq>=0.26.0",
     "cashews[redis]>=7.0.0",
     "dishka>=1.8.0",
+    "discord.py>=2.4.0",
     "faiss-cpu>=1.7.0",
     "httpx>=0.27.0",
     "litellm>=1.0.0",

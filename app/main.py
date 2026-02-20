@@ -5,6 +5,7 @@ from litestar import Litestar, Request
 from litestar.exceptions import HTTPException
 from litestar.response import Response
 
+from app.bot import start_bot, stop_bot
 from app.config import settings
 from app.container import AppProvider, get_prompt_service
 from app.core.exceptions import AppError
@@ -74,6 +75,15 @@ async def seed_prompts() -> None:
         logger.info(f"Seeded {count} default prompts")
 
 
+async def on_startup() -> None:
+    await seed_prompts()
+    await start_bot()
+
+
+async def on_shutdown() -> None:
+    await stop_bot()
+
+
 container = make_async_container(AppProvider())
 
 app = Litestar(
@@ -88,7 +98,8 @@ app = Litestar(
         APIKeyMiddleware,
     ],
     debug=settings.debug,
-    on_startup=[seed_prompts],
+    on_startup=[on_startup],
+    on_shutdown=[on_shutdown],
 )
 
 setup_dishka(container, app)
