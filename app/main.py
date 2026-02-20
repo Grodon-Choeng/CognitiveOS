@@ -6,7 +6,7 @@ from litestar.exceptions import HTTPException
 from litestar.response import Response
 
 from app.config import settings
-from app.container import AppProvider
+from app.container import AppProvider, get_prompt_service
 from app.core.exceptions import AppError
 from app.enums import ErrorCode
 from app.middleware import APIKeyMiddleware, IMSignatureMiddleware, RequestTrackingMiddleware
@@ -68,8 +68,6 @@ def setup_cache() -> None:
 
 
 async def seed_prompts() -> None:
-    from app.container import get_prompt_service
-
     service = await get_prompt_service()
     count = await service.seed_defaults()
     if count > 0:
@@ -99,5 +97,8 @@ setup_cache()
 logger.info(f"CognitiveOS started in {settings.environment.value} mode")
 logger.info("API version: v1, prefix: /api/v1")
 logger.info(f"Markdown debug mode: {settings.markdown_debug_mode}")
-logger.info(f"IM enabled: {settings.im_enabled}, provider: {settings.im_provider.value}")
+
+im_providers = [cfg.provider.value for cfg in settings.get_im_configs()]
+logger.info(f"IM enabled: {settings.im_enabled}, providers: {im_providers}")
+
 logger.info(f"LLM model: {settings.llm_model}, embedding: {settings.embedding_model}")

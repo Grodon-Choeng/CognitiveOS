@@ -2,8 +2,8 @@ from dishka import FromDishka
 from dishka.integrations.litestar import inject
 from litestar import Controller, post
 
-from app.schemas.webhook import CaptureRequest, CaptureResponse
-from app.services.capture_service import CaptureService
+from app.schemas import CaptureRequest, CaptureResponse
+from app.services import CaptureService
 
 
 class WebhookController(Controller):

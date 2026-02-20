@@ -19,8 +19,6 @@ IM_WEBHOOK_PATHS = {
 class IMSignatureMiddleware(AbstractMiddleware):
     def __init__(self, app: ASGIApp) -> None:
         super().__init__(app)
-        self.provider = settings.im_provider
-        self.secret = settings.im_secret
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] != "http":
@@ -34,11 +32,15 @@ class IMSignatureMiddleware(AbstractMiddleware):
             await self.app(scope, receive, send)
             return
 
-        if not settings.im_enabled or not self.secret:
+        if not settings.im_enabled:
             await self.app(scope, receive, send)
             return
 
-        await self._verify_signature(request)
+        provider = self._detect_provider(request)
+        if provider:
+            config = settings.get_im_config(provider)
+            if config and config.secret:
+                await self._verify_signature(request, provider, config.secret)
 
         await self.app(scope, receive, send)
 
@@ -46,15 +48,40 @@ class IMSignatureMiddleware(AbstractMiddleware):
     def _is_webhook_path(path: str) -> bool:
         return path in IM_WEBHOOK_PATHS
 
-    async def _verify_signature(self, request: Request) -> None:
-        if self.provider == IMProvider.DINGTALK:
-            await self._verify_dingtalk(request)
-        elif self.provider == IMProvider.FEISHU:
-            await self._verify_feishu(request)
-        elif self.provider in (IMProvider.WECOM, IMProvider.DISCORD):
-            pass
+    @staticmethod
+    def _detect_provider(request: Request) -> IMProvider | None:
+        user_agent = request.headers.get("User-Agent", "").lower()
 
-    async def _verify_dingtalk(self, request: Request) -> None:
+        if "dingtalk" in user_agent:
+            return IMProvider.DINGTALK
+        if "feishu" in user_agent or "lark" in user_agent:
+            return IMProvider.FEISHU
+        if "wecom" in user_agent or "wxwork" in user_agent:
+            return IMProvider.WECOM
+        if "discord" in user_agent:
+            return IMProvider.DISCORD
+        if "telegram" in user_agent:
+            return IMProvider.TELEGRAM
+        if "slack" in user_agent:
+            return IMProvider.SLACK
+
+        provider_header = request.headers.get("X-IM-Provider", "")
+        if provider_header:
+            try:
+                return IMProvider(provider_header.lower())
+            except ValueError:
+                pass
+
+        return None
+
+    async def _verify_signature(self, request: Request, provider: IMProvider, secret: str) -> None:
+        if provider == IMProvider.DINGTALK:
+            await self._verify_dingtalk(request, secret)
+        elif provider == IMProvider.FEISHU:
+            await self._verify_feishu(request, secret)
+
+    @staticmethod
+    async def _verify_dingtalk(request: Request, secret: str) -> None:
         timestamp = request.headers.get("timestamp", "")
         sign = request.headers.get("sign", "")
 
@@ -66,9 +93,9 @@ class IMSignatureMiddleware(AbstractMiddleware):
         if abs(current_time - timestamp_int) > 3600000:
             raise AuthenticationError("DingTalk timestamp expired")
 
-        string_to_sign = f"{timestamp}\n{self.secret}"
+        string_to_sign = f"{timestamp}\n{secret}"
         hmac_code = hmac.new(
-            self.secret.encode("utf-8"),
+            secret.encode("utf-8"),
             string_to_sign.encode("utf-8"),
             digestmod=hashlib.sha256,
         ).digest()
@@ -77,7 +104,8 @@ class IMSignatureMiddleware(AbstractMiddleware):
         if sign != expected_sign:
             raise AuthenticationError("Invalid DingTalk signature")
 
-    async def _verify_feishu(self, request: Request) -> None:
+    @staticmethod
+    async def _verify_feishu(request: Request, secret: str) -> None:
         timestamp = request.headers.get("X-Lark-Request-Timestamp", "")
         nonce = request.headers.get("X-Lark-Request-Nonce", "")
         sign = request.headers.get("X-Lark-Signature", "")
@@ -90,7 +118,7 @@ class IMSignatureMiddleware(AbstractMiddleware):
         if abs(current_time - timestamp_int) > 3600:
             raise AuthenticationError("Feishu timestamp expired")
 
-        string_to_sign = f"{timestamp}{nonce}{self.secret}"
+        string_to_sign = f"{timestamp}{nonce}{secret}"
         expected_sign = hashlib.sha1(string_to_sign.encode("utf-8")).hexdigest()
 
         if sign != expected_sign:

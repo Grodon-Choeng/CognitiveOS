@@ -12,6 +12,8 @@ class IMProvider(str, Enum):
     DINGTALK = "dingtalk"
     FEISHU = "feishu"
     DISCORD = "discord"
+    TELEGRAM = "telegram"
+    SLACK = "slack"
 
 
 class SortField(str, Enum):

@@ -6,15 +6,14 @@ from litestar import Controller, get, post
 
 from app.constants import RAW_TEXT_TRUNCATE_LENGTH
 from app.enums import SortField, SortOrder
-from app.schemas.common import CursorPaginationResponse
-from app.schemas.webhook import (
+from app.schemas import (
+    CursorPaginationResponse,
     KnowledgeItemListResponse,
     KnowledgeItemResponse,
     StructuredResponse,
 )
-from app.services.knowledge_item_service import KnowledgeItemService
-from app.services.structuring_service import StructuringService
-from app.utils.jsons import parse_json_field
+from app.services import KnowledgeItemService, StructuringService
+from app.utils import parse_json_field
 
 
 class ItemsController(Controller):

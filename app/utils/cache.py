@@ -1,21 +1,28 @@
+from typing import Any, Protocol
+
 from cashews import cache
 
 from app.config import settings
-from app.core.model import BaseModel
 
 
-async def get_cached_model[T: BaseModel](model_class: type[T], key: str) -> T | None:
+class Cacheable(Protocol):
+    def to_dict(self) -> dict[str, Any]: ...
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "Cacheable": ...
+
+
+async def get_cached_model[T: Cacheable](model_class: type[T], key: str) -> T | None:
     data = await cache.get(key)
     if data is not None:
         return model_class.from_dict(data)
     return None
 
 
-async def set_cached_model[T: BaseModel](item: T, key: str, ttl: int | None = None) -> None:
+async def set_cached_model[T: Cacheable](item: T, key: str, ttl: int | None = None) -> None:
     await cache.set(key, item.to_dict(), expire=ttl or settings.cache_default_ttl)
 
 
-async def get_cached_models[T: BaseModel](
+async def get_cached_models[T: Cacheable](
     model_class: type[T],
     keys: list[str],
 ) -> list[T | None]:
@@ -26,7 +33,7 @@ async def get_cached_models[T: BaseModel](
     return [model_class.from_dict(data) if data is not None else None for data in results]
 
 
-async def set_cached_models[T: BaseModel](
+async def set_cached_models[T: Cacheable](
     items: list[T],
     keys: list[str],
     ttl: int | None = None,

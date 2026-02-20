@@ -4,16 +4,16 @@ from dishka import FromDishka
 from dishka.integrations.litestar import inject
 from litestar import Controller, post
 
-from app.schemas.retrieval import (
+from app.schemas import (
     IndexResponse,
+    KnowledgeItemResponse,
     RAGRequest,
     RAGResponse,
     RebuildIndexResponse,
     SearchRequest,
     SearchResult,
 )
-from app.schemas.webhook import KnowledgeItemResponse
-from app.services.retrieval_service import RetrievalService
+from app.services import RetrievalService
 
 
 class RetrievalController(Controller):

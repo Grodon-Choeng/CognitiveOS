@@ -1,12 +1,11 @@
 from typing import Any
 
-from app.services.vector_store import VectorStore
+from app.container import get_embedding_service, get_knowledge_item_service
+from app.services import VectorStore
 from app.tasks.worker import get_redis_settings
 
 
 async def index_knowledge_item(ctx: dict, item_id: int) -> dict[str, Any]:
-    from app.container import get_embedding_service, get_knowledge_item_service
-
     knowledge_service = await get_knowledge_item_service()
     embedding_service = await get_embedding_service()
     vector_store = VectorStore()
@@ -25,8 +24,6 @@ async def index_knowledge_item(ctx: dict, item_id: int) -> dict[str, Any]:
 
 
 async def rebuild_all_indexes(ctx: dict) -> dict[str, Any]:
-    from app.container import get_embedding_service, get_knowledge_item_service
-
     knowledge_service = await get_knowledge_item_service()
     embedding_service = await get_embedding_service()
     vector_store = VectorStore()
