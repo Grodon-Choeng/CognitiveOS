@@ -7,11 +7,12 @@ from litestar.response import Response
 
 from app.bot import start_bot, stop_bot
 from app.config import settings
-from app.container import AppProvider, get_prompt_service
+from app.container import AppProvider
 from app.core.exceptions import AppError
 from app.enums import ErrorCode
 from app.middleware import APIKeyMiddleware, IMSignatureMiddleware, RequestTrackingMiddleware
 from app.routes.v1 import v1_router
+from app.services import PromptService
 from app.utils.logging import logger
 
 
@@ -68,11 +69,15 @@ def setup_cache() -> None:
         logger.info("Cache disabled, using in-memory fallback")
 
 
+_container = make_async_container(AppProvider())
+
+
 async def seed_prompts() -> None:
-    service = await get_prompt_service()
-    count = await service.seed_defaults()
-    if count > 0:
-        logger.info(f"Seeded {count} default prompts")
+    async with _container() as request_container:
+        service = await request_container.get(PromptService)
+        count = await service.seed_defaults()
+        if count > 0:
+            logger.info(f"Seeded {count} default prompts")
 
 
 async def on_startup() -> None:
@@ -83,8 +88,6 @@ async def on_startup() -> None:
 async def on_shutdown() -> None:
     await stop_bot()
 
-
-container = make_async_container(AppProvider())
 
 app = Litestar(
     route_handlers=[v1_router],
@@ -102,7 +105,7 @@ app = Litestar(
     on_shutdown=[on_shutdown],
 )
 
-setup_dishka(container, app)
+setup_dishka(_container, app)
 setup_cache()
 
 logger.info(f"CognitiveOS started in {settings.environment.value} mode")

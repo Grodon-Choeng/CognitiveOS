@@ -26,8 +26,18 @@ class HealthController(Controller):
         feishu = get_feishu_bot_status()
         discord = get_discord_bot_status()
 
+        feishu_healthy = not feishu.enabled or (feishu.running and feishu.connected)
+        discord_healthy = not discord.enabled or (discord.running and discord.connected)
+
+        if feishu_healthy and discord_healthy:
+            status = "healthy"
+        elif feishu_healthy or discord_healthy:
+            status = "degraded"
+        else:
+            status = "unhealthy"
+
         return HealthResponse(
-            status="healthy",
+            status=status,
             timestamp=utc_time().isoformat(),
             dependencies={
                 "feishu_bot": {

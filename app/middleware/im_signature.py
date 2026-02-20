@@ -1,3 +1,4 @@
+import base64
 import hashlib
 import hmac
 import time
@@ -9,6 +10,7 @@ from litestar.types import ASGIApp, Receive, Scope, Send
 from app.config import settings
 from app.core.exceptions import AuthenticationError
 from app.enums import IMProvider
+from app.utils.logging import logger
 
 IM_WEBHOOK_PATHS = {
     "/webhook",
@@ -37,10 +39,19 @@ class IMSignatureMiddleware(AbstractMiddleware):
             return
 
         provider = self._detect_provider(request)
-        if provider:
-            config = settings.get_im_config(provider)
-            if config and config.secret:
-                await self._verify_signature(request, provider, config.secret)
+        if not provider:
+            logger.warning(f"Unknown provider for webhook request: {path}")
+            await self.app(scope, receive, send)
+            return
+
+        config = settings.get_im_config(provider)
+        if not config:
+            logger.warning(f"No config found for provider: {provider}")
+            await self.app(scope, receive, send)
+            return
+
+        if config.secret:
+            await self._verify_signature(request, provider, config.secret)
 
         await self.app(scope, receive, send)
 
@@ -50,6 +61,13 @@ class IMSignatureMiddleware(AbstractMiddleware):
 
     @staticmethod
     def _detect_provider(request: Request) -> IMProvider | None:
+        provider_header = request.headers.get("X-IM-Provider", "")
+        if provider_header:
+            try:
+                return IMProvider(provider_header.lower())
+            except ValueError:
+                pass
+
         user_agent = request.headers.get("User-Agent", "").lower()
 
         if "dingtalk" in user_agent:
@@ -64,13 +82,6 @@ class IMSignatureMiddleware(AbstractMiddleware):
             return IMProvider.TELEGRAM
         if "slack" in user_agent:
             return IMProvider.SLACK
-
-        provider_header = request.headers.get("X-IM-Provider", "")
-        if provider_header:
-            try:
-                return IMProvider(provider_header.lower())
-            except ValueError:
-                pass
 
         return None
 
@@ -89,7 +100,11 @@ class IMSignatureMiddleware(AbstractMiddleware):
             raise AuthenticationError("Missing DingTalk signature headers")
 
         current_time = int(time.time() * 1000)
-        timestamp_int = int(timestamp)
+        try:
+            timestamp_int = int(timestamp)
+        except ValueError:
+            raise AuthenticationError("Invalid DingTalk timestamp") from None
+
         if abs(current_time - timestamp_int) > 3600000:
             raise AuthenticationError("DingTalk timestamp expired")
 
@@ -99,9 +114,12 @@ class IMSignatureMiddleware(AbstractMiddleware):
             string_to_sign.encode("utf-8"),
             digestmod=hashlib.sha256,
         ).digest()
-        expected_sign = hmac_code.hex()
+        expected_sign = base64.b64encode(hmac_code).decode("utf-8")
 
         if sign != expected_sign:
+            logger.warning(
+                f"DingTalk signature mismatch: expected={expected_sign[:20]}..., got={sign[:20]}..."
+            )
             raise AuthenticationError("Invalid DingTalk signature")
 
     @staticmethod
@@ -114,7 +132,11 @@ class IMSignatureMiddleware(AbstractMiddleware):
             raise AuthenticationError("Missing Feishu signature headers")
 
         current_time = int(time.time())
-        timestamp_int = int(timestamp)
+        try:
+            timestamp_int = int(timestamp)
+        except ValueError:
+            raise AuthenticationError("Invalid Feishu timestamp") from None
+
         if abs(current_time - timestamp_int) > 3600:
             raise AuthenticationError("Feishu timestamp expired")
 
@@ -122,4 +144,7 @@ class IMSignatureMiddleware(AbstractMiddleware):
         expected_sign = hashlib.sha1(string_to_sign.encode("utf-8")).hexdigest()
 
         if sign != expected_sign:
+            logger.warning(
+                f"Feishu signature mismatch: expected={expected_sign[:20]}..., got={sign[:20]}..."
+            )
             raise AuthenticationError("Invalid Feishu signature")

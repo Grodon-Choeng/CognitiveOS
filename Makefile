@@ -13,7 +13,7 @@ help:
 	@echo ""
 	@echo "Database:"
 	@echo "  make admin      Start Piccolo Admin (http://localhost:8080)"
-	@echo "  make migrate    Run database migrations"
+	@echo "  make migrate    Create and run database migrations"
 	@echo "  make reset-db   Reset database (WARNING: destroys data)"
 	@echo ""
 	@echo "Docker:"
@@ -73,6 +73,7 @@ logs:
 	docker-compose logs -f redis
 
 migrate:
+	uv run piccolo migrations new cognitive --auto
 	uv run piccolo migrations forwards cognitive
 
 reset-db:

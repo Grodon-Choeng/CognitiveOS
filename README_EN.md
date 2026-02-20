@@ -299,21 +299,21 @@ LLM_API_KEY=sk-xxx
 
 Supported IM platforms:
 
-| Platform | Provider | Security |
-|----------|----------|----------|
-| WeCom | `wecom` | No signature |
-| DingTalk | `dingtalk` | Signature verification |
-| Feishu | `feishu` | Signature verification |
-| Discord | `discord` | No signature |
+| Platform | Provider | Webhook Mode | Bot Long Connection Mode |
+|----------|----------|--------------|--------------------------|
+| WeCom | `wecom` | ✅ No signature | ❌ |
+| DingTalk | `dingtalk` | ✅ Signature verification | ✅ Stream mode |
+| Feishu | `feishu` | ✅ Signature verification | ✅ SDK long connection |
+| Discord | `discord` | ✅ No signature | ✅ Bot API |
 
-**WeCom configuration:**
+**WeCom configuration (Webhook mode):**
 ```bash
 IM_ENABLED=true
 IM_PROVIDER=wecom
 IM_WEBHOOK_URL=https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=YOUR_KEY
 ```
 
-**DingTalk configuration (recommended, with signature):**
+**DingTalk configuration (Webhook mode, with signature):**
 ```bash
 IM_ENABLED=true
 IM_PROVIDER=dingtalk
@@ -321,11 +321,19 @@ IM_WEBHOOK_URL=https://oapi.dingtalk.com/robot/send?access_token=YOUR_TOKEN
 IM_SECRET=SECxxx  # Signing secret
 ```
 
-**Feishu configuration:**
+**Feishu configuration (Bot long connection mode, recommended):**
 ```bash
 IM_ENABLED=true
-IM_CONFIGS=[{"provider":"feishu","app_id":"cli_xxx","app_secret":"xxx","verification_token":"xxx","encrypt_key":"xxx","enabled":true}]
+IM_CONFIGS=[{"provider":"feishu","app_id":"cli_xxx","app_secret":"xxx","enabled":true}]
 ```
+
+**Feishu configuration (Webhook mode):**
+```bash
+IM_ENABLED=true
+IM_CONFIGS=[{"provider":"feishu","webhook_url":"https://open.feishu.cn/open-apis/bot/v2/hook/xxx","secret":"xxx","enabled":true}]
+```
+
+See [docs/feishu_bot.md](docs/feishu_bot.md) for details.
 
 ### Common Commands (Makefile)
 
@@ -340,7 +348,7 @@ make clean    # Clean cache files
 
 ## API Reference
 
-### POST /webhook
+### POST /api/v1/webhook
 
 Capture note (auto record)
 
@@ -366,7 +374,7 @@ Capture note (auto record)
 
 **Example**:
 ```bash
-curl -X POST http://127.0.0.1:8000/webhook \
+curl -X POST http://127.0.0.1:8000/api/v1/webhook \
   -H "Content-Type: application/json" \
   -d '{"content": "Learned a new concept today", "source": "telegram"}'
 ```

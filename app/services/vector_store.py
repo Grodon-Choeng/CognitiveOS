@@ -33,7 +33,8 @@ class VectorStore:
         map_path = self.index_path.with_suffix(".json")
         if map_path.exists():
             with open(map_path) as f:
-                self.id_map = json.load(f)
+                data = json.load(f)
+            self.id_map = {int(k): v for k, v in data.items()}
             logger.info(f"Loaded ID map with {len(self.id_map)} entries")
 
     def _save_id_map(self):

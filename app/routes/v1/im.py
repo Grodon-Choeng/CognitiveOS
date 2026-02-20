@@ -62,6 +62,13 @@ class IMController(Controller):
         notification_service: FromDishka[NotificationService],
         provider: str | None = None,
     ) -> IMTestResponse:
+        if not notification_service.manager:
+            return IMTestResponse(
+                success=False,
+                error="IM service not configured",
+                provider=provider or "none",
+            )
+
         target_provider = IMProvider(provider) if provider else None
 
         if target_provider:

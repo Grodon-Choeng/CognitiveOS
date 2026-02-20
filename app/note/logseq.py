@@ -1,3 +1,4 @@
+import asyncio
 import subprocess
 from datetime import datetime
 from pathlib import Path
@@ -26,12 +27,12 @@ class LogseqAdapter(NoteAdapter):
         )
         return result
 
-    def git_pull(self) -> bool:
+    async def git_pull(self) -> bool:
         if not self.auto_git:
             return True
 
         try:
-            result = self._run_git_command("pull", "--rebase")
+            result = await asyncio.to_thread(self._run_git_command, "pull", "--rebase")
             if result.returncode == 0:
                 logger.info("Git pull successful")
                 return True
@@ -42,13 +43,13 @@ class LogseqAdapter(NoteAdapter):
             logger.error(f"Git pull error: {e}")
             return False
 
-    def git_commit(self, message: str) -> bool:
+    async def git_commit(self, message: str) -> bool:
         if not self.auto_git:
             return True
 
         try:
-            self._run_git_command("add", "-A")
-            result = self._run_git_command("commit", "-m", message)
+            await asyncio.to_thread(self._run_git_command, "add", "-A")
+            result = await asyncio.to_thread(self._run_git_command, "commit", "-m", message)
             if result.returncode == 0:
                 logger.info(f"Git commit: {message}")
                 return True
@@ -62,12 +63,12 @@ class LogseqAdapter(NoteAdapter):
             logger.error(f"Git commit error: {e}")
             return False
 
-    def git_push(self) -> bool:
+    async def git_push(self) -> bool:
         if not self.auto_git:
             return True
 
         try:
-            result = self._run_git_command("push")
+            result = await asyncio.to_thread(self._run_git_command, "push")
             if result.returncode == 0:
                 logger.info("Git push successful")
                 return True
@@ -78,11 +79,11 @@ class LogseqAdapter(NoteAdapter):
             logger.error(f"Git push error: {e}")
             return False
 
-    def git_sync_and_commit(self, message: str) -> bool:
-        self.git_pull()
-        success = self.git_commit(message)
+    async def git_sync_and_commit(self, message: str) -> bool:
+        await self.git_pull()
+        success = await self.git_commit(message)
         if success:
-            self.git_push()
+            await self.git_push()
         return success
 
     @property
@@ -119,8 +120,16 @@ class LogseqAdapter(NoteAdapter):
             tags_str = " ".join(f"#{tag}" for tag in entry.tags) if entry.tags else ""
             return f"- {timestamp} {entry.content} {tags_str}\n"
 
+    @staticmethod
+    async def _write_file(path: Path, content: str, mode: str = "a") -> None:
+        def _write():
+            with open(path, mode, encoding="utf-8") as f:
+                f.write(content)
+
+        await asyncio.to_thread(_write)
+
     async def write_daily_entry(self, entry: NoteEntry) -> str:
-        self.git_pull()
+        await self.git_pull()
 
         file_path = await self.get_daily_path(entry.created_at)
         path = Path(file_path)
@@ -128,36 +137,32 @@ class LogseqAdapter(NoteAdapter):
         formatted = self.format_entry(entry)
 
         if path.exists():
-            with open(path, "a", encoding="utf-8") as f:
-                f.write("\n" + formatted)
+            await self._write_file(path, "\n" + formatted)
         else:
             date_header = entry.created_at.strftime("%Y-%m-%d")
             content = f"# {date_header}\n\n{formatted}"
-            with open(path, "w", encoding="utf-8") as f:
-                f.write(content)
+            await self._write_file(path, content, mode="w")
 
         logger.info(f"Wrote entry to {file_path}: {entry.content[:50]}...")
 
         commit_message = f"Add {entry.note_type.value}: {entry.content[:30]}"
-        self.git_sync_and_commit(commit_message)
+        await self.git_sync_and_commit(commit_message)
 
         return file_path
 
     async def append_to_journal(self, date: datetime, content: str) -> str:
-        self.git_pull()
+        await self.git_pull()
 
         file_path = await self.get_daily_path(date)
         path = Path(file_path)
 
         if path.exists():
-            with open(path, "a", encoding="utf-8") as f:
-                f.write("\n" + content)
+            await self._write_file(path, "\n" + content)
         else:
             date_header = date.strftime("%Y-%m-%d")
             full_content = f"# {date_header}\n\n{content}"
-            with open(path, "w", encoding="utf-8") as f:
-                f.write(full_content)
+            await self._write_file(path, full_content, mode="w")
 
-        self.git_sync_and_commit(f"Update journal: {date.strftime('%Y-%m-%d')}")
+        await self.git_sync_and_commit(f"Update journal: {date.strftime('%Y-%m-%d')}")
 
         return file_path

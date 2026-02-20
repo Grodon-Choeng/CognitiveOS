@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 
 import discord
 from discord.ext import commands
+from pydantic import SecretStr
 
 from app.config import settings
 from app.utils.logging import logger
@@ -34,7 +35,7 @@ class DiscordBot:
         on_message_callback: Callable | None = None,
         on_alert_callback: Callable[[str], None] | None = None,
     ) -> None:
-        self.token = token
+        self.token = SecretStr(token)
         self.command_prefix = command_prefix
         self.proxy = proxy
         self.on_message_callback = on_message_callback
@@ -54,7 +55,7 @@ class DiscordBot:
         self._seen_messages: dict[str, datetime] = {}
 
         logger.info(f"Initializing Discord Bot with prefix: {command_prefix}")
-        logger.info(f"Token length: {len(token)} chars, starts with: {token[:10]}...")
+        logger.info(f"Token length: {len(self.token)} chars, starts with: {self.token}...")
         if proxy:
             logger.info(f"Using proxy: {proxy}")
 
@@ -238,7 +239,7 @@ class DiscordBot:
 
             try:
                 logger.info("Starting Discord Bot connection...")
-                await self.bot.start(self.token)
+                await self.bot.start(self.token.get_secret_value())
             except discord.LoginFailure as e:
                 self._record_error(f"Login failed: {e}")
                 logger.error(f"Discord login failed: {e}")

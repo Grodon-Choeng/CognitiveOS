@@ -105,15 +105,16 @@ class KnowledgeItemService(BaseService[KnowledgeItem, KnowledgeItemRepository]):
             sort_field.value, sort_order.value, limit, cursor or "first"
         )
 
-        cached_ids = await cache.get(list_key)
-        if cached_ids is not None:
+        cached_data = await cache.get(list_key)
+        if cached_data is not None:
             logger.debug(f"Cache hit for list: {list_key}")
-            items = await self.get_by_ids(cached_ids)
-            has_more = len(cached_ids) > limit
-            next_cursor = cached_ids[-1] if has_more and cached_ids else None
+            item_ids = cached_data.get("item_ids", [])
+            has_more = cached_data.get("has_more", False)
+            next_cursor = cached_data.get("next_cursor")
+            items = await self.get_by_ids(item_ids[:limit])
             return CursorPage(
-                items=items[:limit],
-                next_cursor=str(next_cursor) if next_cursor else None,
+                items=items,
+                next_cursor=next_cursor,
                 has_more=has_more,
             )
 
@@ -124,8 +125,12 @@ class KnowledgeItemService(BaseService[KnowledgeItem, KnowledgeItemRepository]):
             sort_order=sort_order,
         )
 
-        item_ids = [item.id for item in page.items]
-        await cache.set(list_key, item_ids, expire=self.cache_ttl)
+        cache_data = {
+            "item_ids": [item.id for item in page.items],
+            "has_more": page.has_more,
+            "next_cursor": page.next_cursor,
+        }
+        await cache.set(list_key, cache_data, expire=self.cache_ttl)
 
         for item in page.items:
             await self._set_cached(item, self._cache_key_by_id(item.id))

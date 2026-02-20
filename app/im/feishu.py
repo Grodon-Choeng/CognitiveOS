@@ -94,8 +94,8 @@ class FeishuAdapter(IMAdapter):
         timestamp = str(int(time.time()))
         string_to_sign = f"{timestamp}\n{self.secret}"
         hmac_code = hmac.new(
+            self.secret.encode("utf-8"),
             string_to_sign.encode("utf-8"),
-            b"",
             digestmod=hashlib.sha256,
         ).digest()
         sign = base64.b64encode(hmac_code).decode("utf-8")

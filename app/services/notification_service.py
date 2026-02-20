@@ -3,6 +3,7 @@ from cashews import cache
 from app.config import settings
 from app.enums import IMProvider
 from app.im import IMManager, IMMessage, IMSendResult, MessageType
+from app.services import get_discord_bot, get_feishu_bot
 from app.utils.logging import logger
 
 CACHE_PREFIX = "user_im_channel"
@@ -40,25 +41,61 @@ class NotificationService:
                 pass
         return None
 
+    @staticmethod
+    async def _send_via_bot(
+        provider: IMProvider, user_id: str, content: str
+    ) -> IMSendResult | None:
+        if provider == IMProvider.DISCORD:
+            bot = get_discord_bot()
+            if bot and bot._connected:
+                try:
+                    success = await bot.send_to_user(int(user_id), content)
+                    return IMSendResult(
+                        success=success, error=None if success else "User not found"
+                    )
+                except Exception as e:
+                    logger.error(f"Failed to send via Discord bot: {e}")
+                    return IMSendResult(success=False, error=str(e))
+
+        elif provider == IMProvider.FEISHU:
+            bot = get_feishu_bot()
+            if bot and bot._connected:
+                try:
+                    success = await bot.send_text_to_user_or_chat(user_id, content)
+                    return IMSendResult(success=success, error=None if success else "Send failed")
+                except Exception as e:
+                    logger.error(f"Failed to send via Feishu bot: {e}")
+                    return IMSendResult(success=False, error=str(e))
+
+        return None
+
     async def send(self, message: IMMessage, user_id: str | None = None) -> IMSendResult:
-        if not self.manager:
-            logger.warning("IM not configured, skipping notification")
-            return IMSendResult(success=False, error="IM not configured")
-
-        if user_id:
-            provider = await self.get_user_channel(user_id)
-            if provider:
-                logger.info(f"Sending to user {user_id} via {provider.value}")
-                return await self.manager.send_to_provider(provider, message)
-
-        providers = self.manager.get_available_providers()
+        providers = self.get_available_providers()
         if not providers:
             logger.warning("No IM providers available")
             return IMSendResult(success=False, error="No IM providers available")
 
-        default_provider = providers[0]
-        logger.info(f"Sending via default provider: {default_provider.value}")
-        return await self.manager.send_to_provider(default_provider, message)
+        target_provider = None
+        if user_id:
+            target_provider = await self.get_user_channel(user_id)
+
+        if not target_provider:
+            target_provider = providers[0]
+
+        if user_id and message.msg_type == MessageType.TEXT:
+            bot_result = await self._send_via_bot(target_provider, user_id, message.content)
+            if bot_result is not None:
+                return bot_result
+
+        if self.manager:
+            config = settings.get_im_config(target_provider)
+            if config and config.webhook_url:
+                return await self.manager.send_to_provider(target_provider, message)
+
+        logger.warning(f"No available channel for provider {target_provider.value}")
+        return IMSendResult(
+            success=False, error=f"No available channel for {target_provider.value}"
+        )
 
     async def send_text(self, content: str, user_id: str | None = None) -> IMSendResult:
         message = IMMessage(content=content, msg_type=MessageType.TEXT)
@@ -90,7 +127,8 @@ class NotificationService:
     async def notify_error(self, error_msg: str, user_id: str | None = None) -> IMSendResult:
         return await self.send_text(f"❌ Error: {error_msg}", user_id)
 
-    def get_available_providers(self) -> list[IMProvider]:
-        if not self.manager:
+    @staticmethod
+    def get_available_providers() -> list[IMProvider]:
+        if not settings.im_enabled:
             return []
-        return self.manager.get_available_providers()
+        return [cfg.provider for cfg in settings.get_im_configs() if cfg.enabled]

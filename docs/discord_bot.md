@@ -78,7 +78,7 @@ PROXY_URL=http://127.0.0.1:7897
 | Command | Description |
 |---------|-------------|
 | `!help` | Show help message |
-| `!ping` | Test bot latency |
+| `!ping` | Test bot connection |
 | `!remind` | List my reminders |
 | `!remind <content>` | Create a reminder |
 | `灵感 <content>` | Capture an idea |
@@ -88,7 +88,7 @@ PROXY_URL=http://127.0.0.1:7897
 | 命令 | 说明 |
 |------|------|
 | `!help` | 显示帮助 |
-| `!ping` | 测试延迟 |
+| `!ping` | 测试连接 |
 | `!remind` | 查看提醒列表 |
 | `!remind <内容>` | 创建提醒 |
 | `灵感 <内容>` | 记录灵感 |

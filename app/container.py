@@ -1,4 +1,4 @@
-from dishka import Provider, Scope, make_async_container, provide
+from dishka import Provider, Scope, provide
 
 from app.config import settings
 from app.im import IMManager
@@ -80,38 +80,3 @@ class AppProvider(Provider):
             vector_store,
             prompt_service,
         )
-
-
-_container = None
-
-
-async def get_prompt_service() -> PromptService:
-    global _container
-    if _container is None:
-        _container = make_async_container(AppProvider())
-    async with _container() as request_container:
-        return await request_container.get(PromptService)
-
-
-async def get_knowledge_item_service() -> KnowledgeItemService:
-    global _container
-    if _container is None:
-        _container = make_async_container(AppProvider())
-    async with _container() as request_container:
-        return await request_container.get(KnowledgeItemService)
-
-
-async def get_embedding_service() -> EmbeddingService:
-    global _container
-    if _container is None:
-        _container = make_async_container(AppProvider())
-    async with _container() as request_container:
-        return await request_container.get(EmbeddingService)
-
-
-async def get_notification_service() -> NotificationService:
-    global _container
-    if _container is None:
-        _container = make_async_container(AppProvider())
-    async with _container() as request_container:
-        return await request_container.get(NotificationService)

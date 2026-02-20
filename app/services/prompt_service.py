@@ -73,12 +73,12 @@ class PromptService(BaseService[Prompt, PromptRepository]):
     async def list(self, category: str | None = None) -> list[Prompt]:
         list_key = self._cache_key_list(category or "all")
 
-        cached_ids = await cache.get(list_key)
-        if cached_ids is not None:
+        cached_names = await cache.get(list_key)
+        if cached_names is not None:
             logger.debug(f"Cache hit for prompt list: {list_key}")
             prompts = []
-            for prompt_id in cached_ids:
-                prompt = await self._get_cached(Prompt, self._cache_key("id", prompt_id))
+            for prompt_name in cached_names:
+                prompt = await self._get_cached(Prompt, self._cache_key_by_name(prompt_name))
                 if prompt:
                     prompts.append(prompt)
             return prompts
@@ -88,8 +88,8 @@ class PromptService(BaseService[Prompt, PromptRepository]):
         else:
             prompts = await self._repo.list()
 
-        prompt_ids = [p.id for p in prompts]
-        await cache.set(list_key, prompt_ids, expire=self.cache_ttl)
+        prompt_names = [p.name for p in prompts]
+        await cache.set(list_key, prompt_names, expire=self.cache_ttl)
 
         for prompt in prompts:
             await self._set_cached(prompt, self._cache_key_by_name(prompt.name))

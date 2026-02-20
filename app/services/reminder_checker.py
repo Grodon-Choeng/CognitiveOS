@@ -105,6 +105,7 @@ async def check_reminders() -> None:
             rows = (
                 await Reminder.select()
                 .where(Reminder.is_sent == False)  # noqa: E712
+                .where(Reminder.remind_at <= advance_time)
                 .order_by(Reminder.remind_at)
             )
 

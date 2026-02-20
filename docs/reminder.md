@@ -20,20 +20,11 @@ A flexible reminder system that allows you to set reminders through Discord bot 
 
 ## Time Expressions / 时间表达式
 
-### English
+**Note**: Currently only Chinese time expressions are supported. English expressions are planned for future updates.
 
-| Expression | Example | Description |
-|------------|---------|-------------|
-| `X minutes later` | `!remind 5 minutes later submit code` | Remind after X minutes |
-| `X hours later` | `!remind 1 hour later meeting` | Remind after X hours |
-| `X days later` | `!remind 2 days later review` | Remind after X days |
-| `today HH:MM` | `!remind today 18:00 leave work` | Remind at specific time today |
-| `tomorrow HH:MM` | `!remind tomorrow 10:00 daily report` | Remind at specific time tomorrow |
-| `tomorrow morning` | `!remind tomorrow morning standup` | Remind at 9:00 AM tomorrow |
-| `tomorrow afternoon` | `!remind tomorrow afternoon review` | Remind at 2:00 PM tomorrow |
-| `before work end` | `!remind before work end submit PR` | Remind at 6:00 PM today |
+**注意**: 当前仅支持中文时间表达式，英文表达式计划在未来版本中支持。
 
-### 中文
+### 中文时间表达式
 
 | 表达式 | 示例 | 说明 |
 |--------|------|------|
@@ -47,19 +38,6 @@ A flexible reminder system that allows you to set reminders through Discord bot 
 | `下班前` / `今天下班前` | `!remind 下班前 提交PR` | 今天18点提醒 |
 
 ## Examples / 示例
-
-### English
-
-```
-!remind 5 minutes later submit code
-!remind 1 hour later join meeting
-!remind today 18:00 leave work
-!remind tomorrow 10:00 send daily report
-!remind tomorrow morning team standup
-!remind before work end submit PR
-```
-
-### 中文
 
 ```
 !remind 5分钟后 提交代码

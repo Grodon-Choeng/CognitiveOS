@@ -299,21 +299,21 @@ LLM_API_KEY=sk-xxx
 
 支持以下 IM 平台：
 
-| 平台 | Provider | 安全机制 |
-|------|----------|---------|
-| 企业微信 | `wecom` | 无签名 |
-| 钉钉 | `dingtalk` | 签名校验 |
-| 飞书 | `feishu` | 签名校验 |
-| Discord | `discord` | 无签名 |
+| 平台 | Provider | Webhook 模式 | Bot 长连接模式 |
+|------|----------|-------------|---------------|
+| 企业微信 | `wecom` | ✅ 无签名 | ❌ |
+| 钉钉 | `dingtalk` | ✅ 签名校验 | ✅ Stream 模式 |
+| 飞书 | `feishu` | ✅ 签名校验 | ✅ SDK 长连接 |
+| Discord | `discord` | ✅ 无签名 | ✅ Bot API |
 
-**企业微信配置：**
+**企业微信配置（Webhook 模式）：**
 ```bash
 IM_ENABLED=true
 IM_PROVIDER=wecom
 IM_WEBHOOK_URL=https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=YOUR_KEY
 ```
 
-**钉钉配置（推荐，支持签名）：**
+**钉钉配置（Webhook 模式，支持签名）：**
 ```bash
 IM_ENABLED=true
 IM_PROVIDER=dingtalk
@@ -321,11 +321,19 @@ IM_WEBHOOK_URL=https://oapi.dingtalk.com/robot/send?access_token=YOUR_TOKEN
 IM_SECRET=SECxxx  # 加签密钥
 ```
 
-**飞书配置：**
+**飞书配置（Bot 长连接模式，推荐）：**
 ```bash
 IM_ENABLED=true
-IM_CONFIGS=[{"provider":"feishu","app_id":"cli_xxx","app_secret":"xxx","verification_token":"xxx","encrypt_key":"xxx","enabled":true}]
+IM_CONFIGS=[{"provider":"feishu","app_id":"cli_xxx","app_secret":"xxx","enabled":true}]
 ```
+
+**飞书配置（Webhook 模式）：**
+```bash
+IM_ENABLED=true
+IM_CONFIGS=[{"provider":"feishu","webhook_url":"https://open.feishu.cn/open-apis/bot/v2/hook/xxx","secret":"xxx","enabled":true}]
+```
+
+详见 [docs/feishu_bot.md](docs/feishu_bot.md)
 
 ### 常用命令 (Makefile)
 
@@ -340,7 +348,7 @@ make clean    # 清理缓存文件
 
 ## API 接口
 
-### POST /webhook
+### POST /api/v1/webhook
 
 捕获笔记（自动记录）
 
@@ -366,7 +374,7 @@ make clean    # 清理缓存文件
 
 **示例**:
 ```bash
-curl -X POST http://127.0.0.1:8000/webhook \
+curl -X POST http://127.0.0.1:8000/api/v1/webhook \
   -H "Content-Type: application/json" \
   -d '{"content": "今天学到了一个新概念", "source": "telegram"}'
 ```

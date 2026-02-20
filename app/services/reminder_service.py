@@ -19,8 +19,8 @@ class ReminderService:
             (r"明天\s*(\d{1,2}):(\d{1,2})", "tomorrow_time"),
             (r"明天早上", "tomorrow_morning"),
             (r"明天下午", "tomorrow_afternoon"),
-            (r"下班前", "before_work_end"),
             (r"今天下班前", "before_work_end"),
+            (r"下班前", "before_work_end"),
         ]
 
         for pattern, time_type in patterns:
