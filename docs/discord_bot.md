@@ -12,6 +12,10 @@ A bidirectional Discord Bot that enables interactive communication with Cognitiv
 | Send Notifications | Push notifications via webhook |
 | Set Reminders | Create reminders with natural language |
 | Knowledge Capture | Capture notes to knowledge base |
+| Auto Reconnect | Exponential backoff with jitter |
+| Message Deduplication | TTL-based deduplication |
+| Alert Throttling | Cooldown mechanism for alerts |
+| Health Monitoring | Status exposed via API |
 
 | 功能 | 说明 |
 |------|------|
@@ -19,6 +23,10 @@ A bidirectional Discord Bot that enables interactive communication with Cognitiv
 | 发送通知 | 通过 webhook 推送通知 |
 | 设置提醒 | 使用自然语言创建提醒 |
 | 知识捕获 | 捕获笔记到知识库 |
+| 自动重连 | 指数退避 + 抖动策略 |
+| 消息去重 | 基于 TTL 的去重机制 |
+| 告警限流 | 冷却时间机制 |
+| 健康监控 | 通过 API 暴露状态 |
 
 ## Setup / 配置
 
@@ -73,7 +81,9 @@ PROXY_URL=http://127.0.0.1:7897
 | `!ping` | Test bot latency |
 | `!remind` | List my reminders |
 | `!remind <content>` | Create a reminder |
-| `!capture <content>` | Capture to knowledge base |
+| `灵感 <content>` | Capture an idea |
+| `任务 <content>` | Capture a task |
+| `记录 <content>` | Capture a note |
 
 | 命令 | 说明 |
 |------|------|
@@ -81,7 +91,9 @@ PROXY_URL=http://127.0.0.1:7897
 | `!ping` | 测试延迟 |
 | `!remind` | 查看提醒列表 |
 | `!remind <内容>` | 创建提醒 |
-| `!capture <内容>` | 捕获到知识库 |
+| `灵感 <内容>` | 记录灵感 |
+| `任务 <内容>` | 记录任务 |
+| `记录 <内容>` | 记录笔记 |
 
 ## Architecture / 架构
 
@@ -89,7 +101,8 @@ PROXY_URL=http://127.0.0.1:7897
 app/
 ├── bot/
 │   ├── __init__.py
-│   └── discord_handler.py   # Message handling / 消息处理
+│   ├── discord_handler.py   # Message handling / 消息处理
+│   └── message_service.py   # Shared message service / 共享消息服务
 ├── services/
 │   ├── discord_bot.py       # Bot core / Bot 核心
 │   ├── reminder_service.py  # Reminder service / 提醒服务
@@ -101,7 +114,7 @@ app/
 ## How It Works / 工作原理
 
 ```
-User Message → Discord Gateway → Bot Event Handler → Service Layer → Response
+User Message → Discord Gateway → Bot Event Handler → MessageService → Response
                 ↓
          (Proxy if needed)
 ```
@@ -118,6 +131,62 @@ User Message → Discord Gateway → Bot Event Handler → Service Layer → Res
 4. 调用对应服务
 5. 发送响应回频道/用户
 
+## Reliability Mechanisms / 可靠性机制
+
+### Auto Reconnect / 自动重连
+
+```python
+@staticmethod
+def _next_backoff(attempt: int) -> float:
+    exp = min(attempt, 6)
+    return min(60.0, (2**exp) + random.uniform(0, 1.5))
+```
+
+- Exponential backoff with jitter / 指数退避 + 抖动策略
+- Max wait: 60 seconds / 最大等待: 60 秒
+- Auto reconnect loop / 自动重连循环
+
+### Message Deduplication / 消息去重
+
+```python
+def _is_duplicate(self, message_id: int, ttl_seconds: int = 600) -> bool:
+    # TTL-based deduplication / 基于 TTL 的去重
+```
+
+- Prevent duplicate message processing / 防止重复处理
+- TTL: 600 seconds / TTL: 600 秒
+- Auto cleanup when cache > 2000 / 缓存超过 2000 条自动清理
+
+### Alert Throttling / 告警限流
+
+```python
+async def _alert(self, key: str, message: str, cooldown_seconds: int = 300) -> None:
+    # 5-minute cooldown for same alert type / 同类型告警 5 分钟冷却
+```
+
+- Cooldown: 300 seconds / 冷却时间: 300 秒
+- Prevent alert storm / 防止告警风暴
+
+### Health Monitoring / 健康监控
+
+`GET /api/v1/health` returns bot status:
+
+```json
+{
+  "discord_bot": {
+    "enabled": true,
+    "running": true,
+    "connected": true,
+    "reconnect_attempts": 0,
+    "guild_count": 1,
+    "last_connected_at": "2026-02-20T...",
+    "last_event_at": "2026-02-20T...",
+    "last_error_at": null,
+    "last_error": null
+  }
+}
+```
+
 ## Troubleshooting / 故障排除
 
 ### Bot not responding / Bot 无响应
@@ -125,10 +194,12 @@ User Message → Discord Gateway → Bot Event Handler → Service Layer → Res
 1. Check if `PROXY_URL` is configured (required in China)
 2. Check if `Message Content Intent` is enabled in Discord Developer Portal
 3. Check logs for connection errors
+4. Check `/api/v1/health` for bot status
 
 1. 检查是否配置了 `PROXY_URL`（中国大陆必需）
 2. 检查 Discord Developer Portal 中是否启用了 `Message Content Intent`
 3. 查看日志中的连接错误
+4. 检查 `/api/v1/health` 查看 Bot 状态
 
 ### Connection timeout / 连接超时
 
@@ -142,6 +213,24 @@ Solution: Verify proxy URL and ensure proxy service is running.
 
 解决方案: 验证代理 URL 并确保代理服务正在运行。
 
+### Frequent reconnects / 频繁重连
+
+```log
+WARNING - Discord Bot disconnected from Discord (attempt=5)
+WARNING - Discord Bot disconnected, retry in 32.5s (attempt=5)
+```
+
+Possible causes:
+- Unstable proxy connection / 代理连接不稳定
+- Network issues / 网络问题
+- Discord API rate limiting / Discord API 限流
+
+可能原因:
+- 代理连接不稳定
+- 网络问题
+- Discord API 限流
+
 ## Related Docs / 相关文档
 
 - [Reminder Feature](reminder.md) - Detailed reminder documentation / 详细提醒文档
+- [Feishu Bot](feishu_bot.md) - Feishu bot documentation / 飞书机器人文档

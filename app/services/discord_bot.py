@@ -1,11 +1,28 @@
 import asyncio
+import random
 from collections.abc import Callable
+from contextlib import suppress
+from dataclasses import dataclass
+from datetime import UTC, datetime
 
 import discord
 from discord.ext import commands
 
 from app.config import settings
 from app.utils.logging import logger
+
+
+@dataclass
+class DiscordBotStatus:
+    enabled: bool
+    running: bool
+    connected: bool
+    reconnect_attempts: int
+    last_connected_at: str | None
+    last_event_at: str | None
+    last_error_at: str | None
+    last_error: str | None
+    guild_count: int
 
 
 class DiscordBot:
@@ -15,11 +32,26 @@ class DiscordBot:
         command_prefix: str = "!",
         proxy: str | None = None,
         on_message_callback: Callable | None = None,
+        on_alert_callback: Callable[[str], None] | None = None,
     ) -> None:
         self.token = token
         self.command_prefix = command_prefix
         self.proxy = proxy
         self.on_message_callback = on_message_callback
+        self.on_alert_callback = on_alert_callback
+
+        self._loop: asyncio.AbstractEventLoop | None = None
+        self._supervisor_task: asyncio.Task | None = None
+
+        self._running = False
+        self._connected = False
+        self._reconnect_attempts = 0
+        self._last_connected_at: datetime | None = None
+        self._last_event_at: datetime | None = None
+        self._last_error_at: datetime | None = None
+        self._last_error: str | None = None
+        self._last_alert_at: dict[str, datetime] = {}
+        self._seen_messages: dict[str, datetime] = {}
 
         logger.info(f"Initializing Discord Bot with prefix: {command_prefix}")
         logger.info(f"Token length: {len(token)} chars, starts with: {token[:10]}...")
@@ -49,9 +81,74 @@ class DiscordBot:
 
         self._setup_events()
 
+    def status(self) -> DiscordBotStatus:
+        guild_count = len(self.bot.guilds) if self.bot.user else 0
+        return DiscordBotStatus(
+            enabled=True,
+            running=self._running,
+            connected=self._connected,
+            reconnect_attempts=self._reconnect_attempts,
+            last_connected_at=self._fmt_dt(self._last_connected_at),
+            last_event_at=self._fmt_dt(self._last_event_at),
+            last_error_at=self._fmt_dt(self._last_error_at),
+            last_error=self._last_error,
+            guild_count=guild_count,
+        )
+
+    @staticmethod
+    def _fmt_dt(value: datetime | None) -> str | None:
+        return value.isoformat() if value else None
+
+    def _record_error(self, error: str) -> None:
+        self._last_error = error
+        self._last_error_at = datetime.now(UTC)
+
+    @staticmethod
+    def _next_backoff(attempt: int) -> float:
+        exp = min(attempt, 6)
+        return min(60.0, (2**exp) + random.uniform(0, 1.5))
+
+    async def _alert(self, key: str, message: str, cooldown_seconds: int = 300) -> None:
+        now = datetime.now(UTC)
+        last = self._last_alert_at.get(key)
+        if last and (now - last).total_seconds() < cooldown_seconds:
+            return
+        self._last_alert_at[key] = now
+
+        logger.error(message)
+        if self.on_alert_callback and self._loop:
+            if asyncio.iscoroutinefunction(self.on_alert_callback):
+                asyncio.run_coroutine_threadsafe(self.on_alert_callback(message), self._loop)
+            else:
+                self._loop.call_soon_threadsafe(self.on_alert_callback, message)
+
+    def _is_duplicate(self, message_id: int, ttl_seconds: int = 600) -> bool:
+        key = str(message_id)
+        now = datetime.now(UTC)
+        seen_at = self._seen_messages.get(key)
+        if seen_at and (now - seen_at).total_seconds() < ttl_seconds:
+            return True
+        self._seen_messages[key] = now
+        return False
+
+    def _cleanup_seen_messages(self, ttl_seconds: int = 600, max_size: int = 2000) -> None:
+        if len(self._seen_messages) <= max_size:
+            return
+        now = datetime.now(UTC)
+        stale_ids = [
+            msg_id
+            for msg_id, ts in self._seen_messages.items()
+            if (now - ts).total_seconds() > ttl_seconds
+        ]
+        for msg_id in stale_ids:
+            self._seen_messages.pop(msg_id, None)
+
     def _setup_events(self) -> None:
         @self.bot.event
         async def on_ready():
+            self._connected = True
+            self._last_connected_at = datetime.now(UTC)
+            self._reconnect_attempts = 0
             logger.info(f"Discord Bot logged in as {self.bot.user}")
             logger.info(f"Bot ID: {self.bot.user.id}")
             logger.info(f"Connected to {len(self.bot.guilds)} guild(s)")
@@ -60,19 +157,31 @@ class DiscordBot:
 
         @self.bot.event
         async def on_connect():
+            self._connected = True
             logger.info("Discord Bot connected to Discord gateway")
 
         @self.bot.event
         async def on_disconnect():
-            logger.warning("Discord Bot disconnected from Discord")
+            self._connected = False
+            self._reconnect_attempts += 1
+            logger.warning(
+                f"Discord Bot disconnected from Discord (attempt={self._reconnect_attempts})"
+            )
+            await self._alert(
+                "disconnect",
+                f"Discord Bot 断开连接（attempt={self._reconnect_attempts}）",
+            )
 
         @self.bot.event
         async def on_resumed():
+            self._connected = True
             logger.info("Discord Bot resumed session")
 
         @self.bot.event
         async def on_error(event: str, *args, **kwargs):
+            self._record_error(f"Error in event: {event}")
             logger.error(f"Discord Bot error in event: {event}")
+            await self._alert("error", f"Discord Bot 错误: {event}")
 
         @self.bot.event
         async def on_message(message: discord.Message):
@@ -82,6 +191,12 @@ class DiscordBot:
             if message.author.bot:
                 return
 
+            if self._is_duplicate(message.id):
+                return
+
+            self._last_event_at = datetime.now(UTC)
+            self._cleanup_seen_messages()
+
             logger.info(
                 f"[Discord] Message from {message.author} in #{message.channel}: {message.content[:100]}"
             )
@@ -90,31 +205,73 @@ class DiscordBot:
                 try:
                     await self.on_message_callback(message)
                 except Exception as e:
+                    self._record_error(str(e))
                     logger.error(f"Error in message callback: {e}")
-                    await message.reply(f"Error processing message: {e}")
 
-    async def send_to_channel(self, channel_id: int, content: str) -> None:
+    async def send_to_channel(self, channel_id: int, content: str) -> bool:
         channel = self.bot.get_channel(channel_id)
         if channel:
             await channel.send(content)
+            return True
         else:
             logger.warning(f"Channel {channel_id} not found")
+            return False
+
+    async def send_to_user(self, user_id: int, content: str) -> bool:
+        user = self.bot.get_user(user_id)
+        if not user:
+            user = await self.bot.fetch_user(user_id)
+        if user:
+            await user.send(content)
+            return True
+        else:
+            logger.warning(f"User {user_id} not found")
+            return False
 
     async def start(self) -> None:
-        logger.info("Starting Discord Bot connection...")
-        try:
-            await self.bot.start(self.token)
-        except discord.LoginFailure as e:
-            logger.error(f"Discord login failed: {e}")
-            raise
-        except discord.ConnectionClosed as e:
-            logger.error(f"Discord connection closed: {e}")
-            raise
-        except Exception as e:
-            logger.error(f"Discord Bot error: {e}")
-            raise
+        self._loop = asyncio.get_running_loop()
+        self._running = True
+
+        while self._running:
+            self._reconnect_attempts += 1
+            attempt = self._reconnect_attempts
+
+            try:
+                logger.info("Starting Discord Bot connection...")
+                await self.bot.start(self.token)
+            except discord.LoginFailure as e:
+                self._record_error(f"Login failed: {e}")
+                logger.error(f"Discord login failed: {e}")
+                await self._alert("login_error", f"Discord 登录失败: {e}")
+                raise
+            except discord.ConnectionClosed as e:
+                self._record_error(f"Connection closed: {e}")
+                logger.error(f"Discord connection closed: {e}")
+                await self._alert(
+                    "connection_closed",
+                    f"Discord 连接关闭（attempt={attempt}）: {e}",
+                )
+            except Exception as e:
+                self._record_error(str(e))
+                logger.error(f"Discord Bot error: {e}")
+                await self._alert("error", f"Discord Bot 异常（attempt={attempt}）: {e}")
+
+            if not self._running:
+                break
+
+            delay = self._next_backoff(attempt)
+            logger.warning(f"Discord Bot disconnected, retry in {delay:.1f}s (attempt={attempt})")
+            await asyncio.sleep(delay)
 
     async def stop(self) -> None:
+        self._running = False
+        self._connected = False
+
+        if self._supervisor_task and not self._supervisor_task.done():
+            self._supervisor_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await self._supervisor_task
+
         logger.info("Stopping Discord Bot...")
         await self.bot.close()
 
@@ -126,7 +283,26 @@ def get_discord_bot() -> DiscordBot | None:
     return _bot_instance
 
 
-async def start_discord_bot(on_message_callback: Callable | None = None) -> DiscordBot | None:
+def get_discord_bot_status() -> DiscordBotStatus:
+    if not _bot_instance:
+        return DiscordBotStatus(
+            enabled=False,
+            running=False,
+            connected=False,
+            reconnect_attempts=0,
+            last_connected_at=None,
+            last_event_at=None,
+            last_error_at=None,
+            last_error=None,
+            guild_count=0,
+        )
+    return _bot_instance.status()
+
+
+async def start_discord_bot(
+    on_message_callback: Callable | None = None,
+    on_alert_callback: Callable[[str], None] | None = None,
+) -> DiscordBot | None:
     global _bot_instance
 
     logger.info("Looking for Discord configuration...")
@@ -156,10 +332,11 @@ async def start_discord_bot(on_message_callback: Callable | None = None) -> Disc
         command_prefix=command_prefix,
         proxy=proxy,
         on_message_callback=on_message_callback,
+        on_alert_callback=on_alert_callback,
     )
 
     logger.info("Scheduling Discord Bot start task...")
-    asyncio.create_task(_bot_instance.start())
+    _bot_instance._supervisor_task = asyncio.create_task(_bot_instance.start())
     return _bot_instance
 
 

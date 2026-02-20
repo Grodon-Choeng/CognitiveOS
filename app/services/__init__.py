@@ -1,14 +1,16 @@
 from app.services.capture_service import CaptureService
 from app.services.discord_bot import (
     DiscordBot,
+    DiscordBotStatus,
     get_discord_bot,
+    get_discord_bot_status,
     start_discord_bot,
     stop_discord_bot,
 )
 from app.services.embedding_service import EmbeddingService
 from app.services.feishu_bot import (
     FeishuBot,
-    FeishuIncomingMessage,
+    FeishuBotStatus,
     get_feishu_bot,
     get_feishu_bot_status,
     start_feishu_bot,
@@ -26,9 +28,10 @@ from app.services.vector_store import VectorStore
 __all__ = [
     "CaptureService",
     "DiscordBot",
+    "DiscordBotStatus",
     "EmbeddingService",
     "FeishuBot",
-    "FeishuIncomingMessage",
+    "FeishuBotStatus",
     "KnowledgeItemService",
     "LLMService",
     "NotificationService",
@@ -38,10 +41,11 @@ __all__ = [
     "StructuringService",
     "VectorStore",
     "get_discord_bot",
+    "get_discord_bot_status",
     "get_feishu_bot",
     "get_feishu_bot_status",
-    "start_feishu_bot",
-    "stop_feishu_bot",
     "start_discord_bot",
+    "start_feishu_bot",
     "stop_discord_bot",
+    "stop_feishu_bot",
 ]

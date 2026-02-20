@@ -4,7 +4,7 @@ from typing import Any
 from litestar import Controller, get
 
 from app.constants import API_VERSION
-from app.services import get_feishu_bot_status
+from app.services import get_discord_bot_status, get_feishu_bot_status
 from app.utils.times import utc_time
 
 
@@ -24,6 +24,8 @@ class HealthController(Controller):
     @get(summary="健康检查", description="检查服务运行状态，返回服务健康信息")
     async def health(self) -> HealthResponse:
         feishu = get_feishu_bot_status()
+        discord = get_discord_bot_status()
+
         return HealthResponse(
             status="healthy",
             timestamp=utc_time().isoformat(),
@@ -37,6 +39,17 @@ class HealthController(Controller):
                     "last_event_at": feishu.last_event_at,
                     "last_error_at": feishu.last_error_at,
                     "last_error": feishu.last_error,
-                }
+                },
+                "discord_bot": {
+                    "enabled": discord.enabled,
+                    "running": discord.running,
+                    "connected": discord.connected,
+                    "reconnect_attempts": discord.reconnect_attempts,
+                    "guild_count": discord.guild_count,
+                    "last_connected_at": discord.last_connected_at,
+                    "last_event_at": discord.last_event_at,
+                    "last_error_at": discord.last_error_at,
+                    "last_error": discord.last_error,
+                },
             },
         )
