@@ -28,3 +28,5 @@ storage/structured/*.md
 Thumbs.db
 
 *.log
+/.codex/context/feishu_refactor_notes.md.gz
+/piccolo_migrations/

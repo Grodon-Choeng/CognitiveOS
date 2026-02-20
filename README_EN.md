@@ -97,7 +97,7 @@ Background task scans pending reminders every 30 seconds and auto-pushes when du
 
 See [docs/reminder.md](docs/reminder.md)
 
-### 6. Discord Bot ✅
+### 6. Discord / Feishu Bot ✅
 
 Bidirectional interaction mode, supports:
 - Receive and process messages
@@ -105,6 +105,7 @@ Bidirectional interaction mode, supports:
 - Knowledge capture
 
 See [docs/discord_bot.md](docs/discord_bot.md)
+and [docs/feishu_bot.md](docs/feishu_bot.md)
 
 ## Data Structures
 
@@ -323,9 +324,7 @@ IM_SECRET=SECxxx  # Signing secret
 **Feishu configuration:**
 ```bash
 IM_ENABLED=true
-IM_PROVIDER=feishu
-IM_WEBHOOK_URL=https://open.feishu.cn/open-apis/bot/v2/hook/YOUR_HOOK
-IM_SECRET=your_secret  # Optional
+IM_CONFIGS=[{"provider":"feishu","app_id":"cli_xxx","app_secret":"xxx","verification_token":"xxx","encrypt_key":"xxx","enabled":true}]
 ```
 
 ### Common Commands (Makefile)
@@ -571,6 +570,7 @@ Completed:
 - RAG retrieval mode
 - Prompt database storage
 - Discord Bot bidirectional interaction
+- Feishu Bot bidirectional interaction (long connection)
 - Reminder system (natural language time expressions)
 
 Next steps:

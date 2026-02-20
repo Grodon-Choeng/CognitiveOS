@@ -13,7 +13,7 @@ class BaseModel(Table):
     id = Serial(primary_key=True)
     uuid = UUID(default=uuid4, index=True)
     created_at = Timestamp(default=utc_time, index=True)
-    updated_at = Timestamp(default=utc_time, auto_update=True, index=True)
+    updated_at = Timestamp(default=utc_time, index=True)
 
     class Meta:
         abstract = True

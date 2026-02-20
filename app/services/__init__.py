@@ -6,6 +6,14 @@ from app.services.discord_bot import (
     stop_discord_bot,
 )
 from app.services.embedding_service import EmbeddingService
+from app.services.feishu_bot import (
+    FeishuBot,
+    FeishuIncomingMessage,
+    get_feishu_bot,
+    get_feishu_bot_status,
+    start_feishu_bot,
+    stop_feishu_bot,
+)
 from app.services.knowledge_item_service import KnowledgeItemService
 from app.services.llm_service import LLMService
 from app.services.notification_service import NotificationService
@@ -19,6 +27,8 @@ __all__ = [
     "CaptureService",
     "DiscordBot",
     "EmbeddingService",
+    "FeishuBot",
+    "FeishuIncomingMessage",
     "KnowledgeItemService",
     "LLMService",
     "NotificationService",
@@ -28,6 +38,10 @@ __all__ = [
     "StructuringService",
     "VectorStore",
     "get_discord_bot",
+    "get_feishu_bot",
+    "get_feishu_bot_status",
+    "start_feishu_bot",
+    "stop_feishu_bot",
     "start_discord_bot",
     "stop_discord_bot",
 ]

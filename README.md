@@ -97,7 +97,7 @@ Raw → LLM 输出 JSON → Markdown Builder → 双链生成
 
 详见 [docs/reminder.md](docs/reminder.md)
 
-### 6. Discord Bot ✅
+### 6. Discord / 飞书 Bot ✅
 
 双向交互模式，支持：
 - 接收消息并处理
@@ -105,6 +105,7 @@ Raw → LLM 输出 JSON → Markdown Builder → 双链生成
 - 知识捕获
 
 详见 [docs/discord_bot.md](docs/discord_bot.md)
+和 [docs/feishu_bot.md](docs/feishu_bot.md)
 
 ## 数据结构
 
@@ -323,9 +324,7 @@ IM_SECRET=SECxxx  # 加签密钥
 **飞书配置：**
 ```bash
 IM_ENABLED=true
-IM_PROVIDER=feishu
-IM_WEBHOOK_URL=https://open.feishu.cn/open-apis/bot/v2/hook/YOUR_HOOK
-IM_SECRET=your_secret  # 可选
+IM_CONFIGS=[{"provider":"feishu","app_id":"cli_xxx","app_secret":"xxx","verification_token":"xxx","encrypt_key":"xxx","enabled":true}]
 ```
 
 ### 常用命令 (Makefile)
@@ -571,6 +570,7 @@ Markdown 是展示层。真正的知识需要：
 - RAG 检索模式
 - 提示词数据库存储
 - Discord Bot 双向交互
+- 飞书 Bot 双向交互（长连接）
 - 提醒系统（自然语言时间表达式）
 
 下一步：

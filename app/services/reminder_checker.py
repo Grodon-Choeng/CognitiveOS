@@ -2,11 +2,11 @@ import asyncio
 from datetime import datetime, timedelta
 
 from app.models import Reminder
-from app.services import get_discord_bot
+from app.services import get_discord_bot, get_feishu_bot
 from app.utils.logging import logger
 
 
-async def send_reminder(bot, reminder: Reminder, is_advance: bool = False) -> bool:
+async def send_discord_reminder(bot, reminder: Reminder, is_advance: bool = False) -> bool:
     prefix = "⏰ **即将提醒** (1分钟后)" if is_advance else "⏰ **提醒**"
 
     try:
@@ -38,6 +38,33 @@ async def send_reminder(bot, reminder: Reminder, is_advance: bool = False) -> bo
     except Exception as e:
         logger.error(f"Failed to send reminder {reminder.id}: {e}")
         return False
+
+
+async def send_feishu_reminder(bot, reminder: Reminder, is_advance: bool = False) -> bool:
+    prefix = "⏰ 即将提醒(1分钟后)" if is_advance else "⏰ 提醒"
+    content = f"{prefix}: {reminder.content}"
+    try:
+        return await bot.send_text_to_user_or_chat(reminder.user_id, content)
+    except Exception as e:
+        logger.error(f"Failed to send Feishu reminder {reminder.id}: {e}")
+        return False
+
+
+async def send_reminder(reminder: Reminder, is_advance: bool = False) -> bool:
+    provider = (reminder.provider or "discord").lower()
+
+    if provider == "feishu":
+        bot = get_feishu_bot()
+        if not bot:
+            logger.warning("Feishu bot not available")
+            return False
+        return await send_feishu_reminder(bot, reminder, is_advance)
+
+    bot = get_discord_bot()
+    if not bot:
+        logger.warning("Discord bot not available")
+        return False
+    return await send_discord_reminder(bot, reminder, is_advance)
 
 
 def parse_reminder_from_row(row: dict) -> Reminder:
@@ -81,18 +108,12 @@ async def check_reminders() -> None:
                 .order_by(Reminder.remind_at)
             )
 
-            bot = get_discord_bot()
-            if not bot:
-                logger.warning("Discord bot not available")
-                await asyncio.sleep(30)
-                continue
-
             for row in rows:
                 try:
                     reminder = parse_reminder_from_row(row)
 
                     if reminder.remind_at <= now:
-                        success = await send_reminder(bot, reminder, is_advance=False)
+                        success = await send_reminder(reminder, is_advance=False)
                         if success:
                             await Reminder.update(is_sent=True, sent_at=datetime.now()).where(
                                 Reminder.id == reminder.id
@@ -100,7 +121,7 @@ async def check_reminders() -> None:
                             logger.info(f"Sent reminder: {reminder.content}")
 
                     elif reminder.remind_at <= advance_time and not reminder.is_advance_sent:
-                        success = await send_reminder(bot, reminder, is_advance=True)
+                        success = await send_reminder(reminder, is_advance=True)
                         if success:
                             await Reminder.update(is_advance_sent=True).where(
                                 Reminder.id == reminder.id
