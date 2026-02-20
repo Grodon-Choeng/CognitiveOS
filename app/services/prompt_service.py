@@ -1,3 +1,7 @@
+from cashews import cache
+
+from app.config import settings
+from app.core.service import BaseService
 from app.models.prompt import Prompt
 from app.repositories.prompt_repo import PromptRepository
 from app.utils.logging import logger
@@ -25,13 +29,18 @@ Please answer based on the context above.""",
 }
 
 
-class PromptService:
+class PromptService(BaseService[Prompt, PromptRepository]):
+    cache_prefix = "prompt"
+    cache_ttl = settings.cache_prompt_ttl
+
     def __init__(self, repo: PromptRepository) -> None:
-        self._repo = repo
-        self._cache: dict[str, Prompt] = {}
+        super().__init__(repo)
+
+    def _cache_key_by_name(self, name: str) -> str:
+        return self._cache_key("name", name)
 
     async def get(self, name: str) -> str:
-        prompt = await self._get_cached(name)
+        prompt = await self.get_prompt(name)
         if prompt:
             return prompt.content
 
@@ -43,7 +52,16 @@ class PromptService:
         raise ValueError(f"Prompt '{name}' not found")
 
     async def get_prompt(self, name: str) -> Prompt | None:
-        return await self._get_cached(name)
+        key = self._cache_key_by_name(name)
+        cached = await self._get_cached(Prompt, key)
+        if cached is not None:
+            return cached
+
+        prompt = await self._repo.get_by_name(name)
+        if prompt:
+            await self._set_cached(prompt, key)
+
+        return prompt
 
     async def get_with_fallback(self, name: str) -> str:
         return await self.get(name)
@@ -53,9 +71,31 @@ class PromptService:
         return template.format(**kwargs)
 
     async def list(self, category: str | None = None) -> list[Prompt]:
+        list_key = self._cache_key_list(category or "all")
+
+        cached_ids = await cache.get(list_key)
+        if cached_ids is not None:
+            logger.debug(f"Cache hit for prompt list: {list_key}")
+            prompts = []
+            for prompt_id in cached_ids:
+                prompt = await self._get_cached(Prompt, self._cache_key("id", prompt_id))
+                if prompt:
+                    prompts.append(prompt)
+            return prompts
+
         if category:
-            return await self._repo.get_by_category(category)
-        return await self._repo.list()
+            prompts = await self._repo.get_by_category(category)
+        else:
+            prompts = await self._repo.list()
+
+        prompt_ids = [p.id for p in prompts]
+        await cache.set(list_key, prompt_ids, expire=self.cache_ttl)
+
+        for prompt in prompts:
+            await self._set_cached(prompt, self._cache_key_by_name(prompt.name))
+
+        logger.debug(f"Cache miss for prompt list: {list_key}")
+        return prompts
 
     async def create(
         self,
@@ -70,13 +110,17 @@ class PromptService:
             description=description,
             category=category,
         )
+
+        await self._set_cached(prompt, self._cache_key_by_name(name))
+        await self._invalidate_list_cache()
+
         logger.info(f"Created prompt: {name}")
         return prompt
 
     async def update(
         self, name: str, content: str, description: str | None = None
     ) -> Prompt | None:
-        prompt = await self._get_cached(name)
+        prompt = await self.get_prompt(name)
         if not prompt:
             return None
 
@@ -88,43 +132,37 @@ class PromptService:
 
         prompt.content = content
         prompt.description = description
-        self._cache[name] = prompt
+
+        await self._set_cached(prompt, self._cache_key_by_name(name))
+        await self._invalidate_list_cache()
 
         logger.info(f"Updated prompt: {name}")
         return prompt
 
     async def delete(self, name: str) -> bool:
-        prompt = await self._get_cached(name)
+        prompt = await self.get_prompt(name)
         if not prompt:
             return False
 
         await self._repo.delete_by_id(prompt.id)
-        self._cache.pop(name, None)
+
+        await self._delete_cached(self._cache_key_by_name(name))
+        await self._invalidate_list_cache()
 
         logger.info(f"Deleted prompt: {name}")
         return True
-
-    async def _get_cached(self, name: str) -> Prompt | None:
-        if name in self._cache:
-            return self._cache[name]
-
-        prompt = await self._repo.get_by_name(name)
-        if prompt:
-            self._cache[name] = prompt
-
-        return prompt
-
-    def clear_cache(self) -> None:
-        self._cache.clear()
-        logger.debug("Prompt cache cleared")
 
     async def seed_defaults(self) -> int:
         count = 0
         for name, data in DEFAULT_PROMPTS.items():
             existing = await self._repo.get_by_name(name)
             if not existing:
-                await self._repo.create(**data)
+                prompt = await self._repo.create(**data)
+                await self._set_cached(prompt, self._cache_key_by_name(name))
                 count += 1
                 logger.info(f"Seeded prompt: {name}")
+
+        if count > 0:
+            await self._invalidate_list_cache()
 
         return count

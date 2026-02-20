@@ -30,6 +30,7 @@ class FeishuAdapter(IMAdapter):
                     json=payload,
                     timeout=10.0,
                 )
+                response.raise_for_status()
 
                 result = response.json()
 

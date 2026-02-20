@@ -20,8 +20,9 @@ from .exceptions import (
     ValidationError,
     ValidationException,
 )
-from .model import BaseModel, TimestampMixin
+from .model import BaseModel
 from .repository import BaseRepository, CursorPage
+from .service import BaseService
 
 __all__ = [
     "AppError",
@@ -45,7 +46,7 @@ __all__ = [
     "ValidationError",
     "ValidationException",
     "BaseModel",
-    "TimestampMixin",
     "BaseRepository",
     "CursorPage",
+    "BaseService",
 ]

@@ -25,6 +25,7 @@ class DiscordAdapter(IMAdapter):
                     json=payload,
                     timeout=10.0,
                 )
+                response.raise_for_status()
 
                 if response.status_code == 204 or response.status_code == 200:
                     logger.info("Discord message sent successfully")

@@ -48,7 +48,8 @@ class APIKeyMiddleware(AbstractMiddleware):
 
         await self.app(scope, receive, send)
 
-    def _is_excluded_path(self, path: str) -> bool:
+    @staticmethod
+    def _is_excluded_path(path: str) -> bool:
         for exclude_path in EXCLUDE_PATHS:
             if path == exclude_path or path.startswith(exclude_path + "/"):
                 return True

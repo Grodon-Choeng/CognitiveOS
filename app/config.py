@@ -3,7 +3,7 @@ from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from app.constants import CACHE_DEFAULT_TTL, DEFAULT_EMBEDDING_DIMENSION
+from app.constants import CACHE_DEFAULT_TTL, CACHE_PROMPT_TTL, DEFAULT_EMBEDDING_DIMENSION
 from app.enums import Environment, IMProvider
 
 
@@ -23,6 +23,7 @@ class Settings(BaseSettings):
     cache_url: str = "redis://localhost:6379/0"
     cache_enabled: bool = False
     cache_default_ttl: int = CACHE_DEFAULT_TTL
+    cache_prompt_ttl: int = CACHE_PROMPT_TTL
 
     log_level: str = "INFO"
 

@@ -1,9 +1,9 @@
 from piccolo.columns import Text, Varchar
 
-from app.core.model import BaseModel, TimestampMixin
+from app.core.model import BaseModel
 
 
-class Prompt(BaseModel, TimestampMixin):
+class Prompt(BaseModel):
     name = Varchar(length=100, unique=True)
     description = Varchar(length=255, null=True, default=None)
     content = Text()

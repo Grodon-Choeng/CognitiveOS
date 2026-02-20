@@ -25,6 +25,9 @@ class AppError(Exception):
         return result
 
 
+AppException = AppError
+
+
 class NotFoundError(AppError):
     def __init__(self, resource: str, identifier: Any) -> None:
         super().__init__(
@@ -32,6 +35,9 @@ class NotFoundError(AppError):
             message=f"{resource} not found",
             detail={"resource": resource, "identifier": str(identifier)},
         )
+
+
+NotFoundException = NotFoundError
 
 
 class ValidationError(AppError):
@@ -43,6 +49,9 @@ class ValidationError(AppError):
         )
 
 
+ValidationException = ValidationError
+
+
 class StorageError(AppError):
     def __init__(self, operation: str, detail: str | None = None) -> None:
         super().__init__(
@@ -50,6 +59,9 @@ class StorageError(AppError):
             message=f"Storage operation failed: {operation}",
             detail=detail,
         )
+
+
+StorageException = StorageError
 
 
 class LLMError(AppError):
@@ -61,6 +73,9 @@ class LLMError(AppError):
         )
 
 
+LLMException = LLMError
+
+
 class EmbeddingError(AppError):
     def __init__(self, operation: str, detail: str | None = None) -> None:
         super().__init__(
@@ -68,6 +83,9 @@ class EmbeddingError(AppError):
             message=f"Embedding operation failed: {operation}",
             detail=detail,
         )
+
+
+EmbeddingException = EmbeddingError
 
 
 class AuthenticationError(AppError):
@@ -78,12 +96,18 @@ class AuthenticationError(AppError):
         )
 
 
+AuthenticationException = AuthenticationError
+
+
 class AuthorizationError(AppError):
     def __init__(self, message: str = "Access denied") -> None:
         super().__init__(
             code=ErrorCode.AUTHORIZATION_ERROR,
             message=message,
         )
+
+
+AuthorizationException = AuthorizationError
 
 
 class RateLimitError(AppError):
@@ -96,6 +120,9 @@ class RateLimitError(AppError):
         )
 
 
+RateLimitException = RateLimitError
+
+
 class InternalError(AppError):
     def __init__(self, message: str = "Internal server error", detail: Any = None) -> None:
         super().__init__(
@@ -105,13 +132,4 @@ class InternalError(AppError):
         )
 
 
-AppException = AppError
-NotFoundException = NotFoundError
-ValidationException = ValidationError
-StorageException = StorageError
-LLMException = LLMError
-EmbeddingException = EmbeddingError
-AuthenticationException = AuthenticationError
-AuthorizationException = AuthorizationError
-RateLimitException = RateLimitError
 InternalException = InternalError

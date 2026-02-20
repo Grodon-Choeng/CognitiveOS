@@ -7,15 +7,15 @@ from litestar.response import Response
 
 from app.config import settings
 from app.container import AppProvider
-from app.core.exceptions import AppException
+from app.core.exceptions import AppError
 from app.enums import ErrorCode
 from app.middleware import APIKeyMiddleware, IMSignatureMiddleware, RequestTrackingMiddleware
 from app.routes.v1 import v1_router
 from app.utils.logging import logger
 
 
-def exception_handler(request: Request, exc: AppException | HTTPException) -> Response:
-    if isinstance(exc, AppException):
+def exception_handler(request: Request, exc: AppError | HTTPException) -> Response:
+    if isinstance(exc, AppError):
         logger.error(
             f"Application error: {exc.code.value} - {exc.message}",
             extra={"extra_fields": {"detail": exc.detail}},
@@ -81,7 +81,7 @@ container = make_async_container(AppProvider())
 app = Litestar(
     route_handlers=[v1_router],
     exception_handlers={
-        AppException: exception_handler,
+        AppError: exception_handler,
         HTTPException: exception_handler,
     },
     middleware=[

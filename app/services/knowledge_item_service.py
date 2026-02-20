@@ -1,57 +1,78 @@
-from datetime import datetime
 from uuid import UUID
 
 from cashews import cache
 
 from app.config import settings
-from app.core.exceptions import NotFoundException
+from app.core.exceptions import NotFoundError
 from app.core.repository import CursorPage
+from app.core.service import BaseService
 from app.enums import SortField, SortOrder
 from app.models.knowledge_item import KnowledgeItem
 from app.repositories.knowledge_item_repo import KnowledgeItemRepository
-from app.utils.jsons import parse_json_field
 from app.utils.logging import logger
 
 
-class KnowledgeItemService:
+class KnowledgeItemService(BaseService[KnowledgeItem, KnowledgeItemRepository]):
+    cache_prefix = "knowledge_item"
+    cache_ttl = settings.cache_default_ttl
+
     def __init__(self, repo: KnowledgeItemRepository) -> None:
-        self._repo = repo
+        super().__init__(repo)
 
-    async def get_id_by_uuid(self, uuid: UUID) -> int:
-        cache_key = f"knowledge_item:uuid:{uuid}"
-        cached_id = await cache.get(cache_key)
-
-        if cached_id is not None:
-            logger.debug(f"Cache hit for UUID->ID: {uuid}")
-            return int(cached_id)
-
-        item = await self._repo.get_by_uuid(uuid)
-        if not item:
-            raise NotFoundException("KnowledgeItem", uuid)
-
-        await cache.set(cache_key, str(item.id), expire=settings.cache_default_ttl)
-        logger.debug(f"Cache miss for UUID->ID: {uuid}, cached id={item.id}")
-        return item.id
-
-    async def get_by_uuid(self, uuid: UUID) -> KnowledgeItem:
-        item_id = await self.get_id_by_uuid(uuid)
-        return await self.get_by_id(item_id)
+    def _cache_key_uuid_to_id(self, uuid: UUID) -> str:
+        return self._cache_key("uuid2id", uuid)
 
     async def get_by_id(self, item_id: int) -> KnowledgeItem:
-        cache_key = f"knowledge_item:id:{item_id}"
-        cached_data = await cache.get(cache_key)
-
-        if cached_data is not None:
-            logger.debug(f"Cache hit for ID->data: {item_id}")
-            return self._deserialize_item(cached_data)
+        key = self._cache_key_by_id(item_id)
+        cached = await self._get_cached(KnowledgeItem, key)
+        if cached is not None:
+            return cached
 
         item = await self._repo.get_by_id(item_id)
         if not item:
-            raise NotFoundException("KnowledgeItem", item_id)
+            raise NotFoundError("KnowledgeItem", item_id)
 
-        await cache.set(cache_key, self._serialize_item(item), expire=settings.cache_default_ttl)
-        logger.debug(f"Cache miss for ID->data: {item_id}")
+        await self._set_cached(item, key)
+        await cache.set(self._cache_key_uuid_to_id(item.uuid), item.id, expire=self.cache_ttl)
         return item
+
+    async def get_by_uuid(self, uuid: UUID) -> KnowledgeItem:
+        uuid2id_key = self._cache_key_uuid_to_id(uuid)
+        item_id = await cache.get(uuid2id_key)
+
+        if item_id is not None:
+            return await self.get_by_id(item_id)
+
+        item = await self._repo.get_by_uuid(uuid)
+        if not item:
+            raise NotFoundError("KnowledgeItem", uuid)
+
+        await self._set_cached(item, self._cache_key_by_id(item.id))
+        await cache.set(uuid2id_key, item.id, expire=self.cache_ttl)
+        return item
+
+    async def get_by_ids(self, item_ids: list[int]) -> list[KnowledgeItem]:
+        if not item_ids:
+            return []
+
+        keys = [self._cache_key_by_id(item_id) for item_id in item_ids]
+        cached_items = await self._get_cached_batch(KnowledgeItem, keys)
+
+        missing_ids = []
+        for i, (item_id, cached) in enumerate(zip(item_ids, cached_items, strict=False)):
+            if cached is None:
+                missing_ids.append((i, item_id))
+
+        for i, item_id in missing_ids:
+            try:
+                item = await self._repo.get_by_id(item_id)
+                if item:
+                    await self._set_cached(item, self._cache_key_by_id(item_id))
+                    cached_items[i] = item
+            except Exception as e:
+                logger.error(f"Failed to load item {item_id}: {e}")
+
+        return [item for item in cached_items if item is not None]
 
     async def create(
         self, raw_text: str, source: str, tags: list[str] | None = None
@@ -62,11 +83,16 @@ class KnowledgeItemService:
         logger.info(f"Created knowledge item: uuid={item.uuid}, source={source}")
 
         await self._cache_item(item)
+        await cache.set(self._cache_key_uuid_to_id(item.uuid), item.id, expire=self.cache_ttl)
+        await self._invalidate_list_cache()
 
         return item
 
     async def get_recent(self, limit: int = 10) -> list[KnowledgeItem]:
-        return await self._repo.get_recent(limit=limit)
+        items = await self._repo.get_recent(limit=limit)
+        for item in items:
+            await self._set_cached(item, self._cache_key_by_id(item.id))
+        return items
 
     async def cursor_paginate(
         self,
@@ -75,21 +101,49 @@ class KnowledgeItemService:
         sort_field: SortField = SortField.CREATED_AT,
         sort_order: SortOrder = SortOrder.DESC,
     ) -> CursorPage[KnowledgeItem]:
-        return await self._repo.cursor_paginate(
+        list_key = self._cache_key_list(
+            sort_field.value, sort_order.value, limit, cursor or "first"
+        )
+
+        cached_ids = await cache.get(list_key)
+        if cached_ids is not None:
+            logger.debug(f"Cache hit for list: {list_key}")
+            items = await self.get_by_ids(cached_ids)
+            has_more = len(cached_ids) > limit
+            next_cursor = cached_ids[-1] if has_more and cached_ids else None
+            return CursorPage(
+                items=items[:limit],
+                next_cursor=str(next_cursor) if next_cursor else None,
+                has_more=has_more,
+            )
+
+        page = await self._repo.cursor_paginate(
             limit=limit,
             cursor=cursor,
             sort_field=sort_field,
             sort_order=sort_order,
         )
 
+        item_ids = [item.id for item in page.items]
+        await cache.set(list_key, item_ids, expire=self.cache_ttl)
+
+        for item in page.items:
+            await self._set_cached(item, self._cache_key_by_id(item.id))
+
+        logger.debug(f"Cache miss for list: {list_key}")
+        return page
+
     async def update_structured(
         self, uuid: UUID, structured_text: str, tags: list[str], links: list[str]
     ) -> bool:
-        item_id = await self.get_id_by_uuid(uuid)
-        result = await self._repo.update_structured(item_id, structured_text, tags, links)
+        item = await self.get_by_uuid(uuid)
+        result = await self._repo.update_structured(item.id, structured_text, tags, links)
 
         if result:
-            await self._invalidate_cache(item_id, uuid)
+            await self._delete_cached(
+                self._cache_key_by_id(item.id),
+                self._cache_key_uuid_to_id(uuid),
+            )
             logger.info(f"Updated knowledge item: uuid={uuid}")
 
         return result
@@ -97,6 +151,7 @@ class KnowledgeItemService:
     async def update_embedding(self, item_id: int, embedding: list[float]) -> bool:
         result = await self._repo.update_by_id(item_id, embedding=embedding)
         if result:
+            await self._delete_cached(self._cache_key_by_id(item_id))
             logger.info(f"Updated embedding for item: id={item_id}")
         return result is not None
 
@@ -106,55 +161,31 @@ class KnowledgeItemService:
         count = 0
         for item, embedding in zip(items, embeddings, strict=False):
             await self._repo.update_by_id(item.id, embedding=embedding)
+            await self._delete_cached(self._cache_key_by_id(item.id))
             count += 1
         logger.info(f"Updated embeddings for {count} items")
         return count
 
     async def search_by_tags(self, tags: list[str], limit: int = 10) -> list[KnowledgeItem]:
-        return await self._repo.search_by_tags(tags, limit)
+        items = await self._repo.search_by_tags(tags, limit)
+        for item in items:
+            await self._set_cached(item, self._cache_key_by_id(item.id))
+        return items
 
     async def filter_without_embedding(self, limit: int = 1000) -> list[KnowledgeItem]:
         items = await self._repo.filter(embedding=None)
         return items[:limit]
 
-    @staticmethod
-    def _serialize_item(item: KnowledgeItem) -> dict:
-        return {
-            "id": item.id,
-            "uuid": str(item.uuid),
-            "raw_text": item.raw_text,
-            "structured_text": item.structured_text,
-            "source": item.source,
-            "tags": parse_json_field(item.tags),
-            "links": parse_json_field(item.links),
-            "created_at": item.created_at.isoformat() if item.created_at else None,
-            "updated_at": item.updated_at.isoformat() if item.updated_at else None,
-        }
+    async def delete(self, uuid: UUID) -> bool:
+        item = await self.get_by_uuid(uuid)
+        result = await self._repo.delete_by_id(item.id)
 
-    @staticmethod
-    def _deserialize_item(data: dict) -> KnowledgeItem:
-        item = KnowledgeItem.__new__(KnowledgeItem)
-        item.id = data["id"]
-        item.uuid = UUID(data["uuid"])
-        item.raw_text = data["raw_text"]
-        item.structured_text = data["structured_text"]
-        item.source = data["source"]
-        item.tags = data["tags"]
-        item.links = data["links"]
-        item.created_at = datetime.fromisoformat(data["created_at"]) if data["created_at"] else None
-        item.updated_at = datetime.fromisoformat(data["updated_at"]) if data["updated_at"] else None
-        return item
+        if result:
+            await self._delete_cached(
+                self._cache_key_by_id(item.id),
+                self._cache_key_uuid_to_id(uuid),
+            )
+            await self._invalidate_list_cache()
+            logger.info(f"Deleted knowledge item: uuid={uuid}")
 
-    async def _cache_item(self, item: KnowledgeItem) -> None:
-        uuid_cache_key = f"knowledge_item:uuid:{item.uuid}"
-        id_cache_key = f"knowledge_item:id:{item.id}"
-
-        await cache.set(uuid_cache_key, str(item.id), expire=settings.cache_default_ttl)
-        await cache.set(id_cache_key, self._serialize_item(item), expire=settings.cache_default_ttl)
-
-    @staticmethod
-    async def _invalidate_cache(item_id: int, uuid: UUID) -> None:
-        await cache.delete(f"knowledge_item:uuid:{uuid}")
-        await cache.delete(f"knowledge_item:id:{item_id}")
-        await cache.delete_match("knowledge_item:recent:*")
-        logger.debug(f"Invalidated cache for item: id={item_id}, uuid={uuid}")
+        return result

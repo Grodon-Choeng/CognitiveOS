@@ -1,7 +1,11 @@
+import hashlib
+
 import litellm
+from cashews import cache
 from litellm import acompletion, aembedding
 
 from app.config import settings
+from app.constants import CACHE_DEFAULT_TTL
 from app.utils.logging import logger
 
 
@@ -50,29 +54,68 @@ class LLMService:
         return await self.chat(messages, temperature, max_tokens)
 
     @staticmethod
-    async def get_embedding(text: str) -> list[float]:
+    def _embedding_cache_key(text: str) -> str:
+        text_hash = hashlib.md5(text.encode()).hexdigest()
+        return f"embedding:{text_hash}"
+
+    async def get_embedding(self, text: str) -> list[float]:
+        key = self._embedding_cache_key(text)
+        cached = await cache.get(key)
+        if cached is not None:
+            logger.debug(f"Cache hit for embedding: {key}")
+            return cached
+
         try:
             response = await aembedding(
                 model=settings.embedding_model,
                 input=[text],
             )
             embedding = response.data[0]["embedding"]
+            await cache.set(key, embedding, expire=CACHE_DEFAULT_TTL * 12)
             logger.debug(f"Generated embedding: {len(embedding)} dimensions")
             return embedding
         except Exception as e:
             logger.error(f"Embedding generation failed: {e}")
             raise
 
-    @staticmethod
-    async def get_embeddings(texts: list[str]) -> list[list[float]]:
-        try:
-            response = await aembedding(
-                model=settings.embedding_model,
-                input=texts,
-            )
-            embeddings = [item["embedding"] for item in response.data]
-            logger.debug(f"Generated {len(embeddings)} embeddings")
-            return embeddings
-        except Exception as e:
-            logger.error(f"Batch embedding generation failed: {e}")
-            raise
+    async def get_embeddings(self, texts: list[str]) -> list[list[float]]:
+        if not texts:
+            return []
+
+        keys = [self._embedding_cache_key(text) for text in texts]
+        cached_results = await cache.get_many(*keys)
+
+        results = []
+        missing_indices = []
+        missing_texts = []
+        missing_keys = []
+
+        for i, (text, key, cached) in enumerate(zip(texts, keys, cached_results, strict=False)):
+            if cached is not None:
+                results.append(cached)
+            else:
+                missing_indices.append(i)
+                missing_texts.append(text)
+                missing_keys.append(key)
+                results.append(None)
+
+        if missing_texts:
+            try:
+                response = await aembedding(
+                    model=settings.embedding_model,
+                    input=missing_texts,
+                )
+                new_embeddings = [item["embedding"] for item in response.data]
+
+                for key, embedding in zip(missing_keys, new_embeddings, strict=False):
+                    await cache.set(key, embedding, expire=CACHE_DEFAULT_TTL * 12)
+
+                for i, embedding in zip(missing_indices, new_embeddings, strict=False):
+                    results[i] = embedding
+
+                logger.debug(f"Generated {len(new_embeddings)} embeddings")
+            except Exception as e:
+                logger.error(f"Batch embedding generation failed: {e}")
+                raise
+
+        return results

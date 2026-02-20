@@ -1,9 +1,9 @@
 from piccolo.columns import JSON, Text, Varchar
 
-from app.core import BaseModel, TimestampMixin
+from app.core import BaseModel
 
 
-class KnowledgeItem(BaseModel, TimestampMixin):
+class KnowledgeItem(BaseModel):
     raw_text = Text()
     structured_text = Text(null=True, default=None)
     source = Varchar(length=100)

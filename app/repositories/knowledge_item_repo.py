@@ -1,3 +1,5 @@
+import json
+
 from app.core.repository import BaseRepository
 from app.models.knowledge_item import KnowledgeItem
 
@@ -18,7 +20,14 @@ class KnowledgeItemRepository(BaseRepository[KnowledgeItem]):
         return result is not None
 
     async def search_by_tags(self, tags: list[str], limit: int = 10) -> list[KnowledgeItem]:
-        query = self.model.objects()
-        for tag in tags:
-            query = query.where(self.get_col("tags").contains(tag))
-        return await query.limit(limit).run()
+        all_items = await self.list(limit=1000)
+
+        matched = []
+        for item in all_items:
+            item_tags = item.tags if isinstance(item.tags, list) else json.loads(item.tags or "[]")
+            if any(tag in item_tags for tag in tags):
+                matched.append(item)
+                if len(matched) >= limit:
+                    break
+
+        return matched

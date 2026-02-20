@@ -32,10 +32,11 @@ class RetrievalService:
     async def search_and_retrieve(self, query: str, top_k: int = 5) -> list[KnowledgeItem]:
         results = await self.search_similar(query, top_k)
 
-        items = []
-        for result in results:
-            item = await self.knowledge_service.get_by_id(result["item_id"])
-            items.append(item)
+        if not results:
+            return []
+
+        item_ids = [result["item_id"] for result in results]
+        items = await self.knowledge_service.get_by_ids(item_ids)
 
         logger.info(f"Retrieved {len(items)} items for query")
         return items

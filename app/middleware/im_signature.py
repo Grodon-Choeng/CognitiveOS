@@ -42,7 +42,8 @@ class IMSignatureMiddleware(AbstractMiddleware):
 
         await self.app(scope, receive, send)
 
-    def _is_webhook_path(self, path: str) -> bool:
+    @staticmethod
+    def _is_webhook_path(path: str) -> bool:
         return path in IM_WEBHOOK_PATHS
 
     async def _verify_signature(self, request: Request) -> None:
