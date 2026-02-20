@@ -81,6 +81,10 @@ class Settings(BaseSettings):
 
     proxy_url: str = ""
 
+    note_system: str = "logseq"
+    note_path: str = "storage/logseq"
+    note_git_enabled: bool = True
+
     llm_model: str = "openai/gpt-4o-mini"
     llm_api_key: str = ""
     llm_base_url: str = ""
