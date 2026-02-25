@@ -108,9 +108,32 @@ class KnowledgeItemService(BaseService[KnowledgeItem, KnowledgeItemRepository]):
         cached_data = await cache.get(list_key)
         if cached_data is not None:
             logger.debug(f"Cache hit for list: {list_key}")
-            item_ids = cached_data.get("item_ids", [])
-            has_more = cached_data.get("has_more", False)
-            next_cursor = cached_data.get("next_cursor")
+            if isinstance(cached_data, dict):
+                item_ids = cached_data.get("item_ids", [])
+                has_more = cached_data.get("has_more", False)
+                next_cursor = cached_data.get("next_cursor")
+            elif isinstance(cached_data, list):
+                await cache.delete(list_key)
+                logger.debug(f"Cache format outdated, deleted: {list_key}")
+                page = await self._repo.cursor_paginate(
+                    limit=limit,
+                    cursor=cursor,
+                    sort_field=sort_field,
+                    sort_order=sort_order,
+                )
+                cache_data = {
+                    "item_ids": [item.id for item in page.items],
+                    "has_more": page.has_more,
+                    "next_cursor": page.next_cursor,
+                }
+                await cache.set(list_key, cache_data, expire=self.cache_ttl)
+                for item in page.items:
+                    await self._set_cached(item, self._cache_key_by_id(item.id))
+                return page
+            else:
+                item_ids = []
+                has_more = False
+                next_cursor = None
             items = await self.get_by_ids(item_ids[:limit])
             return CursorPage(
                 items=items,

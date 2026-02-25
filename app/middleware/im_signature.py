@@ -34,21 +34,23 @@ class IMSignatureMiddleware(AbstractMiddleware):
             await self.app(scope, receive, send)
             return
 
-        if not settings.im_enabled:
+        has_signature_headers = self._has_im_signature_headers(request)
+        provider = self._detect_provider(request)
+        if not provider:
+            if has_signature_headers:
+                logger.warning(f"Unknown provider for signed webhook request: {path}")
+                raise AuthenticationError("Unknown IM provider")
             await self.app(scope, receive, send)
             return
 
-        provider = self._detect_provider(request)
-        if not provider:
-            logger.warning(f"Unknown provider for webhook request: {path}")
-            await self.app(scope, receive, send)
-            return
+        if not settings.im_enabled:
+            logger.warning(f"IM disabled, rejecting webhook request for provider={provider.value}")
+            raise AuthenticationError("IM service is disabled")
 
         config = settings.get_im_config(provider)
         if not config:
             logger.warning(f"No config found for provider: {provider}")
-            await self.app(scope, receive, send)
-            return
+            raise AuthenticationError(f"IM provider {provider.value} not configured")
 
         if config.secret:
             await self._verify_signature(request, provider, config.secret)
@@ -60,7 +62,27 @@ class IMSignatureMiddleware(AbstractMiddleware):
         return path in IM_WEBHOOK_PATHS
 
     @staticmethod
+    def _has_im_signature_headers(request: Request) -> bool:
+        return (
+            bool(request.headers.get("X-Lark-Request-Timestamp"))
+            or bool(request.headers.get("X-Lark-Signature"))
+            or bool(request.headers.get("X-Lark-Request-Nonce"))
+            or bool(request.headers.get("timestamp"))
+            or bool(request.headers.get("sign"))
+            or bool(request.headers.get("X-Slack-Signature"))
+            or bool(request.headers.get("X-Slack-Request-Timestamp"))
+        )
+
+    @staticmethod
     def _detect_provider(request: Request) -> IMProvider | None:
+        # Prefer provider-specific signature headers over User-Agent heuristics.
+        if request.headers.get("X-Lark-Request-Timestamp") or request.headers.get(
+            "X-Lark-Signature"
+        ):
+            return IMProvider.FEISHU
+        if request.headers.get("timestamp") and request.headers.get("sign"):
+            return IMProvider.DINGTALK
+
         provider_header = request.headers.get("X-IM-Provider", "")
         if provider_header:
             try:

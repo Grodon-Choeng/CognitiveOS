@@ -29,7 +29,7 @@ Core Service Layer (Rule-First)
    ├── Prompt Service       # Prompt management
    ├── Notification Service # IM notification
    ├── Reflection Service   # Reflection (TODO)
-   └── Reminder Service     # Reminder system (TODO)
+   └── Reminder Service     # Reminder system
    ↓
 Memory Layer
    ├── Raw Markdown         # Raw records
@@ -222,7 +222,7 @@ CognitiveOS/
 │   │   ├── structuring_service.py # Structured output
 │   │   ├── vector_store.py        # FAISS vector store
 │   │   ├── reflection_service.py  # Reflection (TODO)
-│   │   └── reminder_service.py    # Reminder system (TODO)
+│   │   └── reminder_service.py    # Reminder system
 │   └── utils/
 │       ├── jsons.py               # JSON utilities
 │       ├── logging.py             # Logging system
@@ -302,7 +302,7 @@ Supported IM platforms:
 | Platform | Provider | Webhook Mode | Bot Long Connection Mode |
 |----------|----------|--------------|--------------------------|
 | WeCom | `wecom` | ✅ No signature | ❌ |
-| DingTalk | `dingtalk` | ✅ Signature verification | ✅ Stream mode |
+| DingTalk | `dingtalk` | ✅ Signature verification | ❌ Planned |
 | Feishu | `feishu` | ✅ Signature verification | ✅ SDK long connection |
 | Discord | `discord` | ✅ No signature | ✅ Bot API |
 

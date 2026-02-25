@@ -1,5 +1,6 @@
 from app.bot.discord_handler import handle_discord_message
 from app.bot.feishu_handler import handle_feishu_message
+from app.config import settings
 from app.services import (
     NotificationService,
     start_discord_bot,
@@ -21,6 +22,10 @@ async def _alert_ops(message: str) -> None:
 
 
 async def start_bot() -> None:
+    if not settings.im_enabled:
+        logger.info("IM disabled, skipping bot startup")
+        return
+
     await start_discord_bot(on_message_callback=handle_discord_message)
     await start_feishu_bot(
         on_message_callback=handle_feishu_message,
@@ -30,6 +35,9 @@ async def start_bot() -> None:
 
 
 async def stop_bot() -> None:
+    if not settings.im_enabled:
+        return
+
     stop_reminder_checker()
     await stop_discord_bot()
     await stop_feishu_bot()

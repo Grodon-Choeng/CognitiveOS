@@ -1,4 +1,4 @@
-.PHONY: help dev prod start stop restart status admin up down logs migrate reset-db test test-cov lint format check clean install shell worker
+.PHONY: help dev prod start stop restart status admin up down logs migrate migrate-new reset-db test test-cov lint format check clean install shell worker
 
 help:
 	@echo "CognitiveOS - Makefile Commands"
@@ -13,7 +13,8 @@ help:
 	@echo ""
 	@echo "Database:"
 	@echo "  make admin      Start Piccolo Admin (http://localhost:8080)"
-	@echo "  make migrate    Create and run database migrations"
+	@echo "  make migrate    Run pending migrations"
+	@echo "  make migrate-new Create and run new migration"
 	@echo "  make reset-db   Reset database (WARNING: destroys data)"
 	@echo ""
 	@echo "Docker:"
@@ -73,6 +74,9 @@ logs:
 	docker-compose logs -f redis
 
 migrate:
+	uv run piccolo migrations forwards cognitive
+
+migrate-new:
 	uv run piccolo migrations new cognitive --auto
 	uv run piccolo migrations forwards cognitive
 
@@ -102,7 +106,7 @@ check: lint test
 
 worker:
 	@echo "Starting ARQ worker..."
-	uv run arq app.tasks.worker.WorkerSettings
+	uv run arq app.tasks.indexing.WorkerSettings
 
 install:
 	uv sync

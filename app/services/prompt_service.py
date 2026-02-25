@@ -76,12 +76,16 @@ class PromptService(BaseService[Prompt, PromptRepository]):
         cached_names = await cache.get(list_key)
         if cached_names is not None:
             logger.debug(f"Cache hit for prompt list: {list_key}")
-            prompts = []
-            for prompt_name in cached_names:
-                prompt = await self._get_cached(Prompt, self._cache_key_by_name(prompt_name))
-                if prompt:
-                    prompts.append(prompt)
-            return prompts
+            if isinstance(cached_names, list) and all(isinstance(x, str) for x in cached_names):
+                prompts = []
+                for prompt_name in cached_names:
+                    prompt = await self._get_cached(Prompt, self._cache_key_by_name(prompt_name))
+                    if prompt:
+                        prompts.append(prompt)
+                return prompts
+            else:
+                await cache.delete(list_key)
+                logger.debug(f"Cache format outdated, deleted: {list_key}")
 
         if category:
             prompts = await self._repo.get_by_category(category)

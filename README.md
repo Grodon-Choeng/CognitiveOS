@@ -29,7 +29,7 @@ Core Service Layer（规则优先）
    ├── Prompt Service       # 提示词管理
    ├── Notification Service # IM 通知
    ├── Reflection Service   # 反思总结 (TODO)
-   └── Reminder Service     # 提醒系统 (TODO)
+   └── Reminder Service     # 提醒系统
    ↓
 Memory Layer
    ├── Raw Markdown         # 原始记录
@@ -222,7 +222,7 @@ CognitiveOS/
 │   │   ├── structuring_service.py # 结构化输出
 │   │   ├── vector_store.py        # FAISS 向量存储
 │   │   ├── reflection_service.py  # 反思总结 (TODO)
-│   │   └── reminder_service.py    # 提醒系统 (TODO)
+│   │   └── reminder_service.py    # 提醒系统
 │   └── utils/
 │       ├── jsons.py               # JSON 工具
 │       ├── logging.py             # 日志系统
@@ -302,7 +302,7 @@ LLM_API_KEY=sk-xxx
 | 平台 | Provider | Webhook 模式 | Bot 长连接模式 |
 |------|----------|-------------|---------------|
 | 企业微信 | `wecom` | ✅ 无签名 | ❌ |
-| 钉钉 | `dingtalk` | ✅ 签名校验 | ✅ Stream 模式 |
+| 钉钉 | `dingtalk` | ✅ 签名校验 | ❌ 规划中 |
 | 飞书 | `feishu` | ✅ 签名校验 | ✅ SDK 长连接 |
 | Discord | `discord` | ✅ 无签名 | ✅ Bot API |
 
