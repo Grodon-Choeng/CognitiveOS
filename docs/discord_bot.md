@@ -65,13 +65,20 @@ A bidirectional Discord Bot that enables interactive communication with Cognitiv
 ```env
 # .env
 IM_ENABLED=true
-IM_CONFIGS=[{"provider":"discord","bot_token":"YOUR_BOT_TOKEN","command_prefix":"!","enabled":true}]
+IM_CONFIGS=[{"provider":"discord","bot_token":"YOUR_BOT_TOKEN","command_prefix":"!","heartbeat_timeout":120,"enabled":true}]
 PROXY_URL=http://127.0.0.1:7897
 ```
 
 **Note**: `PROXY_URL` is required in China mainland for Discord connection.
 
 **注意**: 中国大陆需要配置 `PROXY_URL` 才能连接 Discord。
+
+若代理不稳定，可在 Discord 配置里强制直连（不走 `PROXY_URL`）：
+
+```env
+IM_ENABLED=true
+IM_CONFIGS=[{"provider":"discord","bot_token":"YOUR_BOT_TOKEN","command_prefix":"!","bypass_proxy":true,"heartbeat_timeout":120,"enabled":true}]
+```
 
 ## Commands / 命令
 

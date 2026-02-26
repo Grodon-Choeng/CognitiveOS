@@ -11,7 +11,21 @@
 
 ## 配置说明
 
-使用 `IM_CONFIGS` 配置飞书应用凭证：
+推荐使用 `config.yml` 配置飞书应用凭证（优先于 `.env` 中的 `IM_CONFIGS`）：
+
+```yaml
+im_enabled: true
+im_configs:
+  - provider: feishu
+    enabled: true
+    app_id: "cli_xxx"
+    app_secret: "xxx"
+    verification_token: "xxx"
+    encrypt_key: "xxx"
+    bypass_proxy: true
+```
+
+也可继续使用 `.env` 的 `IM_CONFIGS`：
 
 ```env
 IM_ENABLED=true
@@ -21,6 +35,7 @@ IM_CONFIGS=[
     "enabled":true,
     "app_id":"cli_xxx",
     "app_secret":"xxx",
+    "bypass_proxy":true,
     "verification_token":"xxx",
     "encrypt_key":"xxx"
   }
@@ -30,6 +45,7 @@ IM_CONFIGS=[
 注意事项：
 
 - `app_id` 和 `app_secret` 是长连接模式的必需参数
+- `bypass_proxy` 为 `true` 时，会为飞书域名自动设置 `NO_PROXY` 例外（适合本地代理环境）
 - `verification_token` 和 `encrypt_key` 需与飞书事件订阅配置一致
 - 如果同时配置了 `webhook_url`，仍可用于单向通知 API
 

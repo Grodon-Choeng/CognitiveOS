@@ -38,25 +38,25 @@ help:
 	@echo "  make clean      Remove cache and compiled files"
 
 dev:
-	uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+	uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8001
 
 prod:
-	uv run uvicorn app.main:app --host 0.0.0.0 --port 8000
+	uv run uvicorn app.main:app --host 0.0.0.0 --port 8001
 
 start:
 	@echo "Starting server..."
-	uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 &
+	uv run uvicorn app.main:app --host 0.0.0.0 --port 8001 &
 	@sleep 2
-	@curl -s http://localhost:8000/api/v1/health > /dev/null && echo "Server started at http://localhost:8000" || echo "Server failed to start"
+	@curl -s http://localhost:8001/api/v1/health > /dev/null && echo "Server started at http://localhost:8001" || echo "Server failed to start"
 
 stop:
 	@echo "Stopping server..."
-	@lsof -ti:8000 | xargs kill -9 2>/dev/null && echo "Server stopped" || echo "No server running on port 8000"
+	@lsof -ti:8001 | xargs kill -9 2>/dev/null && echo "Server stopped" || echo "No server running on port 8001"
 
 restart: stop start
 
 status:
-	@curl -s http://localhost:8000/api/v1/health > /dev/null 2>&1 && echo "Server is running at http://localhost:8000" || echo "Server is not running"
+	@curl -s http://localhost:8001/api/v1/health > /dev/null 2>&1 && echo "Server is running at http://localhost:8001" || echo "Server is not running"
 
 admin:
 	@echo "Starting Piccolo Admin at http://localhost:8080"

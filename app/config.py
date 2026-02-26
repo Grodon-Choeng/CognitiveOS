@@ -95,6 +95,7 @@ class Settings(BaseSettings):
 
     api_key: str = ""
     api_key_header: str = "X-API-Key"
+    config_file: str = "config.yml"
 
     @field_validator("im_configs", mode="before")
     @classmethod
@@ -110,7 +111,34 @@ class Settings(BaseSettings):
 
     def __init__(self, **kwargs: Any) -> None:
         super().__init__(**kwargs)
+        self._load_yaml_config()
         self._migrate_legacy_im_config()
+
+    def _load_yaml_config(self) -> None:
+        config_path = Path(self.config_file)
+        if not config_path.exists():
+            return
+
+        try:
+            import yaml
+        except Exception:
+            return
+
+        try:
+            data = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+        except Exception:
+            return
+
+        if not isinstance(data, dict):
+            return
+
+        # YAML config has higher priority than .env for IM settings.
+        if "im_enabled" in data:
+            self.im_enabled = bool(data["im_enabled"])
+
+        im_configs = data.get("im_configs")
+        if isinstance(im_configs, list):
+            self.im_configs = [cfg for cfg in im_configs if isinstance(cfg, dict)]
 
     def _migrate_legacy_im_config(self) -> None:
         if self.im_provider and self.im_webhook_url and not self.im_configs:

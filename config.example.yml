@@ -1,0 +1,16 @@
+im_enabled: true
+im_configs:
+  - provider: feishu
+    enabled: true
+    app_id: "cli_xxx"
+    app_secret: "xxx"
+    verification_token: "xxx"
+    encrypt_key: "xxx"
+    bypass_proxy: true
+
+  # - provider: discord
+  #   enabled: false
+  #   bot_token: "YOUR_BOT_TOKEN"
+  #   command_prefix: "!"
+  #   bypass_proxy: true
+  #   heartbeat_timeout: 120

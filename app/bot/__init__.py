@@ -26,11 +26,21 @@ async def start_bot() -> None:
         logger.info("IM disabled, skipping bot startup")
         return
 
-    await start_discord_bot(on_message_callback=handle_discord_message)
-    await start_feishu_bot(
-        on_message_callback=handle_feishu_message,
-        on_alert_callback=_alert_ops,
-    )
+    enabled_providers = {cfg.provider.value for cfg in settings.get_im_configs()}
+
+    if "discord" in enabled_providers:
+        await start_discord_bot(on_message_callback=handle_discord_message)
+    else:
+        logger.info("Discord bot disabled by config")
+
+    if "feishu" in enabled_providers:
+        await start_feishu_bot(
+            on_message_callback=handle_feishu_message,
+            on_alert_callback=_alert_ops,
+        )
+    else:
+        logger.info("Feishu bot disabled by config")
+
     start_reminder_checker()
 
 

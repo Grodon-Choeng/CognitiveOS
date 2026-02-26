@@ -1,5 +1,6 @@
 import asyncio
 import json
+import os
 import random
 from collections.abc import Callable
 from contextlib import suppress
@@ -50,6 +51,7 @@ class FeishuBot:
         app_secret: str,
         verification_token: str = "",
         encrypt_key: str = "",
+        bypass_proxy: bool = False,
         on_message_callback: Callable[[FeishuIncomingMessage], Any] | None = None,
         on_alert_callback: Callable[[str], Any] | None = None,
     ) -> None:
@@ -60,12 +62,14 @@ class FeishuBot:
         self.app_secret = app_secret
         self.verification_token = verification_token
         self.encrypt_key = encrypt_key
+        self.bypass_proxy = bypass_proxy
         self.on_message_callback = on_message_callback
         self.on_alert_callback = on_alert_callback
 
         self._loop: asyncio.AbstractEventLoop | None = None
         self._supervisor_task: asyncio.Task | None = None
         self._ws_client: Any = None
+        self._ws_loop: asyncio.AbstractEventLoop | None = None
         self._client = lark.Client.builder().app_id(app_id).app_secret(app_secret).build()
         self._user_chat_map: dict[str, str] = {}
         self._seen_messages: dict[str, datetime] = {}
@@ -78,6 +82,25 @@ class FeishuBot:
         self._last_event_at: datetime | None = None
         self._last_error_at: datetime | None = None
         self._last_error: str | None = None
+
+    def _ensure_no_proxy_for_feishu(self) -> None:
+        if not self.bypass_proxy:
+            return
+
+        hosts = {
+            "open.feishu.cn",
+            ".feishu.cn",
+            "open.larksuite.com",
+            ".larksuite.com",
+            ".larkoffice.com",
+        }
+        existing = os.environ.get("NO_PROXY", "")
+        merged = {h.strip() for h in existing.split(",") if h.strip()}
+        merged.update(hosts)
+        value = ",".join(sorted(merged))
+
+        os.environ["NO_PROXY"] = value
+        os.environ["no_proxy"] = value
 
     def status(self) -> FeishuBotStatus:
         return FeishuBotStatus(
@@ -103,11 +126,8 @@ class FeishuBot:
     async def stop(self) -> None:
         self._running = False
 
-        if self._ws_client and hasattr(self._ws_client, "stop"):
-            try:
-                await asyncio.to_thread(self._ws_client.stop)
-            except Exception as e:
-                logger.warning(f"Failed to stop Feishu ws client gracefully: {e}")
+        if self._ws_loop and not self._ws_loop.is_closed():
+            self._ws_loop.call_soon_threadsafe(self._ws_loop.stop)
 
         if self._supervisor_task and not self._supervisor_task.done():
             self._supervisor_task.cancel()
@@ -146,8 +166,19 @@ class FeishuBot:
 
     def _run_ws_client_blocking(self) -> None:
         self._connected = False
+        self._ensure_no_proxy_for_feishu()
 
         assert lark is not None
+        import lark_oapi.ws.client as lark_ws_client
+
+        # lark-oapi keeps a module-level event loop and uses run_until_complete().
+        # In Uvicorn, the default loop is already running, so we must isolate WS
+        # client execution in a dedicated loop bound to this worker thread.
+        thread_loop = asyncio.new_event_loop()
+        old_loop = lark_ws_client.loop
+        lark_ws_client.loop = thread_loop
+        self._ws_loop = thread_loop
+        asyncio.set_event_loop(thread_loop)
         dispatcher = (
             lark.EventDispatcherHandler.builder(
                 self.verification_token,
@@ -157,18 +188,25 @@ class FeishuBot:
             .build()
         )
 
-        self._ws_client = lark.ws.Client(
-            self.app_id,
-            self.app_secret,
-            event_handler=dispatcher,
-            log_level=lark.LogLevel.INFO,
-        )
+        try:
+            self._ws_client = lark.ws.Client(
+                self.app_id,
+                self.app_secret,
+                event_handler=dispatcher,
+                log_level=lark.LogLevel.INFO,
+                auto_reconnect=False,
+            )
 
-        self._connected = True
-        self._last_connected_at = datetime.now(UTC)
-        logger.info("Feishu ws client connected")
-        self._ws_client.start()
-        self._connected = False
+            self._connected = True
+            self._last_connected_at = datetime.now(UTC)
+            logger.info("Feishu ws client connected")
+            self._ws_client.start()
+            self._connected = False
+        finally:
+            self._ws_loop = None
+            lark_ws_client.loop = old_loop
+            asyncio.set_event_loop(None)
+            thread_loop.close()
 
     def _record_error(self, error: str) -> None:
         self._last_error = error
@@ -191,16 +229,27 @@ class FeishuBot:
             future.add_done_callback(self._log_future_exception)
 
     def _handle_message_event(self, data: Any) -> None:
+        logger.info("[Feishu] Incoming event received")
         incoming = self._parse_incoming_message(data)
         if not incoming:
+            logger.info("[Feishu] Incoming event ignored (unsupported type or missing fields)")
             return
 
         if self._is_duplicate(incoming.message_id):
+            logger.info(f"[Feishu] Duplicate message ignored: message_id={incoming.message_id}")
             return
 
         self._user_chat_map[incoming.user_open_id] = incoming.chat_id
         self._last_event_at = datetime.now(UTC)
         self._cleanup_seen_messages()
+        logger.info(
+            "[Feishu] Message parsed: "
+            f"message_id={incoming.message_id}, "
+            f"chat_id={incoming.chat_id}, "
+            f"user_open_id={incoming.user_open_id}, "
+            f"chat_type={incoming.chat_type}, "
+            f"text={incoming.text[:100]}"
+        )
 
         if not self.on_message_callback or not self._loop:
             return
@@ -319,6 +368,7 @@ class FeishuBot:
             return False
         if not CreateMessageRequest or not CreateMessageRequestBody:
             return False
+        self._ensure_no_proxy_for_feishu()
 
         content = json.dumps({"text": text}, ensure_ascii=False)
         request = (
@@ -393,12 +443,14 @@ async def start_feishu_bot(
 
     verification_token = str(feishu_config.extra.get("verification_token", ""))
     encrypt_key = str(feishu_config.extra.get("encrypt_key", ""))
+    bypass_proxy = bool(feishu_config.extra.get("bypass_proxy", False))
 
     _bot_instance = FeishuBot(
         app_id=app_id,
         app_secret=app_secret,
         verification_token=verification_token,
         encrypt_key=encrypt_key,
+        bypass_proxy=bypass_proxy,
         on_message_callback=on_message_callback,
         on_alert_callback=on_alert_callback,
     )

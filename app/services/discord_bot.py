@@ -32,17 +32,20 @@ class DiscordBot:
         token: str,
         command_prefix: str = "!",
         proxy: str | None = None,
+        heartbeat_timeout: float = 120.0,
         on_message_callback: Callable | None = None,
         on_alert_callback: Callable[[str], None] | None = None,
     ) -> None:
         self.token = SecretStr(token)
         self.command_prefix = command_prefix
         self.proxy = proxy
+        self.heartbeat_timeout = heartbeat_timeout
         self.on_message_callback = on_message_callback
         self.on_alert_callback = on_alert_callback
 
         self._loop: asyncio.AbstractEventLoop | None = None
         self._supervisor_task: asyncio.Task | None = None
+        self._disconnect_monitor_task: asyncio.Task | None = None
 
         self._running = False
         self._connected = False
@@ -56,6 +59,7 @@ class DiscordBot:
 
         logger.info(f"Initializing Discord Bot with prefix: {command_prefix}")
         logger.info(f"Token length: {len(self.token)} chars, starts with: {self.token}...")
+        logger.info(f"Discord heartbeat timeout: {heartbeat_timeout}s")
         if proxy:
             logger.info(f"Using proxy: {proxy}")
 
@@ -75,6 +79,7 @@ class DiscordBot:
             command_prefix=command_prefix,
             intents=intents,
             connector=connector,
+            heartbeat_timeout=heartbeat_timeout,
         )
 
         if proxy:
@@ -145,6 +150,16 @@ class DiscordBot:
             self._seen_messages.pop(msg_id, None)
 
     def _setup_events(self) -> None:
+        async def _confirm_disconnect(attempt: int, grace_seconds: int = 8) -> None:
+            await asyncio.sleep(grace_seconds)
+            if not self._running or self._connected:
+                return
+            self._record_error(f"Disconnected for more than {grace_seconds}s")
+            await self._alert(
+                "disconnect",
+                f"Discord Bot 断开连接（attempt={attempt}, 持续>{grace_seconds}s）",
+            )
+
         @self.bot.event
         async def on_ready():
             self._connected = True
@@ -165,17 +180,18 @@ class DiscordBot:
         async def on_disconnect():
             self._connected = False
             self._reconnect_attempts += 1
-            logger.warning(
-                f"Discord Bot disconnected from Discord (attempt={self._reconnect_attempts})"
-            )
-            await self._alert(
-                "disconnect",
-                f"Discord Bot 断开连接（attempt={self._reconnect_attempts}）",
-            )
+            attempt = self._reconnect_attempts
+            logger.warning(f"Discord Bot disconnected from Discord (attempt={attempt})")
+            if self._disconnect_monitor_task and not self._disconnect_monitor_task.done():
+                self._disconnect_monitor_task.cancel()
+            self._disconnect_monitor_task = asyncio.create_task(_confirm_disconnect(attempt))
 
         @self.bot.event
         async def on_resumed():
             self._connected = True
+            self._reconnect_attempts = 0
+            if self._disconnect_monitor_task and not self._disconnect_monitor_task.done():
+                self._disconnect_monitor_task.cancel()
             logger.info("Discord Bot resumed session")
 
         @self.bot.event
@@ -268,6 +284,11 @@ class DiscordBot:
         self._running = False
         self._connected = False
 
+        if self._disconnect_monitor_task and not self._disconnect_monitor_task.done():
+            self._disconnect_monitor_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await self._disconnect_monitor_task
+
         if self._supervisor_task and not self._supervisor_task.done():
             self._supervisor_task.cancel()
             with suppress(asyncio.CancelledError):
@@ -325,13 +346,18 @@ async def start_discord_bot(
         return None
 
     command_prefix = discord_config.extra.get("command_prefix", "!")
-    proxy = discord_config.extra.get("proxy") or settings.proxy_url or None
+    bypass_proxy = bool(discord_config.extra.get("bypass_proxy", False))
+    proxy = (
+        None if bypass_proxy else (discord_config.extra.get("proxy") or settings.proxy_url or None)
+    )
+    heartbeat_timeout = float(discord_config.extra.get("heartbeat_timeout", 120.0))
 
     logger.info("Creating Discord Bot instance...")
     _bot_instance = DiscordBot(
         token=bot_token,
         command_prefix=command_prefix,
         proxy=proxy,
+        heartbeat_timeout=heartbeat_timeout,
         on_message_callback=on_message_callback,
         on_alert_callback=on_alert_callback,
     )
