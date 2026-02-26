@@ -25,7 +25,7 @@ async def handle_discord_message(message) -> None:
         await reply(f"处理消息失败: {e}")
 
 
-async def handle_discord_alert(message: str) -> None:
+def handle_discord_alert(message: str) -> None:
     logger.error(f"[Discord Alert] {message}")
 
 

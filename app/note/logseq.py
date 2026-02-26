@@ -1,10 +1,20 @@
 import asyncio
 import subprocess
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
 from app.note.base import NoteAdapter, NoteEntry, NoteType
 from app.utils.logging import logger
+
+
+@dataclass
+class GitResult:
+    ok: bool
+    skipped: bool = False
+    stdout: str = ""
+    stderr: str = ""
+    reason: str = ""
 
 
 class LogseqAdapter(NoteAdapter):
@@ -19,72 +29,109 @@ class LogseqAdapter(NoteAdapter):
         logger.info(f"Logseq journals path: {self.journals_path}")
 
     def _run_git_command(self, *args: str) -> subprocess.CompletedProcess:
-        result = subprocess.run(
+        return subprocess.run(
             ["git"] + list(args),
             cwd=str(self.base_path),
             capture_output=True,
             text=True,
         )
-        return result
+
+    async def _git(self, *args: str) -> GitResult:
+        try:
+            result = await asyncio.to_thread(self._run_git_command, *args)
+        except Exception as e:
+            return GitResult(ok=False, stderr=str(e), reason="exec_error")
+
+        return GitResult(
+            ok=result.returncode == 0,
+            stdout=(result.stdout or "").strip(),
+            stderr=(result.stderr or "").strip(),
+            reason="ok" if result.returncode == 0 else "command_failed",
+        )
+
+    async def _is_git_repo(self) -> bool:
+        result = await self._git("rev-parse", "--is-inside-work-tree")
+        return result.ok and result.stdout.lower() == "true"
+
+    async def _is_working_tree_clean(self) -> bool:
+        result = await self._git("status", "--porcelain")
+        if not result.ok:
+            return False
+        return result.stdout == ""
 
     async def git_pull(self) -> bool:
         if not self.auto_git:
             return True
 
-        try:
-            result = await asyncio.to_thread(self._run_git_command, "pull", "--rebase")
-            if result.returncode == 0:
-                logger.info("Git pull successful")
-                return True
-            else:
-                logger.warning(f"Git pull failed: {result.stderr}")
-                return False
-        except Exception as e:
-            logger.error(f"Git pull error: {e}")
-            return False
+        if not await self._is_git_repo():
+            logger.info(f"Git pull skipped: not a git repo ({self.base_path})")
+            return True
+
+        if not await self._is_working_tree_clean():
+            logger.info("Git pull skipped: working tree has uncommitted changes")
+            return True
+
+        result = await self._git("pull", "--rebase")
+        if result.ok:
+            logger.info("Git pull successful")
+            return True
+
+        logger.warning(f"Git pull failed: {result.stderr or result.stdout}")
+        return False
 
     async def git_commit(self, message: str) -> bool:
         if not self.auto_git:
             return True
 
-        try:
-            await asyncio.to_thread(self._run_git_command, "add", "-A")
-            result = await asyncio.to_thread(self._run_git_command, "commit", "-m", message)
-            if result.returncode == 0:
-                logger.info(f"Git commit: {message}")
-                return True
-            elif "nothing to commit" in result.stdout:
-                logger.debug("Nothing to commit")
-                return True
-            else:
-                logger.warning(f"Git commit failed: {result.stderr}")
-                return False
-        except Exception as e:
-            logger.error(f"Git commit error: {e}")
+        if not await self._is_git_repo():
+            logger.info(f"Git commit skipped: not a git repo ({self.base_path})")
+            return True
+
+        add_result = await self._git("add", "-A")
+        if not add_result.ok:
+            logger.warning(f"Git add failed: {add_result.stderr or add_result.stdout}")
             return False
+
+        commit_result = await self._git("commit", "-m", message)
+        if commit_result.ok:
+            logger.info(f"Git commit: {message}")
+            return True
+
+        output = f"{commit_result.stdout}\n{commit_result.stderr}".lower()
+        if "nothing to commit" in output:
+            logger.debug("Git commit skipped: nothing to commit")
+            return True
+
+        logger.warning(f"Git commit failed: {commit_result.stderr or commit_result.stdout}")
+        return False
 
     async def git_push(self) -> bool:
         if not self.auto_git:
             return True
 
-        try:
-            result = await asyncio.to_thread(self._run_git_command, "push")
-            if result.returncode == 0:
-                logger.info("Git push successful")
-                return True
-            else:
-                logger.warning(f"Git push failed: {result.stderr}")
-                return False
-        except Exception as e:
-            logger.error(f"Git push error: {e}")
-            return False
+        if not await self._is_git_repo():
+            logger.info(f"Git push skipped: not a git repo ({self.base_path})")
+            return True
+
+        result = await self._git("push")
+        if result.ok:
+            logger.info("Git push successful")
+            return True
+
+        logger.warning(f"Git push failed: {result.stderr or result.stdout}")
+        return False
 
     async def git_sync_and_commit(self, message: str) -> bool:
-        await self.git_pull()
-        success = await self.git_commit(message)
-        if success:
-            await self.git_push()
-        return success
+        pull_ok = await self.git_pull()
+        if not pull_ok:
+            return False
+
+        commit_ok = await self.git_commit(message)
+        if not commit_ok:
+            return False
+
+        await self.git_push()
+        return True
 
     @property
     def name(self) -> str:

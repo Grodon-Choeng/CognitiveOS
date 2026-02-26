@@ -32,7 +32,8 @@ class BaseService[T: BaseModel, R: BaseRepository]:
     def _cache_key_list(self, *args: Any) -> str:
         return self._cache_key("list", *args)
 
-    async def _get_cached(self, model_class: type[T], key: str) -> T | None:
+    @staticmethod
+    async def _get_cached(model_class: type[T], key: str) -> T | None:
         cached = await get_cached_model(model_class, key)
         if cached is not None:
             logger.debug(f"Cache hit: {key}")
@@ -42,10 +43,12 @@ class BaseService[T: BaseModel, R: BaseRepository]:
         await set_cached_model(item, key, ttl or self.cache_ttl)
         logger.debug(f"Cache set: {key}")
 
-    async def _get_cached_batch(self, model_class: type[T], keys: list[str]) -> list[T | None]:
+    @staticmethod
+    async def _get_cached_batch(model_class: type[T], keys: list[str]) -> list[T | None]:
         return await get_cached_models(model_class, keys)
 
-    async def _delete_cached(self, *keys: str) -> None:
+    @staticmethod
+    async def _delete_cached(*keys: str) -> None:
         await delete_cached_keys(*keys)
         for key in keys:
             logger.debug(f"Cache deleted: {key}")
