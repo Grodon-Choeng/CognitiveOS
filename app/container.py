@@ -1,7 +1,7 @@
 from dishka import Provider, Scope, provide
 
+from app.channels import IMManager
 from app.config import settings
-from app.im import IMManager
 from app.repositories import KnowledgeItemRepository, PromptRepository
 from app.services import (
     CaptureService,

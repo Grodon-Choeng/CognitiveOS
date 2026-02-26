@@ -1,5 +1,5 @@
 from app.bot.message_service import BotMessageService, IncomingMessage
-from app.services.feishu_bot import FeishuIncomingMessage, get_feishu_bot
+from app.channels.feishu import FeishuIncomingMessage, get_feishu_bot
 from app.utils.logging import logger
 
 service = BotMessageService()

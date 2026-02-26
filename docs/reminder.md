@@ -65,10 +65,14 @@ app/
 
 ### Discord Bot Setup / Discord Bot 配置
 
-```env
-IM_ENABLED=true
-IM_CONFIGS=[{"provider":"discord","bot_token":"YOUR_BOT_TOKEN","command_prefix":"!","enabled":true}]
-PROXY_URL=http://127.0.0.1:7897
+```yaml
+im_enabled: true
+im_configs:
+  - provider: discord
+    enabled: true
+    bot_token: "YOUR_BOT_TOKEN"
+    command_prefix: "!"
+    heartbeat_timeout: 120
 ```
 
 ### Database Migration / 数据库迁移

@@ -1,34 +1,27 @@
-import base64
-import hashlib
-import hmac
-import time
-import urllib.parse
 from typing import Any
 
 import httpx
 
+from app.channels.adapter_base import IMAdapter
+from app.channels.message import IMMessage, IMSendResult, MessageType
 from app.utils.logging import logger
 
-from .base import IMAdapter, IMMessage, IMSendResult, MessageType
 
-
-class DingTalkAdapter(IMAdapter):
-    def __init__(self, webhook_url: str, secret: str = "") -> None:
+class WeComAdapter(IMAdapter):
+    def __init__(self, webhook_url: str) -> None:
         self.webhook_url = webhook_url
-        self.secret = secret
 
     @property
     def name(self) -> str:
-        return "dingtalk"
+        return "wecom"
 
     async def send(self, message: IMMessage) -> IMSendResult:
         payload = self._build_payload(message)
-        url = self._build_signed_url()
 
         try:
             async with httpx.AsyncClient() as client:
                 response = await client.post(
-                    url,
+                    self.webhook_url,
                     json=payload,
                     timeout=10.0,
                 )
@@ -37,41 +30,23 @@ class DingTalkAdapter(IMAdapter):
                 result = response.json()
 
                 if result.get("errcode") == 0:
-                    logger.info("DingTalk message sent successfully")
+                    logger.info("WeCom message sent successfully")
                     return IMSendResult(success=True)
 
                 error_msg = result.get("errmsg", "Unknown error")
-                logger.error(f"DingTalk send failed: {error_msg}")
+                logger.error(f"WeCom send failed: {error_msg}")
                 return IMSendResult(success=False, error=error_msg)
 
         except Exception as e:
-            logger.error(f"DingTalk send error: {e}")
+            logger.error(f"WeCom send error: {e}")
             return IMSendResult(success=False, error=str(e))
 
     async def send_text(self, content: str) -> IMSendResult:
         return await self.send(IMMessage(content=content, msg_type=MessageType.TEXT))
 
     async def send_markdown(self, title: str, content: str) -> IMSendResult:
-        return await self.send(
-            IMMessage(
-                content=content,
-                msg_type=MessageType.MARKDOWN,
-                title=title,
-            )
-        )
-
-    def _build_signed_url(self) -> str:
-        if not self.secret:
-            return self.webhook_url
-
-        timestamp = str(round(time.time() * 1000))
-        string_to_sign = f"{timestamp}\n{self.secret}"
-        string_to_sign_enc = string_to_sign.encode("utf-8")
-        secret_enc = self.secret.encode("utf-8")
-        hmac_code = hmac.new(secret_enc, string_to_sign_enc, digestmod=hashlib.sha256).digest()
-        sign = urllib.parse.quote_plus(base64.b64encode(hmac_code))
-
-        return f"{self.webhook_url}&timestamp={timestamp}&sign={sign}"
+        full_content = f"### {title}\n\n{content}"
+        return await self.send(IMMessage(content=full_content, msg_type=MessageType.MARKDOWN))
 
     @staticmethod
     def _build_payload(message: IMMessage) -> dict[str, Any]:
@@ -79,14 +54,20 @@ class DingTalkAdapter(IMAdapter):
             return {
                 "msgtype": "markdown",
                 "markdown": {
-                    "title": message.title or "Notification",
-                    "text": message.content,
+                    "content": message.content,
                 },
+            }
+
+        if message.msg_type == MessageType.CARD:
+            return {
+                "msgtype": "template_card",
+                "template_card": message.extra or {},
             }
 
         return {
             "msgtype": "text",
             "text": {
                 "content": message.content,
+                "mentioned_list": message.extra.get("mentioned_list", []) if message.extra else [],
             },
         }

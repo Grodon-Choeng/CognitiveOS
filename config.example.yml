@@ -1,3 +1,32 @@
+environment: development
+debug: true
+
+db_path: cognitive.db
+storage_path: storage
+
+cache_enabled: true
+cache_url: redis://localhost:6379/0
+cache_default_ttl: 300
+cache_prompt_ttl: 86400
+
+log_level: INFO
+markdown_debug_mode: false
+
+note_system: logseq
+note_path: /path/to/your/logseq
+note_git_enabled: true
+
+llm_model: openai/gpt-4o-mini
+llm_api_key: ""
+llm_base_url: ""
+embedding_model: openai/text-embedding-3-small
+embedding_dimension: 1536
+
+vector_index_path: storage/vectors/index.faiss
+
+api_key: ""
+api_key_header: X-API-Key
+
 im_enabled: true
 im_configs:
   - provider: feishu

@@ -2,7 +2,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
-from pydantic import field_validator
+from pydantic import TypeAdapter, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from app.constants import CACHE_DEFAULT_TTL, CACHE_PROMPT_TTL, DEFAULT_EMBEDDING_DIMENSION
@@ -132,13 +132,29 @@ class Settings(BaseSettings):
         if not isinstance(data, dict):
             return
 
-        # YAML config has higher priority than .env for IM settings.
-        if "im_enabled" in data:
-            self.im_enabled = bool(data["im_enabled"])
+        # YAML is the primary config source and overrides .env values.
+        known_fields = set(type(self).model_fields.keys())
+        updates = {k: v for k, v in data.items() if k in known_fields}
 
-        im_configs = data.get("im_configs")
-        if isinstance(im_configs, list):
-            self.im_configs = [cfg for cfg in im_configs if isinstance(cfg, dict)]
+        # Keep backward compatibility for IM configs shape.
+        if "im_configs" in updates and not isinstance(updates["im_configs"], list):
+            updates.pop("im_configs")
+        elif "im_configs" in updates:
+            updates["im_configs"] = [cfg for cfg in updates["im_configs"] if isinstance(cfg, dict)]
+
+        if not updates:
+            return
+
+        for field_name, field_value in updates.items():
+            field = type(self).model_fields.get(field_name)
+            if field is None:
+                continue
+            try:
+                value = TypeAdapter(field.annotation).validate_python(field_value)
+                setattr(self, field_name, value)
+            except Exception:
+                # Ignore invalid YAML value and keep current setting value.
+                continue
 
     def _migrate_legacy_im_config(self) -> None:
         if self.im_provider and self.im_webhook_url and not self.im_configs:

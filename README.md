@@ -185,13 +185,15 @@ CognitiveOS/
 │   │   ├── exceptions.py          # 异常定义
 │   │   ├── model.py               # 基础模型 (BaseModel, TimestampMixin)
 │   │   └── repository.py          # 基础仓储 (BaseRepository)
-│   ├── im/                        # IM 适配器
+│   ├── channels/                  # IM 通道层（长连接 Bot + Webhook 适配器）
 │   │   ├── __init__.py
-│   │   ├── base.py                # 基础接口
-│   │   ├── wecom.py               # 企业微信
-│   │   ├── dingtalk.py            # 钉钉
-│   │   ├── feishu.py              # 飞书
-│   │   └── discord.py             # Discord
+│   │   ├── registry.py            # 通道注册中心（启动/停止/健康）
+│   │   ├── runtime.py             # 运行态发送入口（提醒/点对点发送）
+│   │   ├── webhook_manager.py     # Webhook 适配器管理器
+│   │   ├── message.py             # 通道消息模型
+│   │   ├── discord.py             # Discord 长连接 Bot
+│   │   ├── feishu.py              # 飞书长连接 Bot
+│   │   └── adapters/              # Webhook 适配器（企业微信/钉钉/飞书/Discord）
 │   ├── models/
 │   │   ├── knowledge_item.py      # 知识项模型
 │   │   ├── prompt.py              # 提示词模型
@@ -295,7 +297,7 @@ LLM_MODEL=deepseek/deepseek-chat
 LLM_API_KEY=sk-xxx
 ```
 
-### 配置 IM 通知（可选）
+### 配置 IM 通知（可选，推荐使用 `config.yml`）
 
 支持以下 IM 平台：
 
@@ -306,31 +308,30 @@ LLM_API_KEY=sk-xxx
 | 飞书 | `feishu` | ✅ 签名校验 | ✅ SDK 长连接 |
 | Discord | `discord` | ✅ 无签名 | ✅ Bot API |
 
-**企业微信配置（Webhook 模式）：**
-```bash
-IM_ENABLED=true
-IM_PROVIDER=wecom
-IM_WEBHOOK_URL=https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=YOUR_KEY
+推荐先复制 `config.example.yml` 为 `config.yml`，再按需修改：
+
+```yaml
+im_enabled: true
+im_configs:
+  - provider: feishu
+    enabled: true
+    app_id: "cli_xxx"
+    app_secret: "xxx"
+    verification_token: "xxx"
+    encrypt_key: "xxx"
+    bypass_proxy: true
+
+  # - provider: discord
+  #   enabled: false
+  #   bot_token: "YOUR_BOT_TOKEN"
+  #   command_prefix: "!"
 ```
 
-**钉钉配置（Webhook 模式，支持签名）：**
-```bash
-IM_ENABLED=true
-IM_PROVIDER=dingtalk
-IM_WEBHOOK_URL=https://oapi.dingtalk.com/robot/send?access_token=YOUR_TOKEN
-IM_SECRET=SECxxx  # 加签密钥
-```
+也可继续使用 `.env` 的 `IM_CONFIGS`（兼容保留）：
 
-**飞书配置（Bot 长连接模式，推荐）：**
 ```bash
 IM_ENABLED=true
 IM_CONFIGS=[{"provider":"feishu","app_id":"cli_xxx","app_secret":"xxx","enabled":true}]
-```
-
-**飞书配置（Webhook 模式）：**
-```bash
-IM_ENABLED=true
-IM_CONFIGS=[{"provider":"feishu","webhook_url":"https://open.feishu.cn/open-apis/bot/v2/hook/xxx","secret":"xxx","enabled":true}]
 ```
 
 详见 [docs/feishu_bot.md](docs/feishu_bot.md)

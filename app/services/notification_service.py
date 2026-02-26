@@ -1,9 +1,9 @@
 from cashews import cache
 
+from app.channels import IMManager, IMMessage, IMSendResult, MessageType
+from app.channels.runtime import send_text_to_user
 from app.config import settings
 from app.enums import IMProvider
-from app.im import IMManager, IMMessage, IMSendResult, MessageType
-from app.services import get_discord_bot, get_feishu_bot
 from app.utils.logging import logger
 
 CACHE_PREFIX = "user_im_channel"
@@ -45,29 +45,11 @@ class NotificationService:
     async def _send_via_bot(
         provider: IMProvider, user_id: str, content: str
     ) -> IMSendResult | None:
-        if provider == IMProvider.DISCORD:
-            bot = get_discord_bot()
-            if bot and bot._connected:
-                try:
-                    success = await bot.send_to_user(int(user_id), content)
-                    return IMSendResult(
-                        success=success, error=None if success else "User not found"
-                    )
-                except Exception as e:
-                    logger.error(f"Failed to send via Discord bot: {e}")
-                    return IMSendResult(success=False, error=str(e))
+        if provider not in (IMProvider.DISCORD, IMProvider.FEISHU):
+            return None
 
-        elif provider == IMProvider.FEISHU:
-            bot = get_feishu_bot()
-            if bot and bot._connected:
-                try:
-                    success = await bot.send_text_to_user_or_chat(user_id, content)
-                    return IMSendResult(success=success, error=None if success else "Send failed")
-                except Exception as e:
-                    logger.error(f"Failed to send via Feishu bot: {e}")
-                    return IMSendResult(success=False, error=str(e))
-
-        return None
+        result = await send_text_to_user(provider, user_id, content)
+        return IMSendResult(success=result.success, error=result.error)
 
     async def send(self, message: IMMessage, user_id: str | None = None) -> IMSendResult:
         providers = self.get_available_providers()

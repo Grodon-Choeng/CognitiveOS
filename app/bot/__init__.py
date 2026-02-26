@@ -1,13 +1,8 @@
 from app.bot.discord_handler import handle_discord_message
 from app.bot.feishu_handler import handle_feishu_message
+from app.channels.registry import CHANNEL_STARTERS, CHANNEL_STOPPERS
 from app.config import settings
-from app.services import (
-    NotificationService,
-    start_discord_bot,
-    start_feishu_bot,
-    stop_discord_bot,
-    stop_feishu_bot,
-)
+from app.services.notification_service import NotificationService
 from app.services.reminder_checker import start_reminder_checker, stop_reminder_checker
 from app.utils.logging import logger
 
@@ -26,20 +21,26 @@ async def start_bot() -> None:
         logger.info("IM disabled, skipping bot startup")
         return
 
-    enabled_providers = {cfg.provider.value for cfg in settings.get_im_configs()}
+    message_handlers = {
+        "discord": handle_discord_message,
+        "feishu": handle_feishu_message,
+    }
+    alert_handlers = {
+        "feishu": _alert_ops,
+    }
 
-    if "discord" in enabled_providers:
-        await start_discord_bot(on_message_callback=handle_discord_message)
-    else:
-        logger.info("Discord bot disabled by config")
+    enabled_providers = [cfg.provider.value for cfg in settings.get_im_configs() if cfg.enabled]
 
-    if "feishu" in enabled_providers:
-        await start_feishu_bot(
-            on_message_callback=handle_feishu_message,
-            on_alert_callback=_alert_ops,
-        )
-    else:
-        logger.info("Feishu bot disabled by config")
+    for provider in enabled_providers:
+        starter = CHANNEL_STARTERS.get(provider)
+        if starter is None:
+            logger.info(f"Provider {provider} has no long-connection starter, skipped")
+            continue
+
+        kwargs = {"on_message_callback": message_handlers.get(provider)}
+        if provider in alert_handlers:
+            kwargs["on_alert_callback"] = alert_handlers[provider]
+        await starter(**kwargs)
 
     start_reminder_checker()
 
@@ -49,8 +50,8 @@ async def stop_bot() -> None:
         return
 
     stop_reminder_checker()
-    await stop_discord_bot()
-    await stop_feishu_bot()
+    for stop in CHANNEL_STOPPERS.values():
+        await stop()
 
 
 __all__ = [

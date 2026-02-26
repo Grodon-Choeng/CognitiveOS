@@ -6,9 +6,9 @@ from typing import Any
 
 import httpx
 
+from app.channels.adapter_base import IMAdapter
+from app.channels.message import IMMessage, IMSendResult, MessageType
 from app.utils.logging import logger
-
-from .base import IMAdapter, IMMessage, IMSendResult, MessageType
 
 
 class FeishuAdapter(IMAdapter):

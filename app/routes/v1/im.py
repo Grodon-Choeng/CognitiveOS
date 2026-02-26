@@ -4,8 +4,8 @@ from dishka import FromDishka
 from dishka.integrations.litestar import inject
 from litestar import Controller, get, post
 
+from app.channels import IMMessage, MessageType
 from app.enums import IMProvider
-from app.im import IMMessage, MessageType
 from app.schemas import (
     IMNotifyResponse,
     IMProviderInfo,

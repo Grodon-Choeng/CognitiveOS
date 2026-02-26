@@ -62,22 +62,34 @@ A bidirectional Discord Bot that enables interactive communication with Cognitiv
 
 ### 3. Configuration / 配置
 
-```env
-# .env
-IM_ENABLED=true
-IM_CONFIGS=[{"provider":"discord","bot_token":"YOUR_BOT_TOKEN","command_prefix":"!","heartbeat_timeout":120,"enabled":true}]
-PROXY_URL=http://127.0.0.1:7897
+```yaml
+im_enabled: true
+im_configs:
+  - provider: discord
+    enabled: true
+    bot_token: "YOUR_BOT_TOKEN"
+    command_prefix: "!"
+    heartbeat_timeout: 120
+
+# Optional, for unstable proxy environments:
+#   bypass_proxy: true
 ```
 
 **Note**: `PROXY_URL` is required in China mainland for Discord connection.
 
 **注意**: 中国大陆需要配置 `PROXY_URL` 才能连接 Discord。
 
-若代理不稳定，可在 Discord 配置里强制直连（不走 `PROXY_URL`）：
+若代理不稳定，可在 Discord 配置里强制直连（不走代理）：
 
-```env
-IM_ENABLED=true
-IM_CONFIGS=[{"provider":"discord","bot_token":"YOUR_BOT_TOKEN","command_prefix":"!","bypass_proxy":true,"heartbeat_timeout":120,"enabled":true}]
+```yaml
+im_enabled: true
+im_configs:
+  - provider: discord
+    enabled: true
+    bot_token: "YOUR_BOT_TOKEN"
+    command_prefix: "!"
+    bypass_proxy: true
+    heartbeat_timeout: 120
 ```
 
 ## Commands / 命令
@@ -106,12 +118,13 @@ IM_CONFIGS=[{"provider":"discord","bot_token":"YOUR_BOT_TOKEN","command_prefix":
 
 ```
 app/
+├── channels/
+│   └── discord.py           # Bot core / Bot 核心
 ├── bot/
 │   ├── __init__.py
 │   ├── discord_handler.py   # Message handling / 消息处理
 │   └── message_service.py   # Shared message service / 共享消息服务
 ├── services/
-│   ├── discord_bot.py       # Bot core / Bot 核心
 │   ├── reminder_service.py  # Reminder service / 提醒服务
 │   └── reminder_checker.py  # Background checker / 后台检查
 └── models/

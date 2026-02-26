@@ -1,5 +1,5 @@
 from app.bot.message_service import BotMessageService, IncomingMessage
-from app.services.discord_bot import start_discord_bot, stop_discord_bot
+from app.channels.discord import start_discord_bot, stop_discord_bot
 from app.services.reminder_checker import start_reminder_checker, stop_reminder_checker
 from app.utils.logging import logger
 

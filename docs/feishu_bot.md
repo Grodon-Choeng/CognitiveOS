@@ -65,7 +65,7 @@ IM_CONFIGS=[
 
 ```text
 飞书事件（长连接）
-  -> app/services/feishu_bot.py
+  -> app/channels/feishu.py
   -> app/bot/feishu_handler.py
   -> app/bot/message_service.py
   -> 提醒/笔记服务

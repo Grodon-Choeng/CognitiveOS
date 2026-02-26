@@ -1,11 +1,8 @@
+from app.channels.adapter_base import IMAdapter
+from app.channels.adapters import DingTalkAdapter, DiscordAdapter, FeishuAdapter, WeComAdapter
+from app.channels.message import IMMessage, IMSendResult
 from app.config import IMConfig
 from app.enums import IMProvider
-
-from .base import IMAdapter, IMMessage, IMSendResult, MessageType
-from .dingtalk import DingTalkAdapter
-from .discord import DiscordAdapter
-from .feishu import FeishuAdapter
-from .wecom import WeComAdapter
 
 
 def create_adapter(config: IMConfig) -> IMAdapter:
@@ -66,19 +63,3 @@ class IMManager:
         if not adapter:
             return IMSendResult(success=False, error=f"IM provider {provider.value} not configured")
         return await adapter.send(message)
-
-
-__all__ = [
-    "IMAdapter",
-    "IMMessage",
-    "IMSendResult",
-    "MessageType",
-    "IMProvider",
-    "IMConfig",
-    "WeComAdapter",
-    "DingTalkAdapter",
-    "FeishuAdapter",
-    "DiscordAdapter",
-    "create_adapter",
-    "IMManager",
-]
