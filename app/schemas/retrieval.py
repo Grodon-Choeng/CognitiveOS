@@ -41,6 +41,13 @@ class RAGRequest:
             "examples": [5, 10],
         },
     )
+    user_id: str = field(
+        default="default",
+        metadata={
+            "description": "用户标识，用于长期记忆检索与写回",
+            "examples": ["default", "u_123"],
+        },
+    )
 
 
 @dataclass

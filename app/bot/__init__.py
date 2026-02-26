@@ -1,10 +1,11 @@
-from app.bot.discord_handler import handle_discord_message
-from app.bot.feishu_handler import handle_feishu_message
 from app.channels.registry import CHANNEL_STARTERS, CHANNEL_STOPPERS
 from app.config import settings
 from app.services.notification_service import NotificationService
 from app.services.reminder_checker import start_reminder_checker, stop_reminder_checker
 from app.utils.logging import logger
+
+from .discord_handler import handle_discord_message
+from .feishu_handler import handle_feishu_message
 
 
 async def _alert_ops(message: str) -> None:

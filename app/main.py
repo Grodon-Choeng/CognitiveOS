@@ -12,7 +12,7 @@ from app.core.exceptions import AppError
 from app.enums import ErrorCode
 from app.middleware import APIKeyMiddleware, IMSignatureMiddleware, RequestTrackingMiddleware
 from app.routes.v1 import v1_router
-from app.services import PromptService
+from app.services import PromptService, PromptTemplateService
 from app.utils.logging import logger
 
 
@@ -78,6 +78,11 @@ async def seed_prompts() -> None:
         count = await service.seed_defaults()
         if count > 0:
             logger.info(f"Seeded {count} default prompts")
+
+        template_service = await request_container.get(PromptTemplateService)
+        template_count = await template_service.seed_defaults()
+        if template_count > 0:
+            logger.info(f"Seeded {template_count} default prompt templates")
 
 
 async def on_startup() -> None:

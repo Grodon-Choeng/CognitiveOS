@@ -3,8 +3,6 @@ from app.channels.discord import start_discord_bot, stop_discord_bot
 from app.services.reminder_checker import start_reminder_checker, stop_reminder_checker
 from app.utils.logging import logger
 
-service = BotMessageService()
-
 
 async def handle_discord_message(message) -> None:
     async def reply(content: str) -> None:
@@ -19,6 +17,7 @@ async def handle_discord_message(message) -> None:
     )
 
     try:
+        service = BotMessageService()
         await service.handle(incoming)
     except Exception as e:
         logger.error(f"Failed to handle Discord message: {e}")

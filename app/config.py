@@ -92,6 +92,7 @@ class Settings(BaseSettings):
     embedding_dimension: int = DEFAULT_EMBEDDING_DIMENSION
 
     vector_index_path: str = "storage/vectors/index.faiss"
+    memory_vector_index_path: str = "storage/vectors/memory.index"
 
     api_key: str = ""
     api_key_header: str = "X-API-Key"

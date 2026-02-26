@@ -65,7 +65,7 @@ class RetrievalController(Controller):
         data: RAGRequest,
         retrieval_service: FromDishka[RetrievalService],
     ) -> RAGResponse:
-        answer = await retrieval_service.rag_query(data.query, data.top_k)
+        answer = await retrieval_service.rag_query(data.query, data.top_k, user_id=data.user_id)
 
         items = await retrieval_service.search_and_retrieve(data.query, data.top_k)
 

@@ -23,6 +23,7 @@ embedding_model: openai/text-embedding-3-small
 embedding_dimension: 1536
 
 vector_index_path: storage/vectors/index.faiss
+memory_vector_index_path: storage/vectors/memory.index
 
 api_key: ""
 api_key_header: X-API-Key

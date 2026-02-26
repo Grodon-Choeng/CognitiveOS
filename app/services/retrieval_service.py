@@ -4,6 +4,7 @@ from app.models.knowledge_item import KnowledgeItem
 from app.services.embedding_service import EmbeddingService
 from app.services.knowledge_item_service import KnowledgeItemService
 from app.services.llm_service import LLMService
+from app.services.memory.orchestrator import MemoryOrchestrator
 from app.services.prompt_service import PromptService
 from app.services.vector_store import VectorStore
 from app.utils.logging import logger
@@ -17,12 +18,14 @@ class RetrievalService:
         knowledge_service: KnowledgeItemService,
         vector_store: VectorStore,
         prompt_service: PromptService,
+        memory_orchestrator: MemoryOrchestrator,
     ) -> None:
         self.llm_service = llm_service
         self.embedding_service = embedding_service
         self.knowledge_service = knowledge_service
         self.vector_store = vector_store
         self.prompt_service = prompt_service
+        self.memory_orchestrator = memory_orchestrator
 
     async def search_similar(self, query: str, top_k: int = 5) -> list[dict[str, Any]]:
         query_embedding = await self.llm_service.get_embedding(query)
@@ -41,22 +44,33 @@ class RetrievalService:
         logger.info(f"Retrieved {len(items)} items for query")
         return items
 
-    async def rag_query(self, query: str, top_k: int = 5, max_context_tokens: int = 2000) -> str:
+    async def rag_query(
+        self,
+        query: str,
+        top_k: int = 5,
+        max_context_tokens: int = 2000,
+        user_id: str = "default",
+    ) -> str:
         items = await self.search_and_retrieve(query, top_k)
 
         if not items:
+            # Even when knowledge base has no match, memory layer may still answer.
+            logger.info("No knowledge hit, trying memory-only RAG context")
+
+        bundle = await self.memory_orchestrator.build_context(
+            user_id=user_id,
+            query=query,
+            knowledge_items=items,
+            top_k=top_k,
+        )
+
+        if not bundle.memory_context and not items:
             return "No relevant knowledge found."
 
-        context = self._build_context(items, max_context_tokens)
-
-        system_prompt = await self.prompt_service.get("rag_system")
-        user_message = await self.prompt_service.format(
-            "rag_user_template", context=context, query=query
-        )
-
         response = await self.llm_service.chat_with_system(
-            system_prompt, user_message, temperature=0.7
+            bundle.system_prompt, bundle.user_prompt, temperature=0.7
         )
+        await self.memory_orchestrator.write_back(user_id=user_id, query=query, response=response)
 
         return response
 

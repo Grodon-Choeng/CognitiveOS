@@ -75,6 +75,17 @@ Raw → LLM 输出 JSON → Markdown Builder → 双链生成
 
 把过往思想作为可检索语义记忆，实现"结合已有体系"的思考。
 
+### 3.1 长期记忆层（Long-term Memory Layer）✅
+
+- 新增 `memory` 数据模型（`user_id` / `memory_type` / `importance` / `summary`）
+- 新增 `embedding_record` 记录向量模型与 `vector_id`
+- 新增 `prompt_template` 支持版本化系统提示词
+- 新增 `services/memory/`：
+  - `writer.py`：记忆写入与 embedding 入库
+  - `faiss_store.py`：独立 Memory FAISS 索引（`IndexFlatIP`）
+  - `retriever.py`：Top-K + 重要度 + 时间衰减排序
+  - `orchestrator.py`：统一上下文构建与回答写回
+
 ### 4. 反思层
 
 周期性自动：
