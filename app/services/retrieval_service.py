@@ -1,13 +1,14 @@
 from typing import Any
 
-from app.models.knowledge_item import KnowledgeItem
-from app.services.embedding_service import EmbeddingService
-from app.services.knowledge_item_service import KnowledgeItemService
-from app.services.llm_service import LLMService
-from app.services.memory.orchestrator import MemoryOrchestrator
-from app.services.prompt_service import PromptService
-from app.services.vector_store import VectorStore
-from app.utils.logging import logger
+from app.models import KnowledgeItem
+from app.utils import logger
+
+from .embedding_service import EmbeddingService
+from .knowledge_item_service import KnowledgeItemService
+from .llm_service import LLMService
+from .memory.orchestrator import MemoryOrchestrator
+from .prompt_service import PromptService
+from .vector_store import VectorStore
 
 
 class RetrievalService:

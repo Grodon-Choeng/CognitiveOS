@@ -2,9 +2,10 @@ from typing import Any
 
 import httpx
 
-from app.channels.adapter_base import IMAdapter
-from app.channels.message import IMMessage, IMSendResult, MessageType
-from app.utils.logging import logger
+from app.utils import logger
+
+from ..message import IMMessage, IMSendResult, MessageType
+from .adapter_base import IMAdapter
 
 
 class DiscordAdapter(IMAdapter):

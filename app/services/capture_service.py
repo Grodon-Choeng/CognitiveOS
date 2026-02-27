@@ -4,9 +4,10 @@ from uuid import UUID
 from cashews import cache
 
 from app.config import settings
-from app.core.exceptions import StorageError
-from app.services.knowledge_item_service import KnowledgeItemService
-from app.utils.logging import logger
+from app.core import StorageError
+from app.utils import logger
+
+from .knowledge_item_service import KnowledgeItemService
 
 
 class CaptureService:

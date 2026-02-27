@@ -1,5 +1,5 @@
-from app.core.repository import BaseRepository
-from app.models.embedding_record import EmbeddingRecord
+from app.core import BaseRepository
+from app.models import EmbeddingRecord
 
 
 class EmbeddingRecordRepository(BaseRepository[EmbeddingRecord]):

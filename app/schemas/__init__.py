@@ -1,5 +1,5 @@
-from app.schemas.common import CursorPaginationResponse
-from app.schemas.im import (
+from .common import CursorPaginationResponse
+from .im import (
     IMNotifyResponse,
     IMProviderInfo,
     IMProvidersResponse,
@@ -9,13 +9,13 @@ from app.schemas.im import (
     WebhookRequest,
     WebhookResponse,
 )
-from app.schemas.prompt import (
+from .prompt import (
     PromptCreateRequest,
     PromptDeleteResponse,
     PromptResponse,
     PromptUpdateRequest,
 )
-from app.schemas.retrieval import (
+from .retrieval import (
     IndexResponse,
     RAGRequest,
     RAGResponse,
@@ -23,7 +23,7 @@ from app.schemas.retrieval import (
     SearchRequest,
     SearchResult,
 )
-from app.schemas.webhook import (
+from .webhook import (
     CaptureRequest,
     CaptureResponse,
     KnowledgeItemListResponse,

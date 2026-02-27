@@ -1,5 +1,5 @@
-from app.core.repository import BaseRepository
-from app.models.prompt import Prompt
+from app.core import BaseRepository
+from app.models import Prompt
 
 
 class PromptRepository(BaseRepository[Prompt]):

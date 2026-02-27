@@ -9,7 +9,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from app.config import settings
-from app.utils.logging import logger
+from app.utils import logger
 
 try:
     import lark_oapi as lark
@@ -82,6 +82,10 @@ class FeishuBot:
         self._last_event_at: datetime | None = None
         self._last_error_at: datetime | None = None
         self._last_error: str | None = None
+
+    @property
+    def connected(self):
+        return self._connected
 
     def _ensure_no_proxy_for_feishu(self) -> None:
         if not self.bypass_proxy:

@@ -1,5 +1,5 @@
-from app.core.repository import BaseRepository
-from app.models.memory import Memory
+from app.core import BaseRepository
+from app.models import Memory
 
 
 class MemoryRepository(BaseRepository[Memory]):

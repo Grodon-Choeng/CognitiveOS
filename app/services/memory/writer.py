@@ -1,11 +1,11 @@
 import json
 
-from app.repositories.embedding_record_repo import EmbeddingRecordRepository
-from app.repositories.memory_repo import MemoryRepository
+from app.repositories import EmbeddingRecordRepository, MemoryRepository
 from app.services.llm_service import LLMService
-from app.services.memory.embedder import MemoryEmbedder
-from app.services.memory.faiss_store import MemoryFAISSStore
-from app.utils.logging import logger
+from app.utils import logger
+
+from .embedder import MemoryEmbedder
+from .faiss_store import MemoryFAISSStore
 
 
 class MemoryWriter:

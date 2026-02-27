@@ -5,7 +5,7 @@ from litestar import Controller, get
 
 from app.channels.registry import CHANNEL_STATUS_GETTERS
 from app.constants import API_VERSION
-from app.utils.times import utc_time
+from app.utils import utc_time
 
 
 @dataclass

@@ -1,6 +1,6 @@
 from dataclasses import dataclass, field
 
-from app.schemas.webhook import KnowledgeItemResponse
+from .webhook import KnowledgeItemResponse
 
 
 @dataclass

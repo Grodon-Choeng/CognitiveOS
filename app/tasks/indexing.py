@@ -4,7 +4,8 @@ from dishka import make_async_container
 
 from app.container import AppProvider
 from app.services import EmbeddingService, KnowledgeItemService, VectorStore
-from app.tasks.worker import get_redis_settings
+
+from .worker import get_redis_settings
 
 _container = make_async_container(AppProvider())
 

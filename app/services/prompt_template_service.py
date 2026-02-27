@@ -1,6 +1,6 @@
-from app.models.prompt_template import PromptTemplate
-from app.repositories.prompt_template_repo import PromptTemplateRepository
-from app.utils.logging import logger
+from app.models import PromptTemplate
+from app.repositories import PromptTemplateRepository
+from app.utils import logger
 
 DEFAULT_PROMPT_TEMPLATES = {
     "memory_rag": {

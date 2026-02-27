@@ -2,7 +2,7 @@ import re
 from datetime import datetime, timedelta
 
 from app.models import Reminder
-from app.utils.logging import logger
+from app.utils import logger
 
 
 class ReminderService:

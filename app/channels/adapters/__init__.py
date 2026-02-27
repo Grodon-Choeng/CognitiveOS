@@ -1,7 +1,7 @@
-from app.channels.adapters.dingtalk import DingTalkAdapter
-from app.channels.adapters.discord import DiscordAdapter
-from app.channels.adapters.feishu import FeishuAdapter
-from app.channels.adapters.wecom import WeComAdapter
+from .dingtalk import DingTalkAdapter
+from .discord import DiscordAdapter
+from .feishu import FeishuAdapter
+from .wecom import WeComAdapter
 
 __all__ = [
     "DingTalkAdapter",

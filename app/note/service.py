@@ -1,6 +1,7 @@
 from app.config import settings
-from app.note.base import NoteAdapter, NoteEntry, NoteType, TaskPriority
-from app.note.logseq import LogseqAdapter
+
+from .base import NoteAdapter, NoteEntry, NoteType, TaskPriority
+from .logseq import LogseqAdapter
 
 
 def get_note_adapter() -> NoteAdapter:

@@ -6,8 +6,8 @@ import faiss
 import numpy as np
 
 from app.config import settings
-from app.models.knowledge_item import KnowledgeItem
-from app.utils.logging import logger
+from app.models import KnowledgeItem
+from app.utils import logger
 
 
 class VectorStore:

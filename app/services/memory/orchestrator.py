@@ -1,10 +1,11 @@
 from dataclasses import dataclass
 
-from app.models.knowledge_item import KnowledgeItem
-from app.services.memory.embedder import MemoryEmbedder
-from app.services.memory.retriever import MemoryRetriever
-from app.services.memory.writer import MemoryWriter
+from app.models import KnowledgeItem
 from app.services.prompt_template_service import PromptTemplateService
+
+from .embedder import MemoryEmbedder
+from .retriever import MemoryRetriever
+from .writer import MemoryWriter
 
 
 @dataclass

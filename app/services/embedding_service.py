@@ -1,7 +1,8 @@
-from app.models.knowledge_item import KnowledgeItem
-from app.services.knowledge_item_service import KnowledgeItemService
-from app.services.llm_service import LLMService
-from app.utils.logging import logger
+from app.models import KnowledgeItem
+from app.utils import logger
+
+from .knowledge_item_service import KnowledgeItemService
+from .llm_service import LLMService
 
 
 class EmbeddingService:

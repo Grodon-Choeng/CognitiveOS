@@ -1,8 +1,7 @@
-from app.bot.message_service import BotMessageService, IncomingMessage
-from app.channels.feishu import FeishuIncomingMessage, get_feishu_bot
-from app.utils.logging import logger
+from app.channels import FeishuIncomingMessage, get_feishu_bot
+from app.utils import logger
 
-service = BotMessageService()
+from .message_service import BotMessageService, IncomingMessage
 
 
 async def handle_feishu_message(message: FeishuIncomingMessage) -> None:
@@ -24,6 +23,7 @@ async def handle_feishu_message(message: FeishuIncomingMessage) -> None:
     )
 
     try:
+        service = BotMessageService()
         await service.handle(incoming)
     except Exception as e:
         logger.error(f"Failed to handle Feishu message: {e}")

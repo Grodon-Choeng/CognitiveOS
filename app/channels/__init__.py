@@ -1,4 +1,4 @@
-from app.channels.discord import (
+from .discord import (
     DiscordBot,
     DiscordBotStatus,
     get_discord_bot,
@@ -6,7 +6,7 @@ from app.channels.discord import (
     start_discord_bot,
     stop_discord_bot,
 )
-from app.channels.feishu import (
+from .feishu import (
     FeishuBot,
     FeishuBotStatus,
     FeishuIncomingMessage,
@@ -15,8 +15,8 @@ from app.channels.feishu import (
     start_feishu_bot,
     stop_feishu_bot,
 )
-from app.channels.message import IMMessage, IMSendResult, MessageType
-from app.channels.webhook_manager import IMManager, create_adapter
+from .message import IMMessage, IMSendResult, MessageType
+from .webhook_manager import IMManager, create_adapter
 
 __all__ = [
     "DiscordBot",

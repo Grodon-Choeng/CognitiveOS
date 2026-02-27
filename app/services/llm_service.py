@@ -6,7 +6,7 @@ from litellm import acompletion, aembedding
 
 from app.config import settings
 from app.constants import CACHE_DEFAULT_TTL
-from app.utils.logging import logger
+from app.utils import logger
 
 
 class LLMService:

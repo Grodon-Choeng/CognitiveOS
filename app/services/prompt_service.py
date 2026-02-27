@@ -1,10 +1,10 @@
 from cashews import cache
 
 from app.config import settings
-from app.core.service import BaseService
-from app.models.prompt import Prompt
-from app.repositories.prompt_repo import PromptRepository
-from app.utils.logging import logger
+from app.core import BaseService
+from app.models import Prompt
+from app.repositories import PromptRepository
+from app.utils import logger
 
 DEFAULT_PROMPTS = {
     "rag_system": {

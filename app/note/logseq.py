@@ -4,8 +4,9 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
-from app.note.base import NoteAdapter, NoteEntry, NoteType
-from app.utils.logging import logger
+from app.utils import logger
+
+from .base import NoteAdapter, NoteEntry, NoteType
 
 
 @dataclass

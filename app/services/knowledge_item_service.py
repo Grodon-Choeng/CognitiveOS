@@ -3,13 +3,11 @@ from uuid import UUID
 from cashews import cache
 
 from app.config import settings
-from app.core.exceptions import NotFoundError
-from app.core.repository import CursorPage
-from app.core.service import BaseService
+from app.core import BaseService, CursorPage, NotFoundError
 from app.enums import SortField, SortOrder
-from app.models.knowledge_item import KnowledgeItem
-from app.repositories.knowledge_item_repo import KnowledgeItemRepository
-from app.utils.logging import logger
+from app.models import KnowledgeItem
+from app.repositories import KnowledgeItemRepository
+from app.utils import logger
 
 
 class KnowledgeItemService(BaseService[KnowledgeItem, KnowledgeItemRepository]):

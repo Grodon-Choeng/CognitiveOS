@@ -24,7 +24,7 @@ def get_default_provider() -> IMProvider:
 async def send_text_to_user(provider: IMProvider, user_id: str, content: str) -> ChannelSendResult:
     if provider == IMProvider.DISCORD:
         bot = get_discord_bot()
-        if not bot or not bot._connected:
+        if not bot or not bot.connected:
             return ChannelSendResult(False, "Discord bot unavailable")
         try:
             success = await bot.send_to_user(int(user_id), content)
@@ -35,7 +35,7 @@ async def send_text_to_user(provider: IMProvider, user_id: str, content: str) ->
 
     if provider == IMProvider.FEISHU:
         bot = get_feishu_bot()
-        if not bot or not bot._connected:
+        if not bot or not bot.connected:
             return ChannelSendResult(False, "Feishu bot unavailable")
         try:
             success = await bot.send_text_to_user_or_chat(user_id, content)

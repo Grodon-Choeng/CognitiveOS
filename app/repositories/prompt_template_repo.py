@@ -1,5 +1,5 @@
-from app.core.repository import BaseRepository
-from app.models.prompt_template import PromptTemplate
+from app.core import BaseRepository
+from app.models import PromptTemplate
 
 
 class PromptTemplateRepository(BaseRepository[PromptTemplate]):

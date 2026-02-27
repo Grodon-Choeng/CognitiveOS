@@ -10,7 +10,7 @@ from discord.ext import commands
 from pydantic import SecretStr
 
 from app.config import settings
-from app.utils.logging import logger
+from app.utils import logger
 
 
 @dataclass
@@ -86,6 +86,10 @@ class DiscordBot:
             self.bot.http.proxy = proxy
 
         self._setup_events()
+
+    @property
+    def connected(self):
+        return self._connected
 
     def status(self) -> DiscordBotStatus:
         guild_count = len(self.bot.guilds) if self.bot.user else 0

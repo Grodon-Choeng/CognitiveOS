@@ -1,10 +1,10 @@
-from app.models.embedding_record import EmbeddingRecord
-from app.models.knowledge_item import KnowledgeItem
-from app.models.memory import Memory
-from app.models.prompt import Prompt
-from app.models.prompt_template import PromptTemplate
-from app.models.reminder import Reminder
-from app.models.sessions import Sessions
+from .embedding_record import EmbeddingRecord
+from .knowledge_item import KnowledgeItem
+from .memory import Memory
+from .prompt import Prompt
+from .prompt_template import PromptTemplate
+from .reminder import Reminder
+from .sessions import Sessions
 
 __all__ = [
     "EmbeddingRecord",

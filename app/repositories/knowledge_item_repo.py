@@ -1,7 +1,7 @@
 import json
 
-from app.core.repository import BaseRepository
-from app.models.knowledge_item import KnowledgeItem
+from app.core import BaseRepository
+from app.models import KnowledgeItem
 
 
 class KnowledgeItemRepository(BaseRepository[KnowledgeItem]):

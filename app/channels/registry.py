@@ -1,14 +1,12 @@
 from collections.abc import Callable
 from typing import Any
 
-from app.channels.discord import (
+from app.channels import (
     get_discord_bot_status,
-    start_discord_bot,
-    stop_discord_bot,
-)
-from app.channels.feishu import (
     get_feishu_bot_status,
+    start_discord_bot,
     start_feishu_bot,
+    stop_discord_bot,
     stop_feishu_bot,
 )
 

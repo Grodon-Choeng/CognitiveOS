@@ -4,7 +4,7 @@ from app.channels import IMManager, IMMessage, IMSendResult, MessageType
 from app.channels.runtime import send_text_to_user
 from app.config import settings
 from app.enums import IMProvider
-from app.utils.logging import logger
+from app.utils import logger
 
 CACHE_PREFIX = "user_im_channel"
 CACHE_TTL = 86400 * 30

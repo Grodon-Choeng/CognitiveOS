@@ -1,8 +1,9 @@
-from app.channels.adapter_base import IMAdapter
 from app.channels.adapters import DingTalkAdapter, DiscordAdapter, FeishuAdapter, WeComAdapter
 from app.channels.message import IMMessage, IMSendResult
 from app.config import IMConfig
 from app.enums import IMProvider
+
+from .adapters.adapter_base import IMAdapter
 
 
 def create_adapter(config: IMConfig) -> IMAdapter:

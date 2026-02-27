@@ -1,10 +1,11 @@
 import math
 from dataclasses import dataclass
 
-from app.models.memory import Memory
-from app.repositories.memory_repo import MemoryRepository
-from app.services.memory.faiss_store import MemoryFAISSStore
-from app.utils.times import utc_time
+from app.models import Memory
+from app.repositories import MemoryRepository
+from app.utils import utc_time
+
+from .faiss_store import MemoryFAISSStore
 
 
 @dataclass

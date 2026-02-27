@@ -2,7 +2,7 @@ from dishka import FromDishka
 from dishka.integrations.litestar import inject
 from litestar import Controller, delete, get, post, put
 
-from app.core.exceptions import NotFoundError
+from app.core import NotFoundError
 from app.schemas import (
     PromptCreateRequest,
     PromptDeleteResponse,

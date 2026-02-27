@@ -5,7 +5,7 @@ import faiss
 import numpy as np
 
 from app.config import settings
-from app.utils.logging import logger
+from app.utils import logger
 
 
 class MemoryFAISSStore:

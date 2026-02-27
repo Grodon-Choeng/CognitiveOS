@@ -4,8 +4,8 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
 from app.note import NoteService, TaskPriority
-from app.services.reminder_service import ReminderService
-from app.utils.logging import logger
+from app.services import ReminderService
+from app.utils import logger
 
 
 @dataclass
