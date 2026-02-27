@@ -16,7 +16,7 @@ from app.services import PromptService, PromptTemplateService
 from app.utils.logging import logger
 
 
-def exception_handler(request: Request, exc: AppError | HTTPException) -> Response:
+def exception_handler(request: Request, exc: AppError | HTTPException | Exception) -> Response:
     if isinstance(exc, AppError):
         logger.error(
             f"Application error: {exc.code.value} - {exc.message}",

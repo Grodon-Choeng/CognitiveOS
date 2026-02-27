@@ -1,5 +1,6 @@
 import json
 from pathlib import Path
+from typing import Any, cast
 
 import faiss
 import numpy as np
@@ -58,7 +59,8 @@ class MemoryFAISSStore:
         if self.index.ntotal == 0:
             return []
 
-        distances, indices = self.index.search(self._normalize(query_embedding), top_k)
+        # FAISS Python stubs can be inconsistent across versions, so cast for static type checkers.
+        distances, indices = cast(Any, self.index).search(self._normalize(query_embedding), top_k)
         results: list[dict[str, float | int]] = []
 
         for score, vector_id in zip(distances[0], indices[0], strict=False):

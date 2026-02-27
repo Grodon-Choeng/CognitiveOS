@@ -1,6 +1,6 @@
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import faiss
 import numpy as np
@@ -76,7 +76,8 @@ class VectorStore:
             return []
 
         query_vector = np.array([query_embedding], dtype=np.float32)
-        distances, indices = self.index.search(query_vector, top_k)
+        # FAISS Python stubs can be inconsistent across versions, so cast for static type checkers.
+        distances, indices = cast(Any, self.index).search(query_vector, top_k)
 
         results = []
         for distance, faiss_id in zip(distances[0], indices[0], strict=False):

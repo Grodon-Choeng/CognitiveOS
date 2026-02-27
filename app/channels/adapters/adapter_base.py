@@ -22,6 +22,7 @@ class IMAdapter(ABC):
         pass
 
     async def health_check(self) -> bool:
+        # noinspection PyBroadException
         try:
             result = await self.send_text("Health check")
             return result.success

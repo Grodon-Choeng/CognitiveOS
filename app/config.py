@@ -2,7 +2,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
-from pydantic import TypeAdapter, field_validator
+from pydantic import TypeAdapter, ValidationError, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from app.constants import CACHE_DEFAULT_TTL, CACHE_PROMPT_TTL, DEFAULT_EMBEDDING_DIMENSION
@@ -98,8 +98,8 @@ class Settings(BaseSettings):
     api_key_header: str = "X-API-Key"
     config_file: str = "config.yml"
 
-    @field_validator("im_configs", mode="before")
     @classmethod
+    @field_validator("im_configs", mode="before")
     def parse_im_configs(cls, v: Any) -> list[dict[str, Any]]:
         if isinstance(v, str):
             import json
@@ -122,12 +122,25 @@ class Settings(BaseSettings):
 
         try:
             import yaml
-        except Exception:
+        except ModuleNotFoundError:
             return
 
         try:
             data = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
-        except Exception:
+        except FileNotFoundError:
+            print(f"配置文件未找到: {config_path}")
+            return
+        except PermissionError:
+            print(f"无权限读取配置文件: {config_path}")
+            return
+        except UnicodeDecodeError:
+            print(f"配置文件编码错误，请确保使用 UTF-8: {config_path}")
+            return
+        except yaml.YAMLError as e:
+            print(f"YAML 格式错误: {e}")
+            raise
+        except Exception as e:
+            print(f"加载配置时发生未知错误: {e}")
             return
 
         if not isinstance(data, dict):
@@ -150,11 +163,17 @@ class Settings(BaseSettings):
             field = type(self).model_fields.get(field_name)
             if field is None:
                 continue
+            # noinspection PyBroadException
             try:
                 value = TypeAdapter(field.annotation).validate_python(field_value)
                 setattr(self, field_name, value)
+            except ValidationError as e:
+                print(
+                    f"配置项 '{field_name}' 的值 '{field_value}' 无效 (期望类型: {field.annotation})。"
+                    f"忽略该值，保持原有设置。错误详情: {e.error_count()} 个错误"
+                )
+                continue
             except Exception:
-                # Ignore invalid YAML value and keep current setting value.
                 continue
 
     def _migrate_legacy_im_config(self) -> None:

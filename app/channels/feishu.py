@@ -17,7 +17,7 @@ try:
         CreateMessageRequest,
         CreateMessageRequestBody,
     )
-except Exception:  # pragma: no cover - optional dependency in runtime environment
+except ModuleNotFoundError:  # pragma: no cover - optional dependency in runtime environment
     lark = None
     CreateMessageRequest = None
     CreateMessageRequestBody = None
@@ -232,7 +232,7 @@ class FeishuBot:
             future = asyncio.run_coroutine_threadsafe(self.on_alert_callback(message), self._loop)
             future.add_done_callback(self._log_future_exception)
 
-    def _handle_message_event(self, data: Any) -> None:
+    def _handle_message_event(self, data: Any, *_args: Any) -> None:
         logger.info("[Feishu] Incoming event received")
         incoming = self._parse_incoming_message(data)
         if not incoming:

@@ -84,6 +84,7 @@ async def send_reminder(reminder: Reminder, is_advance: bool = False) -> bool:
                 await channel.send(f"{prefix}: {reminder.content}")
                 return True
 
+            # noinspection PyBroadException
             try:
                 channel = await bot.bot.fetch_channel(reminder.channel_id)
                 if channel:

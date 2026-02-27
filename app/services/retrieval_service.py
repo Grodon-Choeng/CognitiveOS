@@ -52,6 +52,8 @@ class RetrievalService:
         max_context_tokens: int = 2000,
         user_id: str = "default",
     ) -> str:
+        # Reserved for future prompt budget control when merging knowledge + memory context.
+        _ = max_context_tokens
         items = await self.search_and_retrieve(query, top_k)
 
         if not items:

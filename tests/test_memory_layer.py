@@ -1,16 +1,27 @@
-from datetime import timedelta
-from types import SimpleNamespace
+from dataclasses import dataclass
+from datetime import datetime, timedelta
 
 from app.services.memory.faiss_store import MemoryFAISSStore
 from app.services.memory.retriever import MemoryHit, MemoryRetriever
 from app.utils.times import utc_time
 
 
+@dataclass
+class _MemoryLike:
+    id: int
+    user_id: str
+    memory_type: str
+    importance: int
+    summary: str
+    content: str
+    updated_at: datetime
+
+
 class _FakeRepo:
-    def __init__(self, items):
+    def __init__(self, items: list[_MemoryLike]):
         self._items = items
 
-    async def get_by_ids(self, ids):
+    async def get_by_ids(self, ids: list[int]) -> list[_MemoryLike]:
         by_id = {item.id: item for item in self._items}
         return [by_id[i] for i in ids if i in by_id]
 
@@ -32,8 +43,14 @@ def test_memory_faiss_store_add_and_search(tmp_path, monkeypatch):
 
 
 def test_memory_retriever_build_context():
-    memory = SimpleNamespace(
-        id=1, memory_type="fact", importance=4, summary="记忆摘要", content="记忆正文"
+    memory = _MemoryLike(
+        id=1,
+        user_id="u1",
+        memory_type="fact",
+        importance=4,
+        summary="记忆摘要",
+        content="记忆正文",
+        updated_at=utc_time(),
     )
     hit = MemoryHit(memory=memory, similarity=0.9, final_score=0.8, vector_id=1)
 
@@ -42,9 +59,9 @@ def test_memory_retriever_build_context():
     assert "记忆摘要" in context
 
 
-async def test_memory_retriever_search_scores(monkeypatch):
+async def test_memory_retriever_search_scores():
     now = utc_time()
-    recent = SimpleNamespace(
+    recent = _MemoryLike(
         id=1,
         user_id="u1",
         memory_type="fact",
@@ -53,7 +70,7 @@ async def test_memory_retriever_search_scores(monkeypatch):
         content="recent",
         updated_at=now,
     )
-    old = SimpleNamespace(
+    old = _MemoryLike(
         id=2,
         user_id="u1",
         memory_type="fact",
@@ -64,7 +81,9 @@ async def test_memory_retriever_search_scores(monkeypatch):
     )
 
     class _FakeStore:
-        def search(self, query_embedding, top_k=8):
+        # noinspection PyMethodMayBeStatic
+        def search(self, _query_embedding, top_k=8):
+            _ = top_k
             return [
                 {"memory_id": 1, "vector_id": 1, "similarity": 0.8},
                 {"memory_id": 2, "vector_id": 2, "similarity": 0.8},

@@ -1,5 +1,6 @@
 import re
 from datetime import datetime, timedelta
+from typing import Any, cast
 
 from app.models import Reminder
 from app.utils import logger
@@ -110,30 +111,34 @@ class ReminderService:
     @staticmethod
     async def get_pending_reminders() -> list[Reminder]:
         now = datetime.now()
+        is_sent_col = cast(Any, Reminder.is_sent)
+        remind_at_col = cast(Any, Reminder.remind_at)
         reminders = (
             await Reminder.select()
-            .where(Reminder.is_sent == False)  # noqa: E712
-            .where(Reminder.remind_at <= now)
-            .order_by(Reminder.remind_at)
+            .where(is_sent_col == False)  # noqa: E712
+            .where(remind_at_col <= now)
+            .order_by(remind_at_col)
         )
         return [Reminder(**r) for r in reminders]
 
     @staticmethod
     async def get_user_reminders(user_id: str, limit: int = 10) -> list[Reminder]:
+        user_id_col = cast(Any, Reminder.user_id)
+        is_sent_col = cast(Any, Reminder.is_sent)
+        remind_at_col = cast(Any, Reminder.remind_at)
         reminders = (
             await Reminder.select()
-            .where(Reminder.user_id == user_id)
-            .where(Reminder.is_sent == False)  # noqa: E712
-            .order_by(Reminder.remind_at)
+            .where(user_id_col == user_id)
+            .where(is_sent_col == False)  # noqa: E712
+            .order_by(remind_at_col)
             .limit(limit)
         )
         return [Reminder(**r) for r in reminders]
 
     @staticmethod
     async def mark_as_sent(reminder_id: int) -> None:
-        await Reminder.update(is_sent=True, sent_at=datetime.now()).where(
-            Reminder.id == reminder_id
-        )
+        id_col = cast(Any, Reminder.id)
+        await Reminder.update(is_sent=True, sent_at=datetime.now()).where(id_col == reminder_id)
 
     @staticmethod
     def format_time_remaining(remind_at: datetime) -> str:

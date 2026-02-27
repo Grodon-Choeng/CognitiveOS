@@ -1,6 +1,6 @@
 from typing import Any
 
-from dishka import make_async_container
+from dishka import AsyncContainer, make_async_container
 
 from app.container import AppProvider
 from app.services import EmbeddingService, KnowledgeItemService, VectorStore
@@ -15,8 +15,10 @@ async def startup(ctx: dict) -> None:
 
 
 async def shutdown(ctx: dict) -> None:
-    container = ctx.pop("container", None)
-    if container is not None and hasattr(container, "close"):
+    container: AsyncContainer | Any | None = ctx.pop("container", None)
+    if container is not None and (
+        hasattr(container, "close") or isinstance(container, AsyncContainer)
+    ):
         await container.close()
 
 

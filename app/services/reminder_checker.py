@@ -1,5 +1,6 @@
 import asyncio
 from datetime import datetime, timedelta
+from typing import Any, cast
 
 from app.channels.runtime import get_default_provider, send_reminder
 from app.models import Reminder
@@ -41,11 +42,14 @@ async def check_reminders() -> None:
             now = datetime.now()
             advance_time = now + timedelta(minutes=1)
 
+            is_sent_col = cast(Any, Reminder.is_sent)
+            remind_at_col = cast(Any, Reminder.remind_at)
+            id_col = cast(Any, Reminder.id)
             rows = (
                 await Reminder.select()
-                .where(Reminder.is_sent == False)  # noqa: E712
-                .where(Reminder.remind_at <= advance_time)
-                .order_by(Reminder.remind_at)
+                .where(is_sent_col == False)  # noqa: E712
+                .where(remind_at_col <= advance_time)
+                .order_by(remind_at_col)
             )
 
             for row in rows:
@@ -56,16 +60,14 @@ async def check_reminders() -> None:
                         success = await send_reminder(reminder, is_advance=False)
                         if success:
                             await Reminder.update(is_sent=True, sent_at=datetime.now()).where(
-                                Reminder.id == reminder.id
+                                id_col == reminder.id
                             )
                             logger.info(f"Sent reminder: {reminder.content}")
 
                     elif reminder.remind_at <= advance_time and not reminder.is_advance_sent:
                         success = await send_reminder(reminder, is_advance=True)
                         if success:
-                            await Reminder.update(is_advance_sent=True).where(
-                                Reminder.id == reminder.id
-                            )
+                            await Reminder.update(is_advance_sent=True).where(id_col == reminder.id)
                             logger.info(f"Sent advance reminder: {reminder.content}")
 
                 except Exception as e:
