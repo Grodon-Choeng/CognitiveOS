@@ -24,14 +24,25 @@ class LLMService:
         self,
         messages: list[dict[str, str]],
         temperature: float = 0.7,
-        max_tokens: int = 1000,
+        max_tokens: int | None = None,
+        model: str | None = None,
+        base_url: str | None = None,
+        api_key: str | None = None,
     ) -> str:
         try:
+            req_max_tokens = settings.llm_max_tokens if max_tokens is None else max_tokens
+            kwargs: dict[str, object] = {
+                "model": model or self.model,
+                "messages": messages,
+                "temperature": temperature,
+                "api_base": base_url or self.base_url or None,
+                "api_key": api_key or self.api_key or None,
+            }
+            if req_max_tokens is not None:
+                kwargs["max_tokens"] = req_max_tokens
+
             response = await acompletion(
-                model=self.model,
-                messages=messages,
-                temperature=temperature,
-                max_tokens=max_tokens,
+                **kwargs,
             )
             content = response.choices[0].message.content
             logger.debug(f"LLM chat completed: {len(content)} chars")
@@ -45,13 +56,23 @@ class LLMService:
         system_prompt: str,
         user_message: str,
         temperature: float = 0.7,
-        max_tokens: int = 1000,
+        max_tokens: int | None = None,
+        model: str | None = None,
+        base_url: str | None = None,
+        api_key: str | None = None,
     ) -> str:
         messages = [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_message},
         ]
-        return await self.chat(messages, temperature, max_tokens)
+        return await self.chat(
+            messages,
+            temperature,
+            max_tokens,
+            model=model,
+            base_url=base_url,
+            api_key=api_key,
+        )
 
     @staticmethod
     def _embedding_cache_key(text: str) -> str:

@@ -1,4 +1,5 @@
 from .capture_service import CaptureService
+from .cognitive_agent_service import AgentOutcome, CognitiveAgentService
 from .embedding_service import EmbeddingService
 from .knowledge_item_service import KnowledgeItemService
 from .llm_service import LLMService
@@ -19,6 +20,8 @@ from .vector_store import VectorStore
 
 __all__ = [
     "CaptureService",
+    "AgentOutcome",
+    "CognitiveAgentService",
     "EmbeddingService",
     "KnowledgeItemService",
     "LLMService",

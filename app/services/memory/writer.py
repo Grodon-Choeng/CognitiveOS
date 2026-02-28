@@ -1,5 +1,6 @@
 import json
 
+from app.config import settings
 from app.repositories import EmbeddingRecordRepository, MemoryRepository
 from app.services.llm_service import LLMService
 from app.utils import logger
@@ -57,7 +58,7 @@ class MemoryWriter:
                 system_prompt=system_prompt,
                 user_message=user_prompt,
                 temperature=0.0,
-                max_tokens=220,
+                max_tokens=settings.memory_judge_max_tokens,
             )
             data = json.loads(raw)
             return {

@@ -88,6 +88,18 @@ class Settings(BaseSettings):
     llm_model: str = "openai/gpt-4o-mini"
     llm_api_key: str = ""
     llm_base_url: str = ""
+    llm_max_tokens: int | None = None
+    agent_enabled: bool = True
+    agent_max_steps: int = 4
+    agent_planner_max_tokens: int | None = None
+    agent_trace_enabled: bool = True
+    intent_enabled: bool = True
+    intent_model: str = ""
+    intent_base_url: str = ""
+    intent_api_key: str = ""
+    intent_max_tokens: int | None = None
+    intent_confidence_threshold: float = 0.55
+    memory_judge_max_tokens: int | None = None
     embedding_model: str = "openai/text-embedding-3-small"
     embedding_dimension: int = DEFAULT_EMBEDDING_DIMENSION
 

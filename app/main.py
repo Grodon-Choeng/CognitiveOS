@@ -121,3 +121,8 @@ im_providers = [cfg.provider.value for cfg in settings.get_im_configs()]
 logger.info(f"IM enabled: {settings.im_enabled}, providers: {im_providers}")
 
 logger.info(f"LLM model: {settings.llm_model}, embedding: {settings.embedding_model}")
+logger.info(
+    f"Agent enabled: {settings.agent_enabled}, max_steps: {settings.agent_max_steps}, "
+    f"intent_model: {settings.intent_model or settings.llm_model}, "
+    f"intent_base_url: {settings.intent_base_url or settings.llm_base_url or 'default'}"
+)
