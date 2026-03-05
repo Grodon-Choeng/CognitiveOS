@@ -4,6 +4,7 @@ from typing import Any, cast
 
 from app.channels.runtime import get_default_provider, send_reminder
 from app.models import Reminder
+from app.services.reminder_service import ReminderService
 from app.utils import logger
 
 
@@ -17,6 +18,15 @@ def parse_reminder_from_row(row: dict) -> Reminder:
     reminder.is_sent = row.get("is_sent", False)
     reminder.is_advance_sent = row.get("is_advance_sent", False)
     reminder.provider = row.get("provider", get_default_provider().value)
+    reminder.is_recurring = row.get("is_recurring", False)
+    reminder.recurrence_rule = row.get("recurrence_rule")
+    reminder.advance_minutes = row.get("advance_minutes", 1)
+    reminder.retry_interval_minutes = row.get("retry_interval_minutes", 0)
+    reminder.max_retries = row.get("max_retries", 0)
+    reminder.retry_count = row.get("retry_count", 0)
+    reminder.require_ack = row.get("require_ack", False)
+    reminder.pause_until = row.get("pause_until")
+    reminder.status = row.get("status", "active")
 
     remind_at = row.get("remind_at")
     if isinstance(remind_at, str):
@@ -33,6 +43,13 @@ def parse_reminder_from_row(row: dict) -> Reminder:
         elif isinstance(sent_at, datetime):
             reminder.sent_at = sent_at
 
+    pause_until = row.get("pause_until")
+    if pause_until:
+        if isinstance(pause_until, str):
+            reminder.pause_until = datetime.fromisoformat(pause_until.replace("Z", "+00:00"))
+        elif isinstance(pause_until, datetime):
+            reminder.pause_until = pause_until
+
     return reminder
 
 
@@ -40,31 +57,91 @@ async def check_reminders() -> None:
     while True:
         try:
             now = datetime.now()
-            advance_time = now + timedelta(minutes=1)
 
             is_sent_col = cast(Any, Reminder.is_sent)
             remind_at_col = cast(Any, Reminder.remind_at)
+            status_col = cast(Any, Reminder.status)
+            pause_until_col = cast(Any, Reminder.pause_until)
             id_col = cast(Any, Reminder.id)
             rows = (
                 await Reminder.select()
                 .where(is_sent_col == False)  # noqa: E712
-                .where(remind_at_col <= advance_time)
+                .where(
+                    (status_col == "active") | ((status_col == "paused") & (pause_until_col <= now))
+                )
+                .where(remind_at_col <= now + timedelta(days=1))
                 .order_by(remind_at_col)
             )
 
             for row in rows:
                 try:
                     reminder = parse_reminder_from_row(row)
+                    if (
+                        reminder.status == "paused"
+                        and reminder.pause_until
+                        and reminder.pause_until <= now
+                    ):
+                        await Reminder.update(status="active").where(id_col == reminder.id)
+                        reminder.status = "active"
+
+                    if reminder.status != "active":
+                        continue
+
+                    advance_window = now + timedelta(
+                        minutes=max(0, int(reminder.advance_minutes or 0))
+                    )
 
                     if reminder.remind_at <= now:
                         success = await send_reminder(reminder, is_advance=False)
                         if success:
-                            await Reminder.update(is_sent=True, sent_at=datetime.now()).where(
-                                id_col == reminder.id
-                            )
-                            logger.info(f"Sent reminder: {reminder.content}")
+                            if reminder.is_recurring and reminder.recurrence_rule:
+                                next_time = ReminderService.next_occurrence(
+                                    base=reminder.remind_at,
+                                    rule=reminder.recurrence_rule,
+                                    now=now,
+                                )
+                                await Reminder.update(
+                                    remind_at=next_time,
+                                    is_sent=False,
+                                    is_advance_sent=False,
+                                    retry_count=0,
+                                    sent_at=datetime.now(),
+                                    last_triggered_at=datetime.now(),
+                                    status="active",
+                                ).where(id_col == reminder.id)
+                                logger.info(
+                                    f"Sent recurring reminder: {reminder.content}, next at {next_time}"
+                                )
+                            elif int(reminder.retry_interval_minutes or 0) > 0 and int(
+                                reminder.retry_count or 0
+                            ) < int(reminder.max_retries or 0):
+                                retry_time = now + timedelta(
+                                    minutes=int(reminder.retry_interval_minutes or 0)
+                                )
+                                await Reminder.update(
+                                    remind_at=retry_time,
+                                    is_sent=False,
+                                    is_advance_sent=False,
+                                    retry_count=int(reminder.retry_count or 0) + 1,
+                                    sent_at=datetime.now(),
+                                    last_triggered_at=datetime.now(),
+                                ).where(id_col == reminder.id)
+                                logger.info(
+                                    f"Sent reminder with retry schedule: {reminder.content}, retry at {retry_time}"
+                                )
+                            else:
+                                await Reminder.update(
+                                    is_sent=True,
+                                    sent_at=datetime.now(),
+                                    last_triggered_at=datetime.now(),
+                                ).where(id_col == reminder.id)
+                                logger.info(f"Sent reminder: {reminder.content}")
 
-                    elif reminder.remind_at <= advance_time and not reminder.is_advance_sent:
+                    elif (
+                        int(reminder.advance_minutes or 0) > 0
+                        and reminder.remind_at <= advance_window
+                        and not reminder.is_advance_sent
+                    ):
                         success = await send_reminder(reminder, is_advance=True)
                         if success:
                             await Reminder.update(is_advance_sent=True).where(id_col == reminder.id)

@@ -105,6 +105,8 @@ class Settings(BaseSettings):
 
     vector_index_path: str = "storage/vectors/index.faiss"
     memory_vector_index_path: str = "storage/vectors/memory.index"
+    cn_holidays: list[str] = []
+    cn_makeup_workdays: list[str] = []
 
     api_key: str = ""
     api_key_header: str = "X-API-Key"

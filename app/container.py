@@ -1,7 +1,9 @@
 from dishka import Provider, Scope, provide
 
+from app.bot.message_service import BotMessageService
 from app.channels import IMManager
 from app.config import settings
+from app.note import NoteService
 from app.repositories import (
     EmbeddingRecordRepository,
     KnowledgeItemRepository,
@@ -26,6 +28,8 @@ from app.services import (
     StructuringService,
     VectorStore,
 )
+from app.services.cognitive_agent_service import CognitiveAgentService
+from app.services.intent_graph_service import IntentGraphService
 
 
 class AppProvider(Provider):
@@ -73,6 +77,33 @@ class AppProvider(Provider):
     @provide(scope=Scope.APP)
     def llm_service(self) -> LLMService:
         return LLMService()
+
+    @provide(scope=Scope.APP)
+    def note_service(self) -> NoteService:
+        return NoteService()
+
+    @provide(scope=Scope.APP)
+    def intent_graph_service(self, llm_service: LLMService) -> IntentGraphService:
+        return IntentGraphService(llm_service=llm_service)
+
+    @provide(scope=Scope.APP)
+    def cognitive_agent_service(
+        self,
+        note_service: NoteService,
+        llm_service: LLMService,
+    ) -> CognitiveAgentService:
+        return CognitiveAgentService(note_service=note_service, llm_service=llm_service)
+
+    @provide(scope=Scope.APP)
+    def bot_message_service(
+        self,
+        agent_service: CognitiveAgentService,
+        llm_service: LLMService,
+    ) -> BotMessageService:
+        return BotMessageService(
+            agent_service=agent_service,
+            llm_service=llm_service,
+        )
 
     @provide(scope=Scope.APP)
     def embedding_service(

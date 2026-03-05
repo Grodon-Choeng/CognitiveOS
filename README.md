@@ -4,6 +4,25 @@
 
 一个可进化的个人认知操作系统，用于构建可计算的认知外脑。
 
+> ⚠️ **实验体声明**
+>
+> 这个项目是一个持续演化中的实验体（prototype）。
+> 它的目标不是做“完美助手”，而是探索“第二大脑 / 外脑”的可行工程路径。
+> 架构和能力会持续重构，历史实现可能被直接替换。
+>
+> **欢迎吐槽、欢迎挑战、欢迎提 issue。**
+
+## 当前状态（2026-03）
+
+- 项目定位已升级为：`外脑 / 第二大脑`
+- 保持不变的基础设施：`Piccolo ORM` / `Litestar API` / `Dishka DI`
+- 其他模块正在进行大规模重构，优先目标是：
+  - 高度模块化
+  - 可扩展 function calling
+  - 面向长期记忆、学习、决策的认知循环
+
+重构路线图见：[`docs/brain-os-roadmap.md`](docs/brain-os-roadmap.md)
+
 ## 设计理念
 
 这不是一个笔记工具，而是一个：
@@ -187,67 +206,32 @@ Markdown 是展示层，不是唯一真相。
 ```
 CognitiveOS/
 ├── app/
-│   ├── __init__.py
-│   ├── config.py                  # 配置管理
-│   ├── container.py               # 依赖注入容器
-│   ├── main.py                    # 应用入口
-│   ├── core/
-│   │   ├── __init__.py
-│   │   ├── exceptions.py          # 异常定义
-│   │   ├── model.py               # 基础模型 (BaseModel, TimestampMixin)
-│   │   └── repository.py          # 基础仓储 (BaseRepository)
-│   ├── channels/                  # IM 通道层（长连接 Bot + Webhook 适配器）
-│   │   ├── __init__.py
-│   │   ├── registry.py            # 通道注册中心（启动/停止/健康）
-│   │   ├── runtime.py             # 运行态发送入口（提醒/点对点发送）
-│   │   ├── webhook_manager.py     # Webhook 适配器管理器
-│   │   ├── message.py             # 通道消息模型
-│   │   ├── discord.py             # Discord 长连接 Bot
-│   │   ├── feishu.py              # 飞书长连接 Bot
-│   │   └── adapters/              # Webhook 适配器（企业微信/钉钉/飞书/Discord）
-│   ├── models/
-│   │   ├── knowledge_item.py      # 知识项模型
-│   │   ├── prompt.py              # 提示词模型
-│   │   └── sessions.py            # 会话模型
-│   ├── repositories/
-│   │   ├── knowledge_item_repo.py # 知识项仓储
-│   │   └── prompt_repo.py         # 提示词仓储
-│   ├── routes/
-│   │   ├── health.py              # 健康检查
-│   │   ├── im.py                  # IM 测试路由
-│   │   ├── items.py               # 知识项路由
-│   │   ├── prompts.py             # 提示词管理路由
-│   │   ├── retrieval.py           # RAG 检索路由
-│   │   └── webhook.py             # Webhook 路由
-│   ├── schemas/
-│   │   ├── im.py                  # IM 响应 DTO
-│   │   ├── prompt.py              # 提示词 DTO
-│   │   ├── retrieval.py           # 检索 DTO
-│   │   └── webhook.py             # Webhook DTO
-│   ├── services/
-│   │   ├── capture_service.py     # 自动记录
-│   │   ├── embedding_service.py   # Embedding 生成
-│   │   ├── knowledge_item_service.py # 知识项服务
-│   │   ├── llm_service.py         # LLM 统一接口 (LiteLLM)
-│   │   ├── notification_service.py # IM 通知
-│   │   ├── prompt_service.py      # 提示词服务
-│   │   ├── retrieval_service.py   # RAG 检索
-│   │   ├── structuring_service.py # 结构化输出
-│   │   ├── vector_store.py        # FAISS 向量存储
-│   │   ├── reflection_service.py  # 反思总结 (TODO)
-│   │   └── reminder_service.py    # 提醒系统
-│   └── utils/
-│       ├── jsons.py               # JSON 工具
-│       ├── logging.py             # 日志系统
-│       └── times.py               # 工具函数
-├── storage/
-│   ├── raw/                       # 原始 Markdown
-│   ├── structured/                # 结构化 Markdown
-│   └── vectors/                   # FAISS 索引
-├── piccolo_conf.py                # 数据库配置
-├── piccolo_migrations/            # 迁移文件
-├── pyproject.toml                 # 项目依赖
-└── cognitive.db                   # SQLite 数据库
+│   ├── agents/                    # Agent 工具协议与注册中心
+│   ├── application/               # 命令路由 / 意图处理编排
+│   ├── bot/                       # IM 消息入口（薄层）
+│   ├── channels/                  # 飞书/Discord 长连接 + Webhook 适配器
+│   ├── core/                      # 基础异常/模型/仓储基类
+│   ├── middleware/                # API Key / IM 签名 / 请求追踪
+│   ├── models/                    # Piccolo ORM 模型
+│   ├── repositories/              # 数据访问层
+│   ├── routes/v1/                 # Litestar API 路由
+│   ├── schemas/                   # API DTO
+│   ├── services/                  # 领域服务（memory/retrieval/agent 等）
+│   │   └── memory/                # Long-term Memory 子模块
+│   ├── tasks/                     # 后台任务（索引等）
+│   ├── note/                      # Logseq 适配层
+│   ├── utils/                     # 日志/JSON/时间等工具
+│   ├── config.py                  # 配置管理（YAML 优先）
+│   ├── container.py               # Dishka 依赖注册
+│   ├── runtime.py                 # 运行时容器访问
+│   └── main.py                    # 应用入口
+├── docs/                          # 设计与使用文档
+├── piccolo_migrations/            # 数据库迁移
+├── storage/                       # 本地存储（向量索引、trace 等）
+├── tests/                         # 测试
+├── config.yml                     # 本地配置
+├── config.example.yml             # 配置样例
+└── pyproject.toml                 # 依赖与工具配置
 ```
 
 ## 快速开始

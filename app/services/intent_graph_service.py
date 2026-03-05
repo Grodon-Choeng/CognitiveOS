@@ -93,7 +93,13 @@ class IntentGraphService:
             reason = state.get("reason", "")
 
             if confidence < self._threshold:
-                return self._heuristic(cleaned, reason=f"low_confidence:{confidence:.2f}")
+                return IntentResult(
+                    intent="note",
+                    content=cleaned,
+                    confidence=confidence,
+                    task_priority="LATER",
+                    reason=f"low_confidence:{confidence:.2f}",
+                )
 
             return IntentResult(
                 intent=intent,
@@ -103,8 +109,14 @@ class IntentGraphService:
                 reason=reason,
             )
         except Exception as e:
-            logger.warning(f"Intent graph failed, fallback to heuristic: {e}")
-            return self._heuristic(cleaned, reason="graph_exception")
+            logger.warning(f"Intent graph failed, fallback to note intent: {e}")
+            return IntentResult(
+                intent="note",
+                content=cleaned,
+                confidence=0.0,
+                task_priority="LATER",
+                reason="graph_exception",
+            )
 
     async def _classify_node(self, state: IntentState) -> IntentState:
         text = state.get("text", "").strip()

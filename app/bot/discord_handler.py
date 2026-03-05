@@ -1,3 +1,4 @@
+from app.runtime import get_app_container
 from app.utils import logger
 
 from .message_service import BotMessageService, IncomingMessage
@@ -16,7 +17,12 @@ async def handle_discord_message(message) -> None:
     )
 
     try:
-        service = BotMessageService()
+        container = get_app_container()
+        if container is not None:
+            async with container() as request_container:
+                service = await request_container.get(BotMessageService)
+        else:
+            service = BotMessageService()
         await service.handle(incoming)
     except Exception as e:
         logger.error(f"Failed to handle Discord message: {e}")

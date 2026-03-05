@@ -36,6 +36,8 @@ embedding_dimension: 1536
 
 vector_index_path: storage/vectors/index.faiss
 memory_vector_index_path: storage/vectors/memory.index
+cn_holidays: []
+cn_makeup_workdays: []
 
 api_key: ""
 api_key_header: X-API-Key

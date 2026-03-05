@@ -4,6 +4,25 @@ English | [简体中文](README.md)
 
 An evolvable personal cognitive operating system for building a computable cognitive external brain.
 
+> ⚠️ **Experimental Notice**
+>
+> This project is an evolving prototype.
+> The goal is not to build a polished “assistant”, but to explore a practical engineering path for a “second brain / external brain”.
+> Architecture and modules may change aggressively, and legacy implementations can be replaced directly.
+>
+> **Feedback, criticism, and roast are all welcome.**
+
+## Current Status (2026-03)
+
+- Positioning has been upgraded to: `External Brain / Second Brain`
+- Foundations that stay stable: `Piccolo ORM` / `Litestar API` / `Dishka DI`
+- Other modules are under major refactoring with priorities:
+  - high modularity
+  - function-calling-friendly architecture
+  - cognitive loops for long-term memory, learning, and decision support
+
+See roadmap: [`docs/brain-os-roadmap.md`](docs/brain-os-roadmap.md)
+
 ## Design Philosophy
 
 This is not a note-taking tool, but a:
@@ -176,65 +195,32 @@ Markdown is presentation layer, not the single source of truth.
 ```
 CognitiveOS/
 ├── app/
-│   ├── __init__.py
-│   ├── config.py                  # Configuration management
-│   ├── container.py               # DI container
-│   ├── main.py                    # Application entry
-│   ├── core/
-│   │   ├── __init__.py
-│   │   ├── exceptions.py          # Exception definitions
-│   │   ├── model.py               # Base models
-│   │   └── repository.py          # Base repository
-│   ├── im/                        # IM adapters
-│   │   ├── __init__.py
-│   │   ├── base.py                # Base interface
-│   │   ├── wecom.py               # WeCom
-│   │   ├── dingtalk.py            # DingTalk
-│   │   ├── feishu.py              # Feishu
-│   │   └── discord.py             # Discord
-│   ├── models/
-│   │   ├── knowledge_item.py      # Knowledge item model
-│   │   ├── prompt.py              # Prompt model
-│   │   └── sessions.py            # Session model
-│   ├── repositories/
-│   │   ├── knowledge_item_repo.py # Knowledge item repository
-│   │   └── prompt_repo.py         # Prompt repository
-│   ├── routes/
-│   │   ├── health.py              # Health check
-│   │   ├── im.py                  # IM test routes
-│   │   ├── items.py               # Knowledge item routes
-│   │   ├── prompts.py             # Prompt management routes
-│   │   ├── retrieval.py           # RAG retrieval routes
-│   │   └── webhook.py             # Webhook route
-│   ├── schemas/
-│   │   ├── im.py                  # IM response DTOs
-│   │   ├── prompt.py              # Prompt DTOs
-│   │   ├── retrieval.py           # Retrieval DTOs
-│   │   └── webhook.py             # Webhook DTOs
-│   ├── services/
-│   │   ├── capture_service.py     # Auto capture
-│   │   ├── embedding_service.py   # Embedding generation
-│   │   ├── knowledge_item_service.py # Knowledge item service
-│   │   ├── llm_service.py         # LLM unified interface (LiteLLM)
-│   │   ├── notification_service.py # IM notification
-│   │   ├── prompt_service.py      # Prompt service
-│   │   ├── retrieval_service.py   # RAG retrieval
-│   │   ├── structuring_service.py # Structured output
-│   │   ├── vector_store.py        # FAISS vector store
-│   │   ├── reflection_service.py  # Reflection (TODO)
-│   │   └── reminder_service.py    # Reminder system
-│   └── utils/
-│       ├── jsons.py               # JSON utilities
-│       ├── logging.py             # Logging system
-│       └── times.py               # Utility functions
-├── storage/
-│   ├── raw/                       # Raw Markdown
-│   ├── structured/                # Structured Markdown
-│   └── vectors/                   # FAISS index
-├── piccolo_conf.py                # Database config
-├── piccolo_migrations/            # Migration files
-├── pyproject.toml                 # Dependencies
-└── cognitive.db                   # SQLite database
+│   ├── agents/                    # Agent tooling protocol and registry
+│   ├── application/               # Command routing and intent orchestration
+│   ├── bot/                       # IM message entry (thin layer)
+│   ├── channels/                  # Feishu/Discord long-connection + webhook adapters
+│   ├── core/                      # Base exceptions/models/repository abstractions
+│   ├── middleware/                # API Key / IM signature / request tracing
+│   ├── models/                    # Piccolo ORM models
+│   ├── repositories/              # Data access layer
+│   ├── routes/v1/                 # Litestar API routes
+│   ├── schemas/                   # API DTOs
+│   ├── services/                  # Domain services (memory/retrieval/agent etc.)
+│   │   └── memory/                # Long-term Memory submodule
+│   ├── tasks/                     # Background jobs (indexing etc.)
+│   ├── note/                      # Logseq adapter layer
+│   ├── utils/                     # Logging/JSON/time utilities
+│   ├── config.py                  # Configuration management (YAML-first)
+│   ├── container.py               # Dishka dependency registration
+│   ├── runtime.py                 # Runtime container accessor
+│   └── main.py                    # Application entry
+├── docs/                          # Design and usage docs
+├── piccolo_migrations/            # Database migrations
+├── storage/                       # Local runtime storage (vector index, traces, etc.)
+├── tests/                         # Tests
+├── config.yml                     # Local config
+├── config.example.yml             # Config template
+└── pyproject.toml                 # Dependencies and tool config
 ```
 
 ## Quick Start

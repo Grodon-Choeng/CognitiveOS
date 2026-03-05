@@ -1,12 +1,27 @@
 import re
 from datetime import datetime, timedelta
-from typing import Any, cast
+from typing import Any, Literal, cast
 
 from app.models import Reminder
+from app.services.calendar_service import ChinaWorkdayCalendarService
 from app.utils import logger
 
 
 class ReminderService:
+    _calendar = ChinaWorkdayCalendarService()
+
+    @staticmethod
+    def _apply_recurrence_wording(content: str, rule: str | None) -> str:
+        cleaned = content.strip()
+        if not cleaned:
+            return cleaned
+        if rule == "WEEKDAYS":
+            cleaned = re.sub(r"^每天", "工作日", cleaned)
+            cleaned = re.sub(r"^每日", "工作日", cleaned)
+        elif rule == "DAILY":
+            cleaned = re.sub(r"^工作日", "每天", cleaned)
+        return cleaned
+
     @staticmethod
     def _clean_reminder_content(content: str) -> str:
         cleaned = content.strip()
@@ -154,6 +169,56 @@ class ReminderService:
         return None
 
     @staticmethod
+    def parse_snooze_delta(text: str) -> timedelta | None:
+        cleaned = text.strip()
+        match = re.search(r"(延迟|延后|顺延)\s*(\d{1,3})\s*(分钟|小时|天)", cleaned)
+        if not match:
+            return None
+        value = int(match.group(2))
+        unit = match.group(3)
+        if unit == "分钟":
+            return timedelta(minutes=value)
+        if unit == "小时":
+            return timedelta(hours=value)
+        if unit == "天":
+            return timedelta(days=value)
+        return None
+
+    @staticmethod
+    def parse_recurrence_rule(text: str) -> Literal["NONE", "DAILY", "WEEKDAYS"] | None:
+        cleaned = text.strip()
+        if any(
+            token in cleaned for token in ("仅有明天", "仅明天", "只明天", "就明天", "只提醒一次")
+        ):
+            return "NONE"
+        if any(token in cleaned for token in ("工作日", "周一到周五")):
+            return "WEEKDAYS"
+        if any(token in cleaned for token in ("每天", "每日", "天天")):
+            return "DAILY"
+        return None
+
+    @staticmethod
+    def _normalize_content_for_recurrence(content: str) -> str:
+        cleaned = content
+        cleaned = re.sub(
+            r"(每天|每日|天天|工作日|周一到周五|仅有明天|仅明天|只明天|就明天|只提醒一次)",
+            " ",
+            cleaned,
+        )
+        cleaned = re.sub(r"\s+", " ", cleaned).strip(" ，,。！!？?")
+        return cleaned.strip()
+
+    @staticmethod
+    def next_occurrence(base: datetime, rule: str, now: datetime | None = None) -> datetime:
+        now_time = now or datetime.now()
+        candidate = base
+        while candidate <= now_time:
+            candidate = candidate + timedelta(days=1)
+        if rule == "WEEKDAYS":
+            candidate = ReminderService._calendar.next_workday_datetime(candidate)
+        return candidate
+
+    @staticmethod
     async def create_reminder(
         content: str,
         remind_at: datetime,
@@ -161,18 +226,46 @@ class ReminderService:
         channel_id: int | None = None,
         guild_id: int | None = None,
         provider: str = "discord",
+        recurrence_rule: str | None = None,
+        advance_minutes: int = 1,
+        retry_interval_minutes: int = 0,
+        max_retries: int = 0,
+        require_ack: bool = False,
+        calendar_type: str | None = None,
     ) -> Reminder:
+        normalized_rule = (recurrence_rule or "").strip().upper() or None
+        is_recurring = normalized_rule in {"DAILY", "WEEKDAYS"}
+        normalized_content = ReminderService._normalize_content_for_recurrence(content)
+        normalized_calendar = (calendar_type or "").strip().lower() or (
+            "cn_workday" if normalized_rule == "WEEKDAYS" else "gregorian"
+        )
+        final_content = ReminderService._apply_recurrence_wording(
+            normalized_content or content,
+            normalized_rule,
+        )
         reminder = Reminder(
-            content=content,
+            content=final_content,
             remind_at=remind_at,
             user_id=user_id,
             channel_id=channel_id,
             guild_id=guild_id,
             is_sent=False,
             provider=provider,
+            is_recurring=is_recurring,
+            recurrence_rule=normalized_rule,
+            plan_type="recurring" if is_recurring else "one_time",
+            calendar_type=normalized_calendar,
+            advance_minutes=max(0, int(advance_minutes)),
+            retry_interval_minutes=max(0, int(retry_interval_minutes)),
+            max_retries=max(0, int(max_retries)),
+            retry_count=0,
+            require_ack=require_ack,
+            status="active",
         )
         await reminder.save()
-        logger.info(f"Created reminder: {content} at {remind_at}")
+        logger.info(
+            f"Created reminder: {reminder.content} at {remind_at}, recurring={is_recurring}, rule={normalized_rule}"
+        )
         return reminder
 
     @staticmethod
@@ -180,10 +273,14 @@ class ReminderService:
         now = datetime.now()
         is_sent_col = cast(Any, Reminder.is_sent)
         remind_at_col = cast(Any, Reminder.remind_at)
+        status_col = cast(Any, Reminder.status)
+        pause_until_col = cast(Any, Reminder.pause_until)
         reminders = (
             await Reminder.select()
             .where(is_sent_col == False)  # noqa: E712
+            .where(status_col == "active")
             .where(remind_at_col <= now)
+            .where((pause_until_col == None) | (pause_until_col <= now))  # noqa: E711
             .order_by(remind_at_col)
         )
         return [Reminder(**r) for r in reminders]
@@ -193,10 +290,12 @@ class ReminderService:
         user_id_col = cast(Any, Reminder.user_id)
         is_sent_col = cast(Any, Reminder.is_sent)
         remind_at_col = cast(Any, Reminder.remind_at)
+        now = datetime.now()
         reminders = (
             await Reminder.select()
             .where(user_id_col == user_id)
             .where(is_sent_col == False)  # noqa: E712
+            .where(remind_at_col >= now - timedelta(days=1))
             .order_by(remind_at_col)
             .limit(limit)
         )
@@ -213,6 +312,7 @@ class ReminderService:
         provider: str | None = None,
         channel_id: int | None = None,
         limit: int = 5,
+        sent_lookback_days: int = 7,
     ) -> tuple[list[Reminder], list[Reminder]]:
         user_id_col = cast(Any, Reminder.user_id)
         provider_col = cast(Any, Reminder.provider)
@@ -220,9 +320,128 @@ class ReminderService:
         is_sent_col = cast(Any, Reminder.is_sent)
         remind_at_col = cast(Any, Reminder.remind_at)
         sent_at_col = cast(Any, Reminder.sent_at)
+        now = datetime.now()
+        sent_since = now - timedelta(days=max(1, sent_lookback_days))
 
-        pending_query = Reminder.select().where(user_id_col == user_id).where(is_sent_col == False)  # noqa: E712
-        sent_query = Reminder.select().where(user_id_col == user_id).where(is_sent_col == True)  # noqa: E712
+        pending_query = (
+            Reminder.select()
+            .where(user_id_col == user_id)
+            .where(is_sent_col == False)  # noqa: E712
+            .where(remind_at_col >= now - timedelta(days=1))
+        )
+        sent_query = (
+            Reminder.select().where(user_id_col == user_id).where(sent_at_col >= sent_since)
+        )
+
+        if provider:
+            pending_query = pending_query.where(provider_col == provider)
+            sent_query = sent_query.where(provider_col == provider)
+        if channel_id is not None:
+            pending_query = pending_query.where(channel_id_col == channel_id)
+            sent_query = sent_query.where(channel_id_col == channel_id)
+        pending_rows = await pending_query.order_by(remind_at_col).limit(limit)
+        sent_rows = await sent_query.order_by(sent_at_col, ascending=False).limit(limit)
+        pending = [Reminder(**row) for row in pending_rows]
+        sent = [Reminder(**row) for row in sent_rows]
+        return sent, pending
+
+    @staticmethod
+    async def update_latest_reminder_recurrence(
+        user_id: str,
+        recurrence_rule: str,
+        provider: str | None = None,
+        channel_id: int | None = None,
+        target_reminder_id: int | None = None,
+    ) -> Reminder | None:
+        normalized_rule = recurrence_rule.strip().upper()
+        if normalized_rule not in {"NONE", "DAILY", "WEEKDAYS"}:
+            return None
+
+        user_id_col = cast(Any, Reminder.user_id)
+        provider_col = cast(Any, Reminder.provider)
+        channel_id_col = cast(Any, Reminder.channel_id)
+        created_at_col = cast(Any, Reminder.created_at)
+        id_col = cast(Any, Reminder.id)
+
+        query = Reminder.select().where(user_id_col == user_id)
+        if provider:
+            query = query.where(provider_col == provider)
+        if channel_id is not None:
+            query = query.where(channel_id_col == channel_id)
+        if target_reminder_id is not None:
+            query = query.where(id_col == target_reminder_id)
+
+        rows = await query.order_by(created_at_col, ascending=False).limit(1)
+        if not rows:
+            return None
+
+        reminder = Reminder(**rows[0])
+        now = datetime.now()
+        is_recurring = normalized_rule in {"DAILY", "WEEKDAYS"}
+        next_time = reminder.remind_at
+        if is_recurring:
+            next_time = ReminderService.next_occurrence(
+                base=reminder.remind_at,
+                rule=normalized_rule,
+                now=now,
+            )
+        elif next_time <= now:
+            # keep one-shot but ensure it's still actionable for follow-up edits
+            next_time = now + timedelta(minutes=1)
+
+        updated_content = ReminderService._apply_recurrence_wording(
+            reminder.content, normalized_rule
+        )
+        await Reminder.update(
+            content=updated_content,
+            plan_type="recurring" if is_recurring else "one_time",
+            calendar_type="cn_workday" if normalized_rule == "WEEKDAYS" else "gregorian",
+            is_recurring=is_recurring,
+            recurrence_rule=None if normalized_rule == "NONE" else normalized_rule,
+            remind_at=next_time,
+            is_sent=False,
+            is_advance_sent=False,
+        ).where(id_col == reminder.id)
+        reminder.content = updated_content
+        reminder.is_recurring = is_recurring
+        reminder.recurrence_rule = None if normalized_rule == "NONE" else normalized_rule
+        reminder.plan_type = "recurring" if is_recurring else "one_time"
+        reminder.calendar_type = "cn_workday" if normalized_rule == "WEEKDAYS" else "gregorian"
+        reminder.remind_at = next_time
+        reminder.is_sent = False
+        reminder.is_advance_sent = False
+        return reminder
+
+    @staticmethod
+    async def get_workday_reminders(
+        user_id: str,
+        provider: str | None = None,
+        channel_id: int | None = None,
+        include_sent: bool = False,
+        limit: int = 10,
+    ) -> tuple[list[Reminder], list[Reminder]]:
+        user_id_col = cast(Any, Reminder.user_id)
+        provider_col = cast(Any, Reminder.provider)
+        channel_id_col = cast(Any, Reminder.channel_id)
+        is_sent_col = cast(Any, Reminder.is_sent)
+        remind_at_col = cast(Any, Reminder.remind_at)
+        recurrence_rule_col = cast(Any, Reminder.recurrence_rule)
+        sent_at_col = cast(Any, Reminder.sent_at)
+        now = datetime.now()
+
+        pending_query = (
+            Reminder.select()
+            .where(user_id_col == user_id)
+            .where(is_sent_col == False)  # noqa: E712
+            .where(recurrence_rule_col == "WEEKDAYS")
+            .where(remind_at_col >= now - timedelta(days=1))
+        )
+        sent_query = (
+            Reminder.select()
+            .where(user_id_col == user_id)
+            .where(recurrence_rule_col == "WEEKDAYS")
+            .where(sent_at_col >= now - timedelta(days=7))
+        )
 
         if provider:
             pending_query = pending_query.where(provider_col == provider)
@@ -232,8 +451,10 @@ class ReminderService:
             sent_query = sent_query.where(channel_id_col == channel_id)
 
         pending_rows = await pending_query.order_by(remind_at_col).limit(limit)
-        sent_rows = await sent_query.order_by(sent_at_col, ascending=False).limit(limit)
         pending = [Reminder(**row) for row in pending_rows]
+        if not include_sent:
+            return [], pending
+        sent_rows = await sent_query.order_by(sent_at_col, ascending=False).limit(limit)
         sent = [Reminder(**row) for row in sent_rows]
         return sent, pending
 
@@ -292,6 +513,131 @@ class ReminderService:
         if not latest.is_sent:
             await Reminder.update(is_sent=True, sent_at=now).where(id_col == latest.id)
 
+        return reminder
+
+    @staticmethod
+    async def get_latest_reminder(
+        user_id: str,
+        provider: str | None = None,
+        channel_id: int | None = None,
+        target_reminder_id: int | None = None,
+    ) -> Reminder | None:
+        user_id_col = cast(Any, Reminder.user_id)
+        provider_col = cast(Any, Reminder.provider)
+        channel_id_col = cast(Any, Reminder.channel_id)
+        created_at_col = cast(Any, Reminder.created_at)
+        id_col = cast(Any, Reminder.id)
+        query = Reminder.select().where(user_id_col == user_id)
+        if provider:
+            query = query.where(provider_col == provider)
+        if channel_id is not None:
+            query = query.where(channel_id_col == channel_id)
+        if target_reminder_id is not None:
+            query = query.where(id_col == target_reminder_id)
+        rows = await query.order_by(created_at_col, ascending=False).limit(1)
+        if not rows:
+            return None
+        return Reminder(**rows[0])
+
+    @staticmethod
+    async def snooze_latest_reminder(
+        user_id: str,
+        delta: timedelta,
+        provider: str | None = None,
+        channel_id: int | None = None,
+        target_reminder_id: int | None = None,
+    ) -> Reminder | None:
+        reminder = await ReminderService.get_latest_reminder(
+            user_id=user_id,
+            provider=provider,
+            channel_id=channel_id,
+            target_reminder_id=target_reminder_id,
+        )
+        if reminder is None:
+            return None
+        id_col = cast(Any, Reminder.id)
+        new_time = max(reminder.remind_at, datetime.now()) + delta
+        await Reminder.update(
+            remind_at=new_time,
+            is_sent=False,
+            is_advance_sent=False,
+            retry_count=0,
+            pause_until=None,
+            status="active",
+        ).where(id_col == reminder.id)
+        reminder.remind_at = new_time
+        reminder.is_sent = False
+        reminder.is_advance_sent = False
+        reminder.retry_count = 0
+        reminder.pause_until = None
+        reminder.status = "active"
+        return reminder
+
+    @staticmethod
+    async def pause_latest_reminder_until(
+        user_id: str,
+        pause_until: datetime,
+        provider: str | None = None,
+        channel_id: int | None = None,
+        target_reminder_id: int | None = None,
+    ) -> Reminder | None:
+        reminder = await ReminderService.get_latest_reminder(
+            user_id=user_id,
+            provider=provider,
+            channel_id=channel_id,
+            target_reminder_id=target_reminder_id,
+        )
+        if reminder is None:
+            return None
+        id_col = cast(Any, Reminder.id)
+        await Reminder.update(
+            pause_until=pause_until,
+            status="paused" if pause_until > datetime.now() else "active",
+            is_advance_sent=False,
+        ).where(id_col == reminder.id)
+        reminder.pause_until = pause_until
+        reminder.status = "paused" if pause_until > datetime.now() else "active"
+        reminder.is_advance_sent = False
+        return reminder
+
+    @staticmethod
+    async def skip_next_occurrence(
+        user_id: str,
+        provider: str | None = None,
+        channel_id: int | None = None,
+        target_reminder_id: int | None = None,
+    ) -> Reminder | None:
+        reminder = await ReminderService.get_latest_reminder(
+            user_id=user_id,
+            provider=provider,
+            channel_id=channel_id,
+            target_reminder_id=target_reminder_id,
+        )
+        if reminder is None:
+            return None
+        next_time = reminder.remind_at
+        rule = (reminder.recurrence_rule or "").upper()
+        if rule in {"DAILY", "WEEKDAYS"}:
+            next_time = ReminderService.next_occurrence(
+                base=reminder.remind_at + timedelta(minutes=1),
+                rule=rule,
+                now=reminder.remind_at,
+            )
+        else:
+            next_time = reminder.remind_at + timedelta(days=1)
+        id_col = cast(Any, Reminder.id)
+        await Reminder.update(
+            remind_at=next_time,
+            is_sent=False,
+            is_advance_sent=False,
+            retry_count=0,
+            status="active",
+        ).where(id_col == reminder.id)
+        reminder.remind_at = next_time
+        reminder.is_sent = False
+        reminder.is_advance_sent = False
+        reminder.retry_count = 0
+        reminder.status = "active"
         return reminder
 
     @staticmethod

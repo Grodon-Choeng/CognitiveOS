@@ -12,6 +12,7 @@ from app.core.exceptions import AppError
 from app.enums import ErrorCode
 from app.middleware import APIKeyMiddleware, IMSignatureMiddleware, RequestTrackingMiddleware
 from app.routes.v1 import v1_router
+from app.runtime import set_app_container
 from app.services import PromptService, PromptTemplateService
 from app.utils.logging import logger
 
@@ -70,6 +71,7 @@ def setup_cache() -> None:
 
 
 _container = make_async_container(AppProvider())
+set_app_container(_container)
 
 
 async def seed_prompts() -> None:

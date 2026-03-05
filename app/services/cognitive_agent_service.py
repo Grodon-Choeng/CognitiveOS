@@ -8,6 +8,7 @@ from uuid import uuid4
 import httpx
 from langgraph.graph import END, StateGraph
 
+from app.agents import AgentTool, ToolContext, ToolRegistry, ToolResult
 from app.config import settings
 from app.note import NoteService, TaskPriority
 from app.repositories import KnowledgeItemRepository
@@ -18,8 +19,12 @@ from app.utils import logger
 
 ActionName = Literal[
     "create_reminder",
+    "update_latest_reminder_recurrence",
     "delay_latest_reminder",
+    "skip_next_reminder",
+    "pause_latest_reminder_until",
     "check_reminders_status",
+    "list_workday_reminders",
     "write_idea",
     "write_task",
     "write_note",
@@ -49,6 +54,8 @@ class AgentState(TypedDict, total=False):
     action_input: dict[str, Any]
     observation: str
     scratchpad: list[str]
+    last_reminder_id: int | None
+    last_reminder_content: str
     done: bool
     response: str
 
@@ -61,7 +68,13 @@ class CognitiveAgentService:
         self.llm_service = llm_service or LLMService()
         self.vector_store = VectorStore()
         self.knowledge_repo = KnowledgeItemRepository()
+        self._tool_registry = self._build_tool_registry()
+        self._session_slots: dict[str, dict[str, Any]] = {}
         self._graph = self._build_graph()
+
+    @staticmethod
+    def _session_key(user_id: str, provider: str) -> str:
+        return f"{provider}:{user_id}"
 
     def _build_graph(self):
         builder = StateGraph(AgentState)
@@ -106,6 +119,8 @@ class CognitiveAgentService:
         if not settings.agent_enabled:
             return AgentOutcome(False, "")
 
+        session_key = self._session_key(user_id=user_id, provider=provider)
+        slot = self._session_slots.get(session_key, {})
         run_id = str(uuid4())
         state: AgentState = await self._graph.ainvoke(
             {
@@ -117,9 +132,15 @@ class CognitiveAgentService:
                 "steps": 0,
                 "max_steps": settings.agent_max_steps,
                 "scratchpad": [],
+                "last_reminder_id": slot.get("last_reminder_id"),
+                "last_reminder_content": slot.get("last_reminder_content", ""),
                 "done": False,
             }
         )
+        self._session_slots[session_key] = {
+            "last_reminder_id": state.get("last_reminder_id"),
+            "last_reminder_content": state.get("last_reminder_content", ""),
+        }
         response = state.get("response", "").strip()
         await self._append_trace(
             {
@@ -154,18 +175,9 @@ class CognitiveAgentService:
                 "response": state.get("response", "") or "已达到最大步骤，先到这里。",
             }
 
-        fast_path = self._heuristic_plan(state.get("text", ""))
-        if fast_path is not None:
-            return {
-                **state,
-                "action": fast_path["action"],
-                "action_input": fast_path["action_input"],
-                "thought": fast_path["thought"],
-                "steps": steps + 1,
-            }
-
         scratchpad = state.get("scratchpad", [])
         prompt = self._planner_prompt(
+            state=state,
             user_text=state.get("text", ""),
             provider=state.get("provider", ""),
             scratchpad=scratchpad,
@@ -213,18 +225,7 @@ class CognitiveAgentService:
                 "steps": steps + 1,
             }
 
-        if action not in {
-            "create_reminder",
-            "delay_latest_reminder",
-            "check_reminders_status",
-            "write_idea",
-            "write_task",
-            "write_note",
-            "search_memory",
-            "web_search",
-            "write_logseq_doc",
-            "answer",
-        }:
+        if action not in self._available_actions():
             fallback = self._fallback_action_from_text(state.get("text", ""))
             if fallback is not None:
                 await self._append_trace(
@@ -272,32 +273,23 @@ class CognitiveAgentService:
 
         observation = ""
         try:
-            if action == "create_reminder":
-                observation = await self._tool_create_reminder(state, payload)
-            elif action == "delay_latest_reminder":
-                observation = await self._tool_delay_latest_reminder(state, payload)
-            elif action == "check_reminders_status":
-                observation = await self._tool_check_reminders_status(state, payload)
-            elif action == "write_idea":
-                observation = await self._tool_write_idea(state, payload)
-            elif action == "write_task":
-                observation = await self._tool_write_task(state, payload)
-            elif action == "write_note":
-                observation = await self._tool_write_note(state, payload)
-            elif action == "search_memory":
-                observation = await self._tool_search_memory(payload)
-            elif action == "web_search":
-                observation = await self._tool_web_search(payload)
-            elif action == "write_logseq_doc":
-                observation = await self._tool_write_logseq_doc(payload)
-            elif action == "answer":
+            if action == "answer":
                 return {
                     **state,
                     "done": True,
                     "response": str(payload.get("text", "")).strip() or "处理完成。",
                 }
-            else:
-                observation = "unknown_action"
+
+            context = ToolContext(
+                run_id=state.get("run_id", ""),
+                user_id=state.get("user_id", ""),
+                provider=state.get("provider", ""),
+                text=state.get("text", ""),
+                channel_id=state.get("channel_id"),
+                state=state,
+            )
+            result = await self._tool_registry.execute(str(action), context, payload)
+            observation = result.observation
         except Exception as e:
             observation = f"tool_error: {e}"
 
@@ -336,8 +328,12 @@ class CognitiveAgentService:
 
         terminal_ok_prefix = (
             "reminder_created:",
+            "reminder_recurrence_updated:",
             "reminder_delayed:",
+            "reminder_skipped:",
+            "reminder_paused:",
             "reminder_status:",
+            "workday_reminders:",
             "idea_written",
             "task_written:",
             "note_written",
@@ -347,6 +343,9 @@ class CognitiveAgentService:
             "parse_reminder_failed",
             "delay_minutes_missing",
             "reminder_delay_no_recent",
+            "reminder_skip_no_recent",
+            "pause_until_missing",
+            "reminder_pause_no_recent",
             "tool_error:",
             "unknown_action",
             "write_doc_missing_title",
@@ -354,6 +353,9 @@ class CognitiveAgentService:
         terminal_error_immediate = {
             "delay_minutes_missing",
             "reminder_delay_no_recent",
+            "reminder_skip_no_recent",
+            "pause_until_missing",
+            "reminder_pause_no_recent",
         }
 
         if observation.startswith(terminal_ok_prefix):
@@ -422,33 +424,34 @@ class CognitiveAgentService:
         return state
 
     def _planner_prompt(
-        self, user_text: str, provider: str, scratchpad: list[str]
+        self, state: AgentState, user_text: str, provider: str, scratchpad: list[str]
     ) -> dict[str, str]:
-        tools = [
-            "create_reminder(text)",
-            "delay_latest_reminder(text|minutes)",
-            "check_reminders_status(limit=5)",
-            "write_idea(content)",
-            "write_task(content, priority=LATER|NOW|DONE)",
-            "write_note(content)",
-            "search_memory(query, top_k)",
-            "web_search(query)",
-            "write_logseq_doc(title, content, links[])",
-            "answer(text)",
-        ]
+        tools = [tool.usage for tool in self._tool_registry.list_tools()] + ["answer(text)"]
         system = (
             "你是 CognitiveOS 的认知代理。目标是通过多步工具调用完成用户任务。"
             "每一步必须输出严格 JSON: "
             '{"done":bool,"thought":str,"action":str,"action_input":{},"response":str}。'
             "done=true 时可直接返回最终 response。"
             "done=false 时 action 必须是可用工具之一。"
+            "当用户说“工作日提醒/每天提醒/仅明天”等对已有提醒的修改时，优先用 update_latest_reminder_recurrence。"
+            "当用户查询“工作日有哪些提醒”时，优先用 list_workday_reminders。"
+            "当用户说“提前N分钟提醒”时，在 create_reminder 的 action_input 里带 advance_minutes。"
+            "当用户说“没回应继续提醒”时，设置 retry_interval_minutes 与 max_retries。"
+            "当用户说“跳过明天/跳过这次提醒”时，优先用 skip_next_reminder。"
+            "当用户说“暂停到某个时间再提醒”时，优先用 pause_latest_reminder_until。"
             "不要输出 markdown，不要输出额外文本。"
         )
         user = (
             f"provider={provider}\n"
             f"user_input={user_text}\n"
+            f"last_reminder_id={state.get('last_reminder_id')}\n"
+            f"last_reminder_content={state.get('last_reminder_content', '')}\n"
             f"available_tools={tools}\n"
             f"scratchpad={scratchpad}\n"
+            "规则提示：\n"
+            "- 用户说“每天/每日/天天”=> recurrence=DAILY\n"
+            "- 用户说“工作日/周一到周五”=> recurrence=WEEKDAYS\n"
+            "- 用户说“仅明天/只提醒一次”=> recurrence=NONE\n"
             "请决定下一步。"
         )
         return {"system": system, "user": user}
@@ -473,47 +476,255 @@ class CognitiveAgentService:
 
         return settings.intent_model.strip() or settings.llm_model
 
-    @staticmethod
-    def _heuristic_plan(text: str) -> dict[str, Any] | None:
-        cleaned = text.strip()
+    def _available_actions(self) -> set[str]:
+        return self._tool_registry.names() | {"answer"}
 
-        if cleaned.startswith("任务"):
-            content = cleaned.removeprefix("任务").strip(" ：:，,")
-            return {
-                "action": "write_task",
-                "action_input": {"content": content or cleaned, "priority": "LATER"},
-                "thought": "检测到任务前缀，直接记录任务。",
-            }
+    def _build_tool_registry(self) -> ToolRegistry:
+        registry = ToolRegistry()
+        registry.register(
+            AgentTool(
+                name="create_reminder",
+                description="Create a reminder from natural language time expression.",
+                usage="create_reminder(text)",
+                input_schema={"type": "object", "properties": {"text": {"type": "string"}}},
+                handler=self._run_create_reminder,
+            )
+        )
+        registry.register(
+            AgentTool(
+                name="update_latest_reminder_recurrence",
+                description="Update latest reminder recurrence. recurrence must be NONE|DAILY|WEEKDAYS.",
+                usage="update_latest_reminder_recurrence(recurrence|text)",
+                input_schema={
+                    "type": "object",
+                    "properties": {
+                        "recurrence": {"type": "string", "enum": ["NONE", "DAILY", "WEEKDAYS"]},
+                        "text": {"type": "string"},
+                        "target_reminder_id": {"type": "integer"},
+                    },
+                },
+                handler=self._run_update_latest_reminder_recurrence,
+            )
+        )
+        registry.register(
+            AgentTool(
+                name="delay_latest_reminder",
+                description="Delay latest reminder by minutes / hours / days.",
+                usage="delay_latest_reminder(text|minutes|hours|days)",
+                input_schema={
+                    "type": "object",
+                    "properties": {
+                        "text": {"type": "string"},
+                        "minutes": {"type": "integer"},
+                        "hours": {"type": "integer"},
+                        "days": {"type": "integer"},
+                        "target_reminder_id": {"type": "integer"},
+                    },
+                },
+                handler=self._run_delay_latest_reminder,
+            )
+        )
+        registry.register(
+            AgentTool(
+                name="skip_next_reminder",
+                description="Skip next occurrence for latest reminder.",
+                usage="skip_next_reminder(target_reminder_id?)",
+                input_schema={
+                    "type": "object",
+                    "properties": {"target_reminder_id": {"type": "integer"}},
+                },
+                handler=self._run_skip_next_reminder,
+            )
+        )
+        registry.register(
+            AgentTool(
+                name="pause_latest_reminder_until",
+                description="Pause latest reminder until a datetime expression.",
+                usage="pause_latest_reminder_until(text|until)",
+                input_schema={
+                    "type": "object",
+                    "properties": {
+                        "text": {"type": "string"},
+                        "until": {"type": "string"},
+                        "target_reminder_id": {"type": "integer"},
+                    },
+                },
+                handler=self._run_pause_latest_reminder_until,
+            )
+        )
+        registry.register(
+            AgentTool(
+                name="check_reminders_status",
+                description="Query sent and pending reminders for current user.",
+                usage="check_reminders_status(limit=5)",
+                input_schema={
+                    "type": "object",
+                    "properties": {"limit": {"type": "integer", "minimum": 1, "maximum": 20}},
+                },
+                handler=self._run_check_reminders_status,
+            )
+        )
+        registry.register(
+            AgentTool(
+                name="list_workday_reminders",
+                description="List reminders with WEEKDAYS recurrence.",
+                usage="list_workday_reminders(limit=10, include_sent=false)",
+                input_schema={
+                    "type": "object",
+                    "properties": {
+                        "limit": {"type": "integer", "minimum": 1, "maximum": 20},
+                        "include_sent": {"type": "boolean"},
+                    },
+                },
+                handler=self._run_list_workday_reminders,
+            )
+        )
+        registry.register(
+            AgentTool(
+                name="write_idea",
+                description="Persist an idea note.",
+                usage="write_idea(content)",
+                input_schema={"type": "object", "properties": {"content": {"type": "string"}}},
+                handler=self._run_write_idea,
+            )
+        )
+        registry.register(
+            AgentTool(
+                name="write_task",
+                description="Persist a task with priority.",
+                usage="write_task(content, priority=LATER|NOW|DONE)",
+                input_schema={
+                    "type": "object",
+                    "properties": {
+                        "content": {"type": "string"},
+                        "priority": {"type": "string", "enum": ["LATER", "NOW", "DONE"]},
+                    },
+                },
+                handler=self._run_write_task,
+            )
+        )
+        registry.register(
+            AgentTool(
+                name="write_note",
+                description="Persist a plain note.",
+                usage="write_note(content)",
+                input_schema={"type": "object", "properties": {"content": {"type": "string"}}},
+                handler=self._run_write_note,
+            )
+        )
+        registry.register(
+            AgentTool(
+                name="search_memory",
+                description="Retrieve top-k memory snippets from vector store.",
+                usage="search_memory(query, top_k)",
+                input_schema={
+                    "type": "object",
+                    "properties": {"query": {"type": "string"}, "top_k": {"type": "integer"}},
+                },
+                handler=self._run_search_memory,
+            )
+        )
+        registry.register(
+            AgentTool(
+                name="web_search",
+                description="Search open web by keyword.",
+                usage="web_search(query)",
+                input_schema={"type": "object", "properties": {"query": {"type": "string"}}},
+                handler=self._run_web_search,
+            )
+        )
+        registry.register(
+            AgentTool(
+                name="write_logseq_doc",
+                description="Write a composed document to Logseq.",
+                usage="write_logseq_doc(title, content, links[])",
+                input_schema={
+                    "type": "object",
+                    "properties": {
+                        "title": {"type": "string"},
+                        "content": {"type": "string"},
+                        "links": {"type": "array", "items": {"type": "string"}},
+                    },
+                },
+                handler=self._run_write_logseq_doc,
+            )
+        )
+        return registry
 
-        if cleaned.startswith("灵感"):
-            content = cleaned.removeprefix("灵感").strip(" ：:，,")
-            return {
-                "action": "write_idea",
-                "action_input": {"content": content or cleaned},
-                "thought": "检测到灵感前缀，直接记录灵感。",
-            }
+    async def _run_create_reminder(self, ctx: ToolContext, payload: dict[str, Any]) -> ToolResult:
+        return ToolResult(
+            status="ok", observation=await self._tool_create_reminder(ctx.state, payload)
+        )
 
-        delay_minutes = ReminderService.parse_delay_minutes(text)
-        if delay_minutes is not None:
-            return {
-                "action": "delay_latest_reminder",
-                "action_input": {"minutes": delay_minutes, "text": text},
-                "thought": "检测到延迟提醒意图，直接顺延最近提醒。",
-            }
-        check_keywords = ("已经提醒", "哪些提醒", "提醒事项", "没提醒", "还有没有", "提醒了吗")
-        if "提醒" in text and any(keyword in text for keyword in check_keywords):
-            return {
-                "action": "check_reminders_status",
-                "action_input": {"limit": 8},
-                "thought": "检测到提醒状态查询意图，直接查询提醒状态。",
-            }
-        return None
+    async def _run_update_latest_reminder_recurrence(
+        self, ctx: ToolContext, payload: dict[str, Any]
+    ) -> ToolResult:
+        return ToolResult(
+            status="ok",
+            observation=await self._tool_update_latest_reminder_recurrence(ctx.state, payload),
+        )
+
+    async def _run_delay_latest_reminder(
+        self, ctx: ToolContext, payload: dict[str, Any]
+    ) -> ToolResult:
+        return ToolResult(
+            status="ok", observation=await self._tool_delay_latest_reminder(ctx.state, payload)
+        )
+
+    async def _run_skip_next_reminder(
+        self, ctx: ToolContext, payload: dict[str, Any]
+    ) -> ToolResult:
+        return ToolResult(
+            status="ok", observation=await self._tool_skip_next_reminder(ctx.state, payload)
+        )
+
+    async def _run_pause_latest_reminder_until(
+        self, ctx: ToolContext, payload: dict[str, Any]
+    ) -> ToolResult:
+        return ToolResult(
+            status="ok",
+            observation=await self._tool_pause_latest_reminder_until(ctx.state, payload),
+        )
+
+    async def _run_check_reminders_status(
+        self, ctx: ToolContext, payload: dict[str, Any]
+    ) -> ToolResult:
+        return ToolResult(
+            status="ok", observation=await self._tool_check_reminders_status(ctx.state, payload)
+        )
+
+    async def _run_list_workday_reminders(
+        self, ctx: ToolContext, payload: dict[str, Any]
+    ) -> ToolResult:
+        return ToolResult(
+            status="ok",
+            observation=await self._tool_list_workday_reminders(ctx.state, payload),
+        )
+
+    async def _run_write_idea(self, ctx: ToolContext, payload: dict[str, Any]) -> ToolResult:
+        return ToolResult(status="ok", observation=await self._tool_write_idea(ctx.state, payload))
+
+    async def _run_write_task(self, ctx: ToolContext, payload: dict[str, Any]) -> ToolResult:
+        return ToolResult(status="ok", observation=await self._tool_write_task(ctx.state, payload))
+
+    async def _run_write_note(self, ctx: ToolContext, payload: dict[str, Any]) -> ToolResult:
+        return ToolResult(status="ok", observation=await self._tool_write_note(ctx.state, payload))
+
+    async def _run_search_memory(self, ctx: ToolContext, payload: dict[str, Any]) -> ToolResult:
+        return ToolResult(
+            status="ok", observation=await self._tool_search_memory(ctx.state, payload)
+        )
+
+    async def _run_web_search(self, ctx: ToolContext, payload: dict[str, Any]) -> ToolResult:
+        return ToolResult(status="ok", observation=await self._tool_web_search(ctx.state, payload))
+
+    async def _run_write_logseq_doc(self, ctx: ToolContext, payload: dict[str, Any]) -> ToolResult:
+        return ToolResult(
+            status="ok", observation=await self._tool_write_logseq_doc(ctx.state, payload)
+        )
 
     @staticmethod
     def _fallback_action_from_text(text: str) -> dict[str, Any] | None:
-        heuristic = CognitiveAgentService._heuristic_plan(text)
-        if heuristic is not None:
-            return heuristic
         cleaned = text.strip()
         if cleaned:
             return {
@@ -528,15 +739,41 @@ class CognitiveAgentService:
         if action == "create_reminder" and observation.startswith("reminder_created:"):
             payload = observation.removeprefix("reminder_created:")
             return f"已为你创建提醒：{payload}"
+        if action == "update_latest_reminder_recurrence" and observation.startswith(
+            "reminder_recurrence_updated:"
+        ):
+            payload = observation.removeprefix("reminder_recurrence_updated:")
+            return f"已更新提醒规则：{payload}"
         if action == "delay_latest_reminder" and observation.startswith("reminder_delayed:"):
             payload = observation.removeprefix("reminder_delayed:")
             return f"已为你顺延提醒：{payload}"
+        if action == "skip_next_reminder" and observation.startswith("reminder_skipped:"):
+            payload = observation.removeprefix("reminder_skipped:")
+            return f"已跳过下一次提醒：{payload}"
+        if action == "pause_latest_reminder_until" and observation.startswith("reminder_paused:"):
+            payload = observation.removeprefix("reminder_paused:")
+            return f"已暂停提醒：{payload}"
         if action == "check_reminders_status" and observation.startswith("reminder_status:"):
             return observation.removeprefix("reminder_status:")
+        if action == "list_workday_reminders" and observation.startswith("workday_reminders:"):
+            return observation.removeprefix("workday_reminders:")
         if action == "delay_latest_reminder" and observation == "reminder_delay_no_recent":
             return "没找到可顺延的最近提醒，请直接告诉我要提醒的内容和时间。"
         if action == "delay_latest_reminder" and observation == "delay_minutes_missing":
             return "我没识别到要延迟多少分钟，请说“延迟15分钟提醒我…”。"
+        if action == "skip_next_reminder" and observation == "reminder_skip_no_recent":
+            return "没找到可跳过的最近提醒。"
+        if action == "pause_latest_reminder_until" and observation == "pause_until_missing":
+            return "我没识别到要暂停到什么时候，请补充具体时间。"
+        if action == "pause_latest_reminder_until" and observation == "reminder_pause_no_recent":
+            return "没找到可暂停的最近提醒。"
+        if action == "update_latest_reminder_recurrence" and observation == "recurrence_missing":
+            return "我没识别到你想改成哪种规则，请说“每天提醒”或“工作日提醒”或“只明天提醒一次”。"
+        if (
+            action == "update_latest_reminder_recurrence"
+            and observation == "recurrence_update_no_recent"
+        ):
+            return "没找到可修改的最近提醒，请先创建一个提醒。"
         if action == "write_idea":
             return "灵感已记录。"
         if action == "write_task":
@@ -581,45 +818,176 @@ class CognitiveAgentService:
         remind_at, content = ReminderService.parse_time_expression(text)
         if not remind_at:
             return "parse_reminder_failed"
+        recurrence = str(payload.get("recurrence", "")).strip().upper() or None
+        if recurrence not in {"NONE", "DAILY", "WEEKDAYS"}:
+            recurrence = ReminderService.parse_recurrence_rule(text)
+        advance_raw = payload.get("advance_minutes", 1)
+        retry_interval_raw = payload.get("retry_interval_minutes", 0)
+        max_retries_raw = payload.get("max_retries", 0)
+        require_ack = bool(payload.get("require_ack", False))
+        try:
+            advance_minutes = max(0, int(advance_raw))
+        except (TypeError, ValueError):
+            advance_minutes = 1
+        try:
+            retry_interval_minutes = max(0, int(retry_interval_raw))
+        except (TypeError, ValueError):
+            retry_interval_minutes = 0
+        try:
+            max_retries = max(0, int(max_retries_raw))
+        except (TypeError, ValueError):
+            max_retries = 0
         content = content or "提醒!"
-        await ReminderService.create_reminder(
+        reminder = await ReminderService.create_reminder(
             content=content,
             remind_at=remind_at,
             user_id=state.get("user_id", "default"),
             channel_id=state.get("channel_id"),
             provider=state.get("provider", "discord"),
+            recurrence_rule=recurrence,
+            advance_minutes=advance_minutes,
+            retry_interval_minutes=retry_interval_minutes,
+            max_retries=max_retries,
+            require_ack=require_ack,
         )
+        state["last_reminder_id"] = reminder.id
+        state["last_reminder_content"] = reminder.content
         await self.note_service.write_reminder(
             content, remind_at, tags=[state.get("provider", "unknown")]
         )
-        return f"reminder_created:{content}@{remind_at.isoformat()}"
+        recurrence_desc = recurrence or "ONCE"
+        return f"reminder_created:#{reminder.id} {reminder.content}@{remind_at.isoformat()}[{recurrence_desc}]"
+
+    async def _tool_update_latest_reminder_recurrence(
+        self, state: AgentState, payload: dict[str, Any]
+    ) -> str:
+        recurrence = str(payload.get("recurrence", "")).strip().upper()
+        if recurrence not in {"NONE", "DAILY", "WEEKDAYS"}:
+            text = str(payload.get("text", "")).strip() or state.get("text", "")
+            parsed = ReminderService.parse_recurrence_rule(text)
+            recurrence = parsed or ""
+        if recurrence not in {"NONE", "DAILY", "WEEKDAYS"}:
+            return "recurrence_missing"
+
+        target_id_raw = payload.get("target_reminder_id")
+        target_id: int | None = None
+        if isinstance(target_id_raw, int) and target_id_raw > 0:
+            target_id = target_id_raw
+        elif isinstance(state.get("last_reminder_id"), int):
+            target_id = state.get("last_reminder_id")
+
+        reminder = await ReminderService.update_latest_reminder_recurrence(
+            user_id=state.get("user_id", "default"),
+            recurrence_rule=recurrence,
+            provider=state.get("provider", "discord"),
+            channel_id=state.get("channel_id"),
+            target_reminder_id=target_id,
+        )
+        if reminder is None:
+            return "recurrence_update_no_recent"
+        state["last_reminder_id"] = reminder.id
+        state["last_reminder_content"] = reminder.content
+        rule = reminder.recurrence_rule or "ONCE"
+        return (
+            f"reminder_recurrence_updated:#{reminder.id} "
+            f"{reminder.content}@{reminder.remind_at.isoformat()}[{rule}]"
+        )
 
     async def _tool_delay_latest_reminder(self, state: AgentState, payload: dict[str, Any]) -> str:
         minutes_raw = payload.get("minutes")
-        delay_minutes: int | None
-        if isinstance(minutes_raw, int):
-            delay_minutes = minutes_raw
-        else:
-            text = str(payload.get("text", "")).strip() or state.get("text", "")
-            delay_minutes = ReminderService.parse_delay_minutes(text)
+        hours_raw = payload.get("hours")
+        days_raw = payload.get("days")
+        text = str(payload.get("text", "")).strip() or state.get("text", "")
 
-        if delay_minutes is None or delay_minutes <= 0:
+        delta = None
+        if isinstance(minutes_raw, int) and minutes_raw > 0:
+            from datetime import timedelta
+
+            delta = timedelta(minutes=minutes_raw)
+        elif isinstance(hours_raw, int) and hours_raw > 0:
+            from datetime import timedelta
+
+            delta = timedelta(hours=hours_raw)
+        elif isinstance(days_raw, int) and days_raw > 0:
+            from datetime import timedelta
+
+            delta = timedelta(days=days_raw)
+        else:
+            delta = ReminderService.parse_snooze_delta(text)
+            if delta is None:
+                delay_minutes = ReminderService.parse_delay_minutes(text)
+                if delay_minutes:
+                    from datetime import timedelta
+
+                    delta = timedelta(minutes=delay_minutes)
+
+        if delta is None or delta.total_seconds() <= 0:
             return "delay_minutes_missing"
 
-        reminder = await ReminderService.delay_latest_reminder(
+        target_id = (
+            state.get("last_reminder_id")
+            if isinstance(state.get("last_reminder_id"), int)
+            else None
+        )
+        reminder = await ReminderService.snooze_latest_reminder(
             user_id=state.get("user_id", "default"),
-            delay_minutes=delay_minutes,
+            delta=delta,
             provider=state.get("provider", "discord"),
             channel_id=state.get("channel_id"),
+            target_reminder_id=target_id,
         )
         if reminder is None:
             return "reminder_delay_no_recent"
+        state["last_reminder_id"] = reminder.id
+        state["last_reminder_content"] = reminder.content
 
+        delay_minutes = int(delta.total_seconds() // 60)
         await self.note_service.write_note(
             f"提醒顺延 {delay_minutes} 分钟：{reminder.content} @ {reminder.remind_at.isoformat()}",
             tags=[state.get("provider", "unknown"), "reminder"],
         )
         return f"reminder_delayed:{reminder.content}@{reminder.remind_at.isoformat()}"
+
+    async def _tool_skip_next_reminder(self, state: AgentState, payload: dict[str, Any]) -> str:
+        target_raw = payload.get("target_reminder_id")
+        target_id = target_raw if isinstance(target_raw, int) else state.get("last_reminder_id")
+        reminder = await ReminderService.skip_next_occurrence(
+            user_id=state.get("user_id", "default"),
+            provider=state.get("provider", "discord"),
+            channel_id=state.get("channel_id"),
+            target_reminder_id=target_id if isinstance(target_id, int) else None,
+        )
+        if reminder is None:
+            return "reminder_skip_no_recent"
+        state["last_reminder_id"] = reminder.id
+        state["last_reminder_content"] = reminder.content
+        return (
+            f"reminder_skipped:#{reminder.id} {reminder.content}@{reminder.remind_at.isoformat()}"
+        )
+
+    async def _tool_pause_latest_reminder_until(
+        self, state: AgentState, payload: dict[str, Any]
+    ) -> str:
+        until_text = str(payload.get("until", "")).strip()
+        if not until_text:
+            until_text = str(payload.get("text", "")).strip() or state.get("text", "")
+        pause_until, _ = ReminderService.parse_time_expression(until_text)
+        if pause_until is None:
+            return "pause_until_missing"
+        target_raw = payload.get("target_reminder_id")
+        target_id = target_raw if isinstance(target_raw, int) else state.get("last_reminder_id")
+        reminder = await ReminderService.pause_latest_reminder_until(
+            user_id=state.get("user_id", "default"),
+            pause_until=pause_until,
+            provider=state.get("provider", "discord"),
+            channel_id=state.get("channel_id"),
+            target_reminder_id=target_id if isinstance(target_id, int) else None,
+        )
+        if reminder is None:
+            return "reminder_pause_no_recent"
+        state["last_reminder_id"] = reminder.id
+        state["last_reminder_content"] = reminder.content
+        return f"reminder_paused:#{reminder.id} {reminder.content} until {pause_until.isoformat()}"
 
     async def _tool_check_reminders_status(self, state: AgentState, payload: dict[str, Any]) -> str:
         limit_raw = payload.get("limit", 8)
@@ -640,7 +1008,8 @@ class CognitiveAgentService:
             lines.append("已提醒：")
             for i, item in enumerate(sent, 1):
                 sent_at = item.sent_at.strftime("%Y-%m-%d %H:%M") if item.sent_at else "未知时间"
-                lines.append(f"{i}. {item.content}（已提醒于 {sent_at}）")
+                rule = item.recurrence_rule or "ONCE"
+                lines.append(f"{i}. {item.content}（已提醒于 {sent_at}，规则 {rule}）")
         else:
             lines.append("已提醒：暂无")
 
@@ -648,11 +1017,50 @@ class CognitiveAgentService:
             lines.append("未提醒：")
             for i, item in enumerate(pending, 1):
                 remind_at = item.remind_at.strftime("%Y-%m-%d %H:%M")
-                lines.append(f"{i}. {item.content}（计划 {remind_at}）")
+                rule = item.recurrence_rule or "ONCE"
+                lines.append(f"{i}. {item.content}（计划 {remind_at}，规则 {rule}）")
         else:
             lines.append("未提醒：暂无")
 
         return f"reminder_status:{'\n'.join(lines)}"
+
+    async def _tool_list_workday_reminders(self, state: AgentState, payload: dict[str, Any]) -> str:
+        limit_raw = payload.get("limit", 10)
+        include_sent_raw = payload.get("include_sent", False)
+        try:
+            limit = max(1, min(int(limit_raw), 20))
+        except (TypeError, ValueError):
+            limit = 10
+        include_sent = bool(include_sent_raw)
+
+        sent, pending = await ReminderService.get_workday_reminders(
+            user_id=state.get("user_id", "default"),
+            provider=state.get("provider", "discord"),
+            channel_id=state.get("channel_id"),
+            include_sent=include_sent,
+            limit=limit,
+        )
+
+        lines: list[str] = ["工作日提醒："]
+        if pending:
+            lines.append("未提醒：")
+            for i, item in enumerate(pending, 1):
+                lines.append(f"{i}. {item.content}（{item.remind_at.strftime('%Y-%m-%d %H:%M')}）")
+        else:
+            lines.append("未提醒：暂无")
+
+        if include_sent:
+            if sent:
+                lines.append("已提醒：")
+                for i, item in enumerate(sent, 1):
+                    sent_at = (
+                        item.sent_at.strftime("%Y-%m-%d %H:%M") if item.sent_at else "未知时间"
+                    )
+                    lines.append(f"{i}. {item.content}（{sent_at}）")
+            else:
+                lines.append("已提醒：暂无")
+
+        return f"workday_reminders:{'\n'.join(lines)}"
 
     async def _tool_write_idea(self, state: AgentState, payload: dict[str, Any]) -> str:
         content = str(payload.get("content", "")).strip() or state.get("text", "")
@@ -677,7 +1085,7 @@ class CognitiveAgentService:
         await self.note_service.write_note(content, tags=[state.get("provider", "unknown")])
         return "note_written"
 
-    async def _tool_search_memory(self, payload: dict[str, Any]) -> str:
+    async def _tool_search_memory(self, state: AgentState, payload: dict[str, Any]) -> str:
         query = str(payload.get("query", "")).strip()
         top_k = int(payload.get("top_k", 5))
         if not query:
@@ -698,8 +1106,7 @@ class CognitiveAgentService:
             lines.append(f"[knowledge_id={item.id};distance={row['distance']:.4f}] {text}")
         return "\n".join(lines) if lines else "memory_search_no_resolved_item"
 
-    @staticmethod
-    async def _tool_web_search(payload: dict[str, Any]) -> str:
+    async def _tool_web_search(self, state: AgentState, payload: dict[str, Any]) -> str:
         query = str(payload.get("query", "")).strip()
         if not query:
             return "web_search_empty_query"
@@ -734,7 +1141,7 @@ class CognitiveAgentService:
         except Exception as e:
             return f"web_search_error:{e}"
 
-    async def _tool_write_logseq_doc(self, payload: dict[str, Any]) -> str:
+    async def _tool_write_logseq_doc(self, state: AgentState, payload: dict[str, Any]) -> str:
         title = str(payload.get("title", "")).strip()
         content = str(payload.get("content", "")).strip()
         links = payload.get("links", []) or []

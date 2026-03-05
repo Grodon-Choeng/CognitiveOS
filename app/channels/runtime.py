@@ -62,7 +62,8 @@ async def send_reminder(reminder: Reminder, is_advance: bool = False) -> bool:
             logger.warning("Feishu bot not available")
             return False
 
-        prefix = "⏰ 即将提醒(1分钟后)" if is_advance else "⏰ 提醒"
+        adv = int(getattr(reminder, "advance_minutes", 1) or 1)
+        prefix = f"⏰ 即将提醒({adv}分钟后)" if is_advance else "⏰ 提醒"
         content = f"{prefix}: {reminder.content}"
         try:
             return await bot.send_text_to_user_or_chat(reminder.user_id, content)
@@ -75,7 +76,8 @@ async def send_reminder(reminder: Reminder, is_advance: bool = False) -> bool:
         logger.warning("Discord bot not available")
         return False
 
-    prefix = "⏰ **即将提醒** (1分钟后)" if is_advance else "⏰ **提醒**"
+    adv = int(getattr(reminder, "advance_minutes", 1) or 1)
+    prefix = f"⏰ **即将提醒** ({adv}分钟后)" if is_advance else "⏰ **提醒**"
 
     try:
         if reminder.channel_id:
