@@ -205,3 +205,14 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# 本地开发与运行产物
+.DS_Store
+.idea/
+.vscode/
+logs/
+*.out
+*.err
+*.pid.lock
+*.tmp
+*.temp
