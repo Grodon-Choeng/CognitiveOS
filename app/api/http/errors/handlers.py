@@ -1,0 +1,36 @@
+from fastapi import FastAPI, Request, status
+from fastapi.responses import JSONResponse
+
+from app.application.reminders.errors import ReminderNotFoundError, ReminderWorkflowNotStartedError
+
+
+def register_exception_handlers(app: FastAPI) -> None:
+    @app.exception_handler(NotImplementedError)
+    async def not_implemented_handler(
+        _request: Request,
+        exc: NotImplementedError,
+    ) -> JSONResponse:
+        return JSONResponse(
+            status_code=status.HTTP_501_NOT_IMPLEMENTED,
+            content={"detail": str(exc) or "功能尚未实现。"},
+        )
+
+    @app.exception_handler(ReminderNotFoundError)
+    async def reminder_not_found_handler(
+        _request: Request,
+        exc: ReminderNotFoundError,
+    ) -> JSONResponse:
+        return JSONResponse(
+            status_code=status.HTTP_404_NOT_FOUND,
+            content={"detail": str(exc)},
+        )
+
+    @app.exception_handler(ReminderWorkflowNotStartedError)
+    async def reminder_workflow_not_started_handler(
+        _request: Request,
+        exc: ReminderWorkflowNotStartedError,
+    ) -> JSONResponse:
+        return JSONResponse(
+            status_code=status.HTTP_409_CONFLICT,
+            content={"detail": str(exc)},
+        )

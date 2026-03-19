@@ -138,9 +138,7 @@ async def test_handle_reply_updates_reminder_and_signals_workflow() -> None:
     assert reply_result.status == "completed"
     assert saved.last_user_reply == "我已经提交了"
     assert saved.status.value == "completed"
-    assert workflow_gateway.recorded_replies == [
-        (created.workflow_id or "", "我已经提交了")
-    ]
+    assert workflow_gateway.recorded_replies == [(created.workflow_id or "", "我已经提交了")]
 
 
 @pytest.mark.asyncio

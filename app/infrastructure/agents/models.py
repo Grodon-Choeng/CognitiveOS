@@ -13,4 +13,3 @@ class AgentTurnRequest:
 class AgentTurnResult:
     output_text: str
     metadata: dict[str, Any] = field(default_factory=dict)
-

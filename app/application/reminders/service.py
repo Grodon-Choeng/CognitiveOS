@@ -58,9 +58,7 @@ class ReminderApplicationService:
                 raise ReminderNotFoundError(f"提醒不存在：{command.reminder_id}")
 
             if reminder.workflow_id is None:
-                raise ReminderWorkflowNotStartedError(
-                    f"提醒尚未启动工作流：{command.reminder_id}"
-                )
+                raise ReminderWorkflowNotStartedError(f"提醒尚未启动工作流：{command.reminder_id}")
 
             await self.workflow_gateway.record_user_reply(
                 workflow_id=reminder.workflow_id,
@@ -78,7 +76,8 @@ class ReminderApplicationService:
             status=ReminderStatus.COMPLETED.value,
         )
 
-    def _to_dto(self, reminder: Reminder) -> ReminderDTO:
+    @staticmethod
+    def _to_dto(reminder: Reminder) -> ReminderDTO:
         return ReminderDTO(
             reminder_id=str(reminder.reminder_id.value),
             text=reminder.text,

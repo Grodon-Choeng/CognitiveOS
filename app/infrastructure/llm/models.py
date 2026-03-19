@@ -15,4 +15,3 @@ class GenerateResult:
     model: str
     provider: str
     usage: dict[str, int] = field(default_factory=dict)
-
