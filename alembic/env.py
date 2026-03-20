@@ -8,6 +8,7 @@ from app.config.settings import get_settings
 from app.infrastructure.db.base import Base
 from app.infrastructure.db.models.model_invocation import ModelInvocationLogModel
 from app.infrastructure.db.models.reminder import ReminderModel
+from app.infrastructure.db.models.tool_invocation import ToolInvocationLogModel
 
 config = context.config
 
@@ -18,7 +19,7 @@ target_metadata = Base.metadata
 settings = get_settings()
 config.set_main_option("sqlalchemy.url", settings.database_url)
 
-_ = (ReminderModel, ModelInvocationLogModel)
+_ = (ReminderModel, ModelInvocationLogModel, ToolInvocationLogModel)
 
 
 def run_migrations_offline() -> None:

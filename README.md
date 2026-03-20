@@ -108,6 +108,7 @@ tests/
 
 - 当前配置会默认读取 `.env`，因此复制完成后即可直接本地运行。
 - 所有大模型调用都应通过统一记录机制留痕，默认同时写入数据库表 `model_invocation_logs` 与 `logs/model_invocations.jsonl`。
+- 所有工具调用也应通过统一记录机制留痕，默认同时写入数据库表 `tool_invocation_logs` 与 `logs/tool_invocations.jsonl`。
 - 当前 reminder create / reply 路由已预留，但仍是占位实现。
 - 数据库、Temporal、消息发送适配器都已补齐骨架与契约，后续可在此基础上继续实现。
 - 更详细的技术立场见 `docs/tech-decisions.md`。

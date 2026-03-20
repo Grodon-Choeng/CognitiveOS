@@ -21,7 +21,13 @@ class ToolExecutionOptions:
 @dataclass(slots=True, frozen=True)
 class ToolCall:
     name: str
+    session_id: str | None = None
+    conversation_id: str | None = None
+    trace_id: str | None = None
+    chain_id: str | None = None
+    request_id: str | None = None
     arguments: JSONObject = field(default_factory=dict)
+    metadata: JSONObject = field(default_factory=dict)
     options: ToolExecutionOptions = field(default_factory=ToolExecutionOptions)
 
 

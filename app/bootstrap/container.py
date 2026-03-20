@@ -13,6 +13,11 @@ from app.observability.model_invocations import (
     JsonlModelInvocationRecorder,
     MultiModelInvocationRecorder,
 )
+from app.observability.tool_invocations import (
+    DatabaseToolInvocationRecorder,
+    JsonlToolInvocationRecorder,
+    MultiToolInvocationRecorder,
+)
 
 
 class ApplicationContainer:
@@ -43,6 +48,20 @@ class ApplicationContainer:
                 JsonlModelInvocationRecorder(
                     path=self.settings.model_invocation_jsonl_path,
                     enabled=self.settings.model_invocation_jsonl_enabled,
+                ),
+            ]
+        )
+
+    def build_tool_invocation_recorder(self) -> MultiToolInvocationRecorder:
+        return MultiToolInvocationRecorder(
+            [
+                DatabaseToolInvocationRecorder(
+                    session_factory=self.session_factory,
+                    enabled=self.settings.tool_invocation_db_enabled,
+                ),
+                JsonlToolInvocationRecorder(
+                    path=self.settings.tool_invocation_jsonl_path,
+                    enabled=self.settings.tool_invocation_jsonl_enabled,
                 ),
             ]
         )

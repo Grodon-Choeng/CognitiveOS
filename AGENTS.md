@@ -170,6 +170,7 @@ workflows, activities, signals, queries, updates, timers, retries, durable execu
 - 所有工具执行必须通过 `tool_runtime`。
 - 工具设计必须保持 **MCP-compatible** 的思想与结构。
 - **最少要求：**明确的 name, input schema, output/result 结构；清晰的错误处理；可挂接 logging/tracing；具备 timeout/retry 能力。
+- 所有工具调用默认也必须双写到数据库与本地 `jsonl` 文件，至少记录原始输入、原始输出、耗时、超时配置、重试配置、session / conversation / request / trace / chain 信息、错误码与错误信息。
 - 不要让模型厂商特定的 tool 格式在代码库内到处传播。必须在工具边界进行统一归一化。
 
 ---
