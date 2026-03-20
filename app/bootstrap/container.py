@@ -8,6 +8,11 @@ from app.config.settings import Settings, get_settings
 from app.infrastructure.db.session import get_session_factory
 from app.infrastructure.db.uow import SQLAlchemyReminderUnitOfWork
 from app.infrastructure.temporal.gateway import TemporalReminderWorkflowGateway
+from app.observability.model_invocations import (
+    DatabaseModelInvocationRecorder,
+    JsonlModelInvocationRecorder,
+    MultiModelInvocationRecorder,
+)
 
 
 class ApplicationContainer:
@@ -27,6 +32,20 @@ class ApplicationContainer:
             return SQLAlchemyReminderUnitOfWork(self.session_factory)
 
         return create_unit_of_work
+
+    def build_model_invocation_recorder(self) -> MultiModelInvocationRecorder:
+        return MultiModelInvocationRecorder(
+            [
+                DatabaseModelInvocationRecorder(
+                    session_factory=self.session_factory,
+                    enabled=self.settings.model_invocation_db_enabled,
+                ),
+                JsonlModelInvocationRecorder(
+                    path=self.settings.model_invocation_jsonl_path,
+                    enabled=self.settings.model_invocation_jsonl_enabled,
+                ),
+            ]
+        )
 
 
 @lru_cache

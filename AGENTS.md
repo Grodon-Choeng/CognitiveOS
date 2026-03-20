@@ -151,6 +151,10 @@ workflows, activities, signals, queries, updates, timers, retries, durable execu
 ### 8.1 LLM 访问规则
 - **所有模型访问必须通过 `llm_gateway`。**
 - 业务代码不得直接调用任何 provider SDK。
+- 只要发生任何大模型调用，包括 `LLM`、`VLM`、多模态模型或其他推理模型，都必须记录完整调用信息。
+- 最少必须记录：原始输入、原始输出、token 使用量、耗时、provider、model、session / conversation / request / trace / chain 信息、调用结果、异常信息，以及所使用密钥的后八位。
+- 这些记录默认必须双写到数据库与本地 `jsonl` 文件；两种介质都视为正式记录渠道，后续允许互相导入。
+- 这类记录逻辑必须集中在 gateway / runtime / observability 层统一处理，不得散落在业务代码里临时拼接。
 - ❌ **禁止：**在 application service 中直接 import OpenAI client；在 HTTP 层混合 prompt 构造与响应整形。
 
 ### 8.2 Agent 执行规则
@@ -224,6 +228,7 @@ workflows, activities, signals, queries, updates, timers, retries, durable execu
 - workflow / tool execution logging
 - LLM request metadata / integration call logging
 - 代码中的日志文本默认使用中文，避免中英文混杂。
+- 模型调用留痕属于强约束，不允许只记录摘要而丢失原始输入输出与关键指标。
 
 **捕获异常时：**
 - 要么真正处理并记录上下文。

@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 from alembic import context
 from app.config.settings import get_settings
 from app.infrastructure.db.base import Base
+from app.infrastructure.db.models.model_invocation import ModelInvocationLogModel
 from app.infrastructure.db.models.reminder import ReminderModel
 
 config = context.config
@@ -17,7 +18,7 @@ target_metadata = Base.metadata
 settings = get_settings()
 config.set_main_option("sqlalchemy.url", settings.database_url)
 
-_ = ReminderModel
+_ = (ReminderModel, ModelInvocationLogModel)
 
 
 def run_migrations_offline() -> None:
