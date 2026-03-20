@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     api_prefix: str = "/api/v1"
     database_url: str = "postgresql+asyncpg://cognitiveos:cognitiveos@localhost:5432/cognitiveos"
     database_echo: bool = False
+    redis_url: str = "redis://localhost:6379/0"
     temporal_host: str = "localhost:7233"
     temporal_namespace: str = "default"
     temporal_task_queue: str = "cognitiveos-reminders"
@@ -20,6 +21,8 @@ class Settings(BaseSettings):
 
     model_config = SettingsConfigDict(
         env_prefix="COGNITIVE_OS_",
+        env_file=".env",
+        env_file_encoding="utf-8",
         case_sensitive=False,
         extra="ignore",
     )

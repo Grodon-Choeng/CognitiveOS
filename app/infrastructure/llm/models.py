@@ -1,12 +1,13 @@
 from dataclasses import dataclass, field
-from typing import Any
+
+from app.infrastructure.types import JSONObject
 
 
 @dataclass(slots=True, frozen=True)
 class GenerateRequest:
     prompt: str
     system_prompt: str | None = None
-    metadata: dict[str, Any] = field(default_factory=dict)
+    metadata: JSONObject = field(default_factory=dict)
 
 
 @dataclass(slots=True, frozen=True)

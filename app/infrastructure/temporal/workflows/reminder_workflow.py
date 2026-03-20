@@ -1,14 +1,17 @@
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import timedelta
 
 from temporalio import workflow
+
+REMINDER_WORKFLOW_NAME = "reminder-workflow"
+RECORD_USER_REPLY_SIGNAL = "record-user-reply"
 
 
 @dataclass(slots=True, frozen=True)
 class ReminderWorkflowInput:
     reminder_id: str
     text: str
-    remind_at: datetime
+    remind_at: str
     timezone: str
     dispatch_channel: str
     dispatch_recipient_id: str
@@ -23,7 +26,7 @@ class ReminderWorkflowState:
     dispatch_message_id: str | None = None
 
 
-@workflow.defn(name="reminder-workflow")
+@workflow.defn(name=REMINDER_WORKFLOW_NAME)
 class ReminderWorkflow:
     def __init__(self) -> None:
         self.state = ReminderWorkflowState()
@@ -60,7 +63,7 @@ class ReminderWorkflow:
         )
         return f"提醒已完成:{workflow_input.reminder_id}"
 
-    @workflow.signal(name="record-user-reply")
+    @workflow.signal(name=RECORD_USER_REPLY_SIGNAL)
     async def record_user_reply(self, reply_text: str) -> None:
         self.state.last_reply_text = reply_text
         self.state.reply_received = True

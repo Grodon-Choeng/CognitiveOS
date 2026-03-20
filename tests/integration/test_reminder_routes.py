@@ -4,13 +4,14 @@ from datetime import UTC, datetime
 from fastapi.testclient import TestClient
 
 from app.api.http.deps.services import get_reminder_service
+from app.application.reminders.commands import CreateReminderCommand, HandleReminderReplyCommand
 from app.application.reminders.dto import ReminderDTO, ReminderReplyDTO
 from app.main import app
 
 
 @dataclass
 class FakeReminderService:
-    async def create_reminder(self, command: object) -> ReminderDTO:
+    async def create_reminder(self, command: CreateReminderCommand) -> ReminderDTO:
         _ = command
         return ReminderDTO(
             reminder_id="00000000-0000-0000-0000-000000000001",
@@ -21,7 +22,7 @@ class FakeReminderService:
             workflow_id="reminder:00000000-0000-0000-0000-000000000001",
         )
 
-    async def handle_reply(self, command: object) -> ReminderReplyDTO:
+    async def handle_reply(self, command: HandleReminderReplyCommand) -> ReminderReplyDTO:
         _ = command
         return ReminderReplyDTO(
             reminder_id="00000000-0000-0000-0000-000000000001",
@@ -31,9 +32,13 @@ class FakeReminderService:
         )
 
 
+def override_reminder_service() -> FakeReminderService:
+    return FakeReminderService()
+
+
 def test_create_reminder_route_returns_structured_response() -> None:
     client = TestClient(app)
-    app.dependency_overrides[get_reminder_service] = lambda: FakeReminderService()
+    app.dependency_overrides[get_reminder_service] = override_reminder_service
 
     try:
         response = client.post(
@@ -60,7 +65,7 @@ def test_create_reminder_route_returns_structured_response() -> None:
 
 def test_reply_reminder_route_returns_structured_response() -> None:
     client = TestClient(app)
-    app.dependency_overrides[get_reminder_service] = lambda: FakeReminderService()
+    app.dependency_overrides[get_reminder_service] = override_reminder_service
 
     try:
         response = client.post(

@@ -1,3 +1,4 @@
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from types import TracebackType
@@ -83,12 +84,21 @@ class FakeReminderWorkflowGateway(ReminderWorkflowGateway):
         self.recorded_replies.append((workflow_id, reply_text))
 
 
+def create_fake_unit_of_work_factory(
+    repository: FakeReminderRepository,
+) -> Callable[[], FakeReminderUnitOfWork]:
+    def factory() -> FakeReminderUnitOfWork:
+        return FakeReminderUnitOfWork(repository)
+
+    return factory
+
+
 @pytest.mark.asyncio
 async def test_create_reminder_persists_and_starts_workflow() -> None:
     repository = FakeReminderRepository()
     workflow_gateway = FakeReminderWorkflowGateway()
     service = ReminderApplicationService(
-        unit_of_work_factory=lambda: FakeReminderUnitOfWork(repository),
+        unit_of_work_factory=create_fake_unit_of_work_factory(repository),
         workflow_gateway=workflow_gateway,
     )
 
@@ -114,7 +124,7 @@ async def test_handle_reply_updates_reminder_and_signals_workflow() -> None:
     repository = FakeReminderRepository()
     workflow_gateway = FakeReminderWorkflowGateway()
     service = ReminderApplicationService(
-        unit_of_work_factory=lambda: FakeReminderUnitOfWork(repository),
+        unit_of_work_factory=create_fake_unit_of_work_factory(repository),
         workflow_gateway=workflow_gateway,
     )
 
@@ -146,7 +156,7 @@ async def test_handle_reply_raises_when_reminder_not_found() -> None:
     repository = FakeReminderRepository()
     workflow_gateway = FakeReminderWorkflowGateway()
     service = ReminderApplicationService(
-        unit_of_work_factory=lambda: FakeReminderUnitOfWork(repository),
+        unit_of_work_factory=create_fake_unit_of_work_factory(repository),
         workflow_gateway=workflow_gateway,
     )
 

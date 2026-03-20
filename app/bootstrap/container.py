@@ -23,7 +23,10 @@ class ApplicationContainer:
         )
 
     def build_reminder_unit_of_work_factory(self) -> ReminderUnitOfWorkFactory:
-        return lambda: SQLAlchemyReminderUnitOfWork(self.session_factory)
+        def create_unit_of_work() -> SQLAlchemyReminderUnitOfWork:
+            return SQLAlchemyReminderUnitOfWork(self.session_factory)
+
+        return create_unit_of_work
 
 
 @lru_cache

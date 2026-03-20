@@ -207,6 +207,10 @@ workflows, activities, signals, queries, updates, timers, retries, durable execu
 - ❌ **禁止在代码库中到处散落 `os.getenv()`。**应通过专门的 settings / bootstrap 模块统一管理。
 - Python 依赖缺失时，优先使用 `uv` 补齐与管理依赖。
 - PostgreSQL、Temporal 等本地基础设施如果需要本地运行，优先通过仓库内的 `docker compose` 编排文件启动。
+- 当前本地编排默认包含 `PostgreSQL`、`Redis`、`Temporal server` 与 `Temporal UI`；变更这些基础设施时，必须同步更新 `compose.yaml` 与 `README.md`。
+- Temporal 若依赖动态配置文件，配置文件本身也必须放在仓库内并纳入编排，而不是只依赖容器内默认状态。
+- 常用本地开发命令应优先沉淀到 `Makefile`，避免在 README 和协作过程中散落多个不一致的命令版本。
+- 应用 settings 默认应支持从项目根目录 `.env` 读取本地配置；若变更读取方式，必须同步更新 `README.md` 与 `.env.example`。
 - 新增环境变量、启动方式或基础设施依赖时，必须同步更新 `README.md` 与本文件。
 
 ---

@@ -18,10 +18,26 @@ CognitiveOS 是一个面向个人助理场景的 AI-native 模块化单体后端
 
 ## 本地启动
 
+### 常用命令
+
+```bash
+make help
+```
+
+常用目标包括：
+
+- `make install`
+- `make infra-up`
+- `make migrate`
+- `make api`
+- `make worker`
+- `make fmt`
+- `make check`
+
 ### 1. 安装依赖
 
 ```bash
-uv sync --extra dev
+make install
 ```
 
 ### 2. 准备环境变量
@@ -30,35 +46,45 @@ uv sync --extra dev
 cp .env.example .env
 ```
 
-### 3. 启动本地 PostgreSQL
+应用会默认读取项目根目录下的 `.env`。
+
+### 3. 启动本地基础设施
 
 ```bash
-docker compose up -d postgres
+make infra-up
 ```
+
+本地默认会启动：
+
+- PostgreSQL：`localhost:5432`
+- Redis：`localhost:6379`
+- Temporal gRPC：`localhost:7233`
+- Temporal UI：`http://localhost:8080`
+- Temporal 动态配置文件：`dynamicconfig/development-sql.yaml`
 
 ### 4. 执行数据库 migration
 
 ```bash
-uv run alembic upgrade head
+make migrate
 ```
 
 ### 5. 启动 HTTP 服务
 
 ```bash
-uv run uvicorn app.main:app --reload
+make api
 ```
 
 ### 6. 启动 Temporal worker
 
 ```bash
-uv run python -m app.bootstrap.temporal
+make worker
 ```
 
 ### 7. Temporal 前置条件
 
 - 当前仓库已接入真实的 Temporal client / workflow signal 链路。
-- 启动 API 或 worker 前，请先确保 `COGNITIVE_OS_TEMPORAL_HOST` 指向一个可用的 Temporal server。
-- 当前 `compose.yaml` 仅包含 PostgreSQL；Temporal server 可先使用你本地已有环境。
+- 默认本地编排已经提供 Temporal server 与 Temporal UI。
+- 启动 API 或 worker 前，请先确保 `COGNITIVE_OS_TEMPORAL_HOST` 指向可用的 Temporal server；若使用默认编排，则保持 `localhost:7233` 即可。
 
 ## 当前目录骨架
 
@@ -80,6 +106,7 @@ tests/
 
 ## 说明
 
+- 当前配置会默认读取 `.env`，因此复制完成后即可直接本地运行。
 - 当前 reminder create / reply 路由已预留，但仍是占位实现。
 - 数据库、Temporal、消息发送适配器都已补齐骨架与契约，后续可在此基础上继续实现。
 - 更详细的技术立场见 `docs/tech-decisions.md`。

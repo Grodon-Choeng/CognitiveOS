@@ -11,7 +11,7 @@ from app.config.settings import Settings
 from app.domain.reminders.entities import Reminder
 from app.infrastructure.temporal.client import create_temporal_client
 from app.infrastructure.temporal.workflows.reminder_workflow import (
-    ReminderWorkflow,
+    RECORD_USER_REPLY_SIGNAL,
     ReminderWorkflowInput,
 )
 
@@ -32,11 +32,11 @@ class TemporalReminderWorkflowGateway(ReminderWorkflowGateway):
         start_delay = self._build_start_delay(reminder.schedule.remind_at)
 
         await client.start_workflow(
-            ReminderWorkflow.run,
+            self.settings.temporal_reminder_workflow_name,
             ReminderWorkflowInput(
                 reminder_id=str(reminder.reminder_id.value),
                 text=reminder.text,
-                remind_at=reminder.schedule.remind_at,
+                remind_at=reminder.schedule.remind_at.isoformat(),
                 timezone=reminder.schedule.timezone,
                 dispatch_channel=dispatch_target.channel,
                 dispatch_recipient_id=dispatch_target.recipient_id,
@@ -50,7 +50,7 @@ class TemporalReminderWorkflowGateway(ReminderWorkflowGateway):
     async def record_user_reply(self, workflow_id: str, reply_text: str) -> None:
         client = await self._get_client()
         handle = client.get_workflow_handle(workflow_id)
-        await handle.signal(ReminderWorkflow.record_user_reply, reply_text)
+        await handle.signal(RECORD_USER_REPLY_SIGNAL, reply_text)
 
     async def _get_client(self) -> Client:
         if self._client is None:

@@ -1,5 +1,7 @@
 from dataclasses import dataclass, field
-from typing import Any, Protocol
+from typing import Protocol
+
+from app.infrastructure.types import JSONObject
 
 
 @dataclass(slots=True, frozen=True)
@@ -11,14 +13,14 @@ class MessageTarget:
 @dataclass(slots=True, frozen=True)
 class OutboundMessage:
     text: str
-    metadata: dict[str, Any] = field(default_factory=dict)
+    metadata: JSONObject = field(default_factory=dict)
 
 
 @dataclass(slots=True, frozen=True)
 class SendResult:
     accepted: bool
     external_message_id: str | None = None
-    metadata: dict[str, Any] = field(default_factory=dict)
+    metadata: JSONObject = field(default_factory=dict)
 
 
 class MessagingAdapter(Protocol):

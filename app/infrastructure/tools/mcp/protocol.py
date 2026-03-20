@@ -1,26 +1,27 @@
 from dataclasses import dataclass, field
-from typing import Any
+
+from app.infrastructure.types import JSONObject
 
 
 @dataclass(slots=True, frozen=True)
 class ToolDefinition:
     name: str
     description: str
-    input_schema: dict[str, Any] = field(default_factory=dict)
-    output_schema: dict[str, Any] = field(default_factory=dict)
+    input_schema: JSONObject = field(default_factory=dict)
+    output_schema: JSONObject = field(default_factory=dict)
 
 
 @dataclass(slots=True, frozen=True)
 class ToolExecutionOptions:
     timeout_seconds: float | None = None
     retry_limit: int = 0
-    trace_metadata: dict[str, Any] = field(default_factory=dict)
+    trace_metadata: JSONObject = field(default_factory=dict)
 
 
 @dataclass(slots=True, frozen=True)
 class ToolCall:
     name: str
-    arguments: dict[str, Any] = field(default_factory=dict)
+    arguments: JSONObject = field(default_factory=dict)
     options: ToolExecutionOptions = field(default_factory=ToolExecutionOptions)
 
 
@@ -35,4 +36,4 @@ class ToolResult:
     content: str
     is_error: bool = False
     error: ToolError | None = None
-    metadata: dict[str, Any] = field(default_factory=dict)
+    metadata: JSONObject = field(default_factory=dict)
