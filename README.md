@@ -123,7 +123,7 @@ tests/
 - 飞书事件订阅回调入口为 `POST /api/v1/integrations/feishu/events`。
 - 飞书也支持通过长连接接收入站事件，入口命令为 `make feishu-longconn`。
 - 内部统一消息入口为 `POST /api/v1/conversations/messages`，用于让 Web 与飞书共用同一条 conversation 处理链路。
-- 统一审计查询入口为 `GET /api/v1/audit/events`，支持按 `kind`、`conversation_id`、`session_id` 查询 `message/model/tool/workflow` 四类事件。
+- 统一审计查询入口为 `GET /api/v1/audit/events`，支持按 `kind`、`conversation_id`、`session_id`、`success`、`channel`、`provider`、`tool_name`、`workflow_type`、时间范围与游标分页查询 `message/model/tool/workflow` 四类事件。
 - 当前最小入站续执行逻辑：仅对飞书 `p2p` 文本消息生效，并按 `sender_open_id` 关联该用户最近一个 `pending` reminder。
 - 当前 reminder create / reply 路由已预留，但仍是占位实现。
 - 数据库、Temporal、消息发送适配器都已补齐骨架与契约，后续可在此基础上继续实现。

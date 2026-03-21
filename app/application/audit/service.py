@@ -24,6 +24,11 @@ class AuditQueryService:
         kind: str,
         conversation_id: str | None = None,
         session_id: str | None = None,
+        success: bool | None = None,
+        channel: str | None = None,
+        provider: str | None = None,
+        tool_name: str | None = None,
+        workflow_type: str | None = None,
         recorded_after: datetime | None = None,
         recorded_before: datetime | None = None,
         cursor: str | None = None,
@@ -34,6 +39,8 @@ class AuditQueryService:
             return await self._query_message_events(
                 conversation_id=conversation_id,
                 session_id=session_id,
+                success=success,
+                channel=channel,
                 recorded_after=recorded_after,
                 recorded_before=recorded_before,
                 cursor=cursor,
@@ -43,6 +50,8 @@ class AuditQueryService:
             return await self._query_model_events(
                 conversation_id=conversation_id,
                 session_id=session_id,
+                success=success,
+                provider=provider,
                 recorded_after=recorded_after,
                 recorded_before=recorded_before,
                 cursor=cursor,
@@ -52,6 +61,8 @@ class AuditQueryService:
             return await self._query_tool_events(
                 conversation_id=conversation_id,
                 session_id=session_id,
+                success=success,
+                tool_name=tool_name,
                 recorded_after=recorded_after,
                 recorded_before=recorded_before,
                 cursor=cursor,
@@ -61,6 +72,8 @@ class AuditQueryService:
             return await self._query_workflow_events(
                 conversation_id=conversation_id,
                 session_id=session_id,
+                success=success,
+                workflow_type=workflow_type,
                 recorded_after=recorded_after,
                 recorded_before=recorded_before,
                 cursor=cursor,
@@ -73,6 +86,8 @@ class AuditQueryService:
         *,
         conversation_id: str | None,
         session_id: str | None,
+        success: bool | None,
+        channel: str | None,
         recorded_after: datetime | None,
         recorded_before: datetime | None,
         cursor: str | None,
@@ -91,10 +106,14 @@ class AuditQueryService:
                 event_id_column=MessageEventLogModel.event_id,
                 conversation_id=conversation_id,
                 session_id=session_id,
+                success_column=MessageEventLogModel.success,
+                success=success,
                 recorded_after=recorded_after,
                 recorded_before=recorded_before,
                 cursor=cursor,
             )
+            if channel:
+                statement = statement.where(MessageEventLogModel.channel == channel)
             rows = (await session.execute(statement.limit(limit + 1))).scalars().all()
             page_rows = rows[:limit]
             items = [
@@ -137,6 +156,8 @@ class AuditQueryService:
         *,
         conversation_id: str | None,
         session_id: str | None,
+        success: bool | None,
+        provider: str | None,
         recorded_after: datetime | None,
         recorded_before: datetime | None,
         cursor: str | None,
@@ -155,10 +176,14 @@ class AuditQueryService:
                 event_id_column=ModelInvocationLogModel.invocation_id,
                 conversation_id=conversation_id,
                 session_id=session_id,
+                success_column=ModelInvocationLogModel.success,
+                success=success,
                 recorded_after=recorded_after,
                 recorded_before=recorded_before,
                 cursor=cursor,
             )
+            if provider:
+                statement = statement.where(ModelInvocationLogModel.provider == provider)
             rows = (await session.execute(statement.limit(limit + 1))).scalars().all()
             page_rows = rows[:limit]
             items = [
@@ -197,6 +222,8 @@ class AuditQueryService:
         *,
         conversation_id: str | None,
         session_id: str | None,
+        success: bool | None,
+        tool_name: str | None,
         recorded_after: datetime | None,
         recorded_before: datetime | None,
         cursor: str | None,
@@ -215,10 +242,14 @@ class AuditQueryService:
                 event_id_column=ToolInvocationLogModel.invocation_id,
                 conversation_id=conversation_id,
                 session_id=session_id,
+                success_column=ToolInvocationLogModel.success,
+                success=success,
                 recorded_after=recorded_after,
                 recorded_before=recorded_before,
                 cursor=cursor,
             )
+            if tool_name:
+                statement = statement.where(ToolInvocationLogModel.tool_name == tool_name)
             rows = (await session.execute(statement.limit(limit + 1))).scalars().all()
             page_rows = rows[:limit]
             items = [
@@ -257,6 +288,8 @@ class AuditQueryService:
         *,
         conversation_id: str | None,
         session_id: str | None,
+        success: bool | None,
+        workflow_type: str | None,
         recorded_after: datetime | None,
         recorded_before: datetime | None,
         cursor: str | None,
@@ -275,10 +308,14 @@ class AuditQueryService:
                 event_id_column=WorkflowEventLogModel.event_id,
                 conversation_id=conversation_id,
                 session_id=session_id,
+                success_column=WorkflowEventLogModel.success,
+                success=success,
                 recorded_after=recorded_after,
                 recorded_before=recorded_before,
                 cursor=cursor,
             )
+            if workflow_type:
+                statement = statement.where(WorkflowEventLogModel.workflow_type == workflow_type)
             rows = (await session.execute(statement.limit(limit + 1))).scalars().all()
             page_rows = rows[:limit]
             items = [
@@ -319,10 +356,12 @@ def _apply_common_filters(
     statement: Any,
     conversation_column: Any,
     session_column: Any,
+    success_column: Any,
     recorded_at_column: Any,
     event_id_column: Any,
     conversation_id: str | None,
     session_id: str | None,
+    success: bool | None,
     recorded_after: datetime | None,
     recorded_before: datetime | None,
     cursor: str | None,
@@ -331,6 +370,8 @@ def _apply_common_filters(
         statement = statement.where(conversation_column == conversation_id)
     if session_id:
         statement = statement.where(session_column == session_id)
+    if success is not None:
+        statement = statement.where(success_column == success)
     if recorded_after:
         statement = statement.where(recorded_at_column >= recorded_after)
     if recorded_before:
