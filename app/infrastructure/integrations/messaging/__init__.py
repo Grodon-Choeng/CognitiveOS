@@ -15,6 +15,7 @@ from app.infrastructure.integrations.messaging.feishu_webhook import (
     NoopFeishuInboundEventRecorder,
 )
 from app.infrastructure.integrations.messaging.logging_adapter import LoggingMessagingAdapter
+from app.infrastructure.integrations.messaging.recording_adapter import RecordingMessagingAdapter
 from app.infrastructure.integrations.messaging.router import RoutingMessagingAdapter
 
 __all__ = [
@@ -27,6 +28,7 @@ __all__ = [
     "NoopMessagingAdapter",
     "NoopFeishuInboundEventRecorder",
     "OutboundMessage",
+    "RecordingMessagingAdapter",
     "RoutingMessagingAdapter",
     "SendResult",
     "LoggingMessagingAdapter",

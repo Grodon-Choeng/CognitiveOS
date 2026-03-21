@@ -117,9 +117,11 @@ tests/
 - 当前配置会默认读取 `.env`，因此复制完成后即可直接本地运行。
 - 所有大模型调用都应通过统一记录机制留痕，默认同时写入数据库表 `model_invocation_logs` 与 `logs/model_invocations.jsonl`。
 - 所有工具调用也应通过统一记录机制留痕，默认同时写入数据库表 `tool_invocation_logs` 与 `logs/tool_invocations.jsonl`。
+- 所有用户消息收发也应通过统一记录机制留痕，默认同时写入数据库表 `message_event_logs` 与 `logs/message_events.jsonl`。
 - 飞书已作为可选 IM 发送入口接入，当前通过 `MessagingAdapter` 边界统一发送。
 - 飞书事件订阅回调入口为 `POST /api/v1/integrations/feishu/events`。
 - 飞书也支持通过长连接接收入站事件，入口命令为 `make feishu-longconn`。
+- 内部统一消息入口为 `POST /api/v1/conversations/messages`，用于让 Web 与飞书共用同一条 conversation 处理链路。
 - 当前最小入站续执行逻辑：仅对飞书 `p2p` 文本消息生效，并按 `sender_open_id` 关联该用户最近一个 `pending` reminder。
 - 当前 reminder create / reply 路由已预留，但仍是占位实现。
 - 数据库、Temporal、消息发送适配器都已补齐骨架与契约，后续可在此基础上继续实现。

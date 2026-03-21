@@ -1,16 +1,16 @@
 import logging
 
-from app.application.reminders.commands import HandleReminderInboundMessageCommand
-from app.application.reminders.service import ReminderApplicationService
+from app.application.conversations.commands import HandleInboundConversationMessageCommand
+from app.application.conversations.service import ConversationApplicationService
 from app.infrastructure.integrations.messaging.feishu_webhook import (
     FeishuInboundEventRecorder,
     InboundMessageEvent,
 )
 
 
-class ReminderInboundEventRecorder(FeishuInboundEventRecorder):
-    def __init__(self, reminder_service: ReminderApplicationService) -> None:
-        self.reminder_service = reminder_service
+class ConversationInboundEventRecorder(FeishuInboundEventRecorder):
+    def __init__(self, conversation_service: ConversationApplicationService) -> None:
+        self.conversation_service = conversation_service
         self.logger = logging.getLogger(__name__)
 
     async def record(self, event: InboundMessageEvent) -> None:
@@ -29,18 +29,18 @@ class ReminderInboundEventRecorder(FeishuInboundEventRecorder):
             )
             return
 
-        result = await self.reminder_service.handle_inbound_message(
-            HandleReminderInboundMessageCommand(
-                conversation_id=None,
-                session_id=None,
+        result = await self.conversation_service.handle_inbound_message(
+            HandleInboundConversationMessageCommand(
                 channel=event.channel,
-                sender_id=event.sender_open_id,
-                message_id=event.message_id,
+                message_type=event.message_type or "text",
+                user_identity=event.sender_open_id,
+                external_message_id=event.message_id,
                 root_message_id=event.root_message_id,
                 parent_message_id=event.parent_message_id,
                 chat_id=event.chat_id,
                 thread_id=event.thread_id,
                 text=event.text,
+                raw_payload=event.raw_body,
             )
         )
         self.logger.info(
@@ -48,7 +48,9 @@ class ReminderInboundEventRecorder(FeishuInboundEventRecorder):
             extra={
                 "message_id": event.message_id,
                 "handled": result.handled,
-                "reminder_id": result.reminder_id,
+                "conversation_id": result.conversation_id,
+                "session_id": result.session_id,
+                "handled_by": result.handled_by,
                 "reason": result.reason,
             },
         )

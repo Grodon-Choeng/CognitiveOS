@@ -1,6 +1,11 @@
+from app.application.conversations.service import ConversationApplicationService
 from app.application.reminders.service import ReminderApplicationService
 from app.bootstrap.container import get_container
 from app.infrastructure.integrations.messaging.feishu_webhook import FeishuWebhookHandler
+
+
+def get_conversation_service() -> ConversationApplicationService:
+    return get_container().build_conversation_service()
 
 
 def get_reminder_service() -> ReminderApplicationService:

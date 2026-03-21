@@ -2,10 +2,11 @@ from functools import lru_cache
 
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
+from app.application.conversations.service import ConversationApplicationService
 from app.application.conversations.ports import ConversationContextResolver
 from app.application.reminders.ports import ReminderUnitOfWorkFactory
 from app.application.reminders.service import ReminderApplicationService
-from app.bootstrap.inbound_events import ReminderInboundEventRecorder
+from app.bootstrap.inbound_events import ConversationInboundEventRecorder
 from app.config.settings import Settings, get_settings
 from app.infrastructure.conversations import SqlAlchemyConversationContextResolver
 from app.infrastructure.db.session import get_session_factory
@@ -16,6 +17,7 @@ from app.infrastructure.integrations.messaging import (
     FeishuWebhookHandler,
     LoggingMessagingAdapter,
     MessagingAdapter,
+    RecordingMessagingAdapter,
     RoutingMessagingAdapter,
 )
 from app.infrastructure.temporal.gateway import TemporalReminderWorkflowGateway
@@ -23,6 +25,11 @@ from app.observability.model_invocations import (
     DatabaseModelInvocationRecorder,
     JsonlModelInvocationRecorder,
     MultiModelInvocationRecorder,
+)
+from app.observability.message_events import (
+    DatabaseMessageEventRecorder,
+    JsonlMessageEventRecorder,
+    MultiMessageEventRecorder,
 )
 from app.observability.tool_invocations import (
     DatabaseToolInvocationRecorder,
@@ -64,6 +71,20 @@ class ApplicationContainer:
             ]
         )
 
+    def build_message_event_recorder(self) -> MultiMessageEventRecorder:
+        return MultiMessageEventRecorder(
+            [
+                DatabaseMessageEventRecorder(
+                    session_factory=self.session_factory,
+                    enabled=self.settings.message_event_db_enabled,
+                ),
+                JsonlMessageEventRecorder(
+                    path=self.settings.message_event_jsonl_path,
+                    enabled=self.settings.message_event_jsonl_enabled,
+                ),
+            ]
+        )
+
     def build_conversation_context_resolver(self) -> ConversationContextResolver:
         return SqlAlchemyConversationContextResolver(self.session_factory)
 
@@ -84,18 +105,33 @@ class ApplicationContainer:
     def build_messaging_adapter(self) -> MessagingAdapter:
         logging_adapter = LoggingMessagingAdapter()
 
+        base_adapter: MessagingAdapter
         if self.settings.feishu_app_id and self.settings.feishu_app_secret:
-            return RoutingMessagingAdapter(
+            base_adapter = RoutingMessagingAdapter(
                 default_adapter=logging_adapter,
                 feishu_adapter=FeishuMessagingAdapter(settings=self.settings),
             )
+        else:
+            base_adapter = RoutingMessagingAdapter(default_adapter=logging_adapter)
 
-        return RoutingMessagingAdapter(default_adapter=logging_adapter)
+        return RecordingMessagingAdapter(
+            inner=base_adapter,
+            recorder=self.build_message_event_recorder(),
+        )
+
+    def build_conversation_service(self) -> ConversationApplicationService:
+        return ConversationApplicationService(
+            conversation_context_resolver=self.build_conversation_context_resolver(),
+            reminder_service=self.build_reminder_service(),
+            message_event_recorder=self.build_message_event_recorder(),
+        )
 
     def build_feishu_webhook_handler(self) -> FeishuWebhookHandler:
         return FeishuWebhookHandler(
             settings=self.settings,
-            inbound_event_recorder=ReminderInboundEventRecorder(self.build_reminder_service()),
+            inbound_event_recorder=ConversationInboundEventRecorder(
+                self.build_conversation_service()
+            ),
         )
 
     def build_feishu_long_connection_listener(self) -> FeishuLongConnectionListener:
@@ -103,7 +139,9 @@ class ApplicationContainer:
             settings=self.settings,
             webhook_handler=FeishuWebhookHandler(
                 settings=self.settings,
-                inbound_event_recorder=ReminderInboundEventRecorder(self.build_reminder_service()),
+                inbound_event_recorder=ConversationInboundEventRecorder(
+                    self.build_conversation_service()
+                ),
                 record_on_dispatch=True,
             ),
         )

@@ -1,4 +1,11 @@
 from app.observability.logging import configure_logging
+from app.observability.message_events import (
+    DatabaseMessageEventRecorder,
+    JsonlMessageEventRecorder,
+    MessageEventRecord,
+    MessageEventRecorder,
+    MultiMessageEventRecorder,
+)
 from app.observability.metrics import configure_metrics
 from app.observability.model_invocations import (
     DatabaseModelInvocationRecorder,
@@ -21,6 +28,11 @@ from app.observability.tracing import configure_tracing
 
 __all__ = [
     "configure_logging",
+    "DatabaseMessageEventRecorder",
+    "JsonlMessageEventRecorder",
+    "MessageEventRecord",
+    "MessageEventRecorder",
+    "MultiMessageEventRecorder",
     "configure_metrics",
     "DatabaseModelInvocationRecorder",
     "DatabaseToolInvocationRecorder",

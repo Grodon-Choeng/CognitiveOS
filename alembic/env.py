@@ -7,6 +7,7 @@ from alembic import context
 from app.config.settings import get_settings
 from app.infrastructure.db.base import Base
 from app.infrastructure.db.models.conversation_binding import ConversationBindingModel
+from app.infrastructure.db.models.message_event import MessageEventLogModel
 from app.infrastructure.db.models.model_invocation import ModelInvocationLogModel
 from app.infrastructure.db.models.reminder import ReminderModel
 from app.infrastructure.db.models.tool_invocation import ToolInvocationLogModel
@@ -22,6 +23,7 @@ config.set_main_option("sqlalchemy.url", settings.database_url)
 
 _ = (
     ConversationBindingModel,
+    MessageEventLogModel,
     ReminderModel,
     ModelInvocationLogModel,
     ToolInvocationLogModel,
