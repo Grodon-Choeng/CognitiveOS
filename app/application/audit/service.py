@@ -96,6 +96,16 @@ class AuditQueryService:
         cursor: str | None = None,
         limit: int = 50,
     ) -> AuditEventPageDTO:
+        message_page = await self._query_message_events(
+            conversation_id=conversation_id,
+            session_id=session_id,
+            success=success,
+            channel=channel,
+            recorded_after=recorded_after,
+            recorded_before=recorded_before,
+            cursor=cursor,
+            limit=limit,
+        )
         model_page = await self._query_model_events(
             conversation_id=conversation_id,
             session_id=session_id,
@@ -116,16 +126,6 @@ class AuditQueryService:
             cursor=cursor,
             limit=limit,
         )
-        message_page = await self._query_message_events(
-            conversation_id=conversation_id,
-            session_id=session_id,
-            success=success,
-            channel=channel,
-            recorded_after=recorded_after,
-            recorded_before=recorded_before,
-            cursor=cursor,
-            limit=limit,
-        )
         workflow_page = await self._query_workflow_events(
             conversation_id=conversation_id,
             session_id=session_id,
@@ -137,7 +137,7 @@ class AuditQueryService:
             limit=limit,
         )
 
-        items = sorted(
+        merged_items = sorted(
             [
                 *message_page.items,
                 *model_page.items,
@@ -147,25 +147,26 @@ class AuditQueryService:
             key=lambda item: (item.recorded_at, item.event_id),
             reverse=True,
         )
-        page_items = items[:limit]
-
+        page_items = merged_items[:limit]
         has_more = (
-            any(
-                page.next_cursor is not None
-                for page in (message_page, model_page, tool_page, workflow_page)
-            )
-            or len(items) > limit
+            len(merged_items) > limit
+            or message_page.next_cursor is not None
+            or model_page.next_cursor is not None
+            or tool_page.next_cursor is not None
+            or workflow_page.next_cursor is not None
         )
 
         if not has_more or not page_items:
             return AuditEventPageDTO(items=page_items, next_cursor=None)
 
         last_item = page_items[-1]
-        next_cursor = encode_audit_cursor(
-            recorded_at=datetime.fromisoformat(last_item.recorded_at),
-            event_id=last_item.event_id,
+        return AuditEventPageDTO(
+            items=page_items,
+            next_cursor=encode_audit_cursor(
+                recorded_at=datetime.fromisoformat(last_item.recorded_at),
+                event_id=last_item.event_id,
+            ),
         )
-        return AuditEventPageDTO(items=page_items, next_cursor=next_cursor)
 
     async def _query_message_events(
         self,
@@ -188,11 +189,11 @@ class AuditQueryService:
                 statement=statement,
                 conversation_column=MessageEventLogModel.conversation_id,
                 session_column=MessageEventLogModel.session_id,
+                success_column=MessageEventLogModel.success,
                 recorded_at_column=MessageEventLogModel.recorded_at,
                 event_id_column=MessageEventLogModel.event_id,
                 conversation_id=conversation_id,
                 session_id=session_id,
-                success_column=MessageEventLogModel.success,
                 success=success,
                 recorded_after=recorded_after,
                 recorded_before=recorded_before,
@@ -258,11 +259,11 @@ class AuditQueryService:
                 statement=statement,
                 conversation_column=ModelInvocationLogModel.conversation_id,
                 session_column=ModelInvocationLogModel.session_id,
+                success_column=ModelInvocationLogModel.success,
                 recorded_at_column=ModelInvocationLogModel.recorded_at,
                 event_id_column=ModelInvocationLogModel.invocation_id,
                 conversation_id=conversation_id,
                 session_id=session_id,
-                success_column=ModelInvocationLogModel.success,
                 success=success,
                 recorded_after=recorded_after,
                 recorded_before=recorded_before,
@@ -324,11 +325,11 @@ class AuditQueryService:
                 statement=statement,
                 conversation_column=ToolInvocationLogModel.conversation_id,
                 session_column=ToolInvocationLogModel.session_id,
+                success_column=ToolInvocationLogModel.success,
                 recorded_at_column=ToolInvocationLogModel.recorded_at,
                 event_id_column=ToolInvocationLogModel.invocation_id,
                 conversation_id=conversation_id,
                 session_id=session_id,
-                success_column=ToolInvocationLogModel.success,
                 success=success,
                 recorded_after=recorded_after,
                 recorded_before=recorded_before,
@@ -390,11 +391,11 @@ class AuditQueryService:
                 statement=statement,
                 conversation_column=WorkflowEventLogModel.conversation_id,
                 session_column=WorkflowEventLogModel.session_id,
+                success_column=WorkflowEventLogModel.success,
                 recorded_at_column=WorkflowEventLogModel.recorded_at,
                 event_id_column=WorkflowEventLogModel.event_id,
                 conversation_id=conversation_id,
                 session_id=session_id,
-                success_column=WorkflowEventLogModel.success,
                 success=success,
                 recorded_after=recorded_after,
                 recorded_before=recorded_before,

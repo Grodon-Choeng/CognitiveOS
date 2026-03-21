@@ -40,24 +40,7 @@ class FakeAuditService:
             cursor,
             limit,
         )
-        return AuditEventPageDTO(
-            items=[
-                AuditEventDTO(
-                    kind="message",
-                    event_id="evt_1",
-                    recorded_at="2026-03-21T12:00:00+08:00",
-                    conversation_id="conversation-1",
-                    session_id="session-1",
-                    trace_id=None,
-                    chain_id=None,
-                    request_id=None,
-                    success=True,
-                    summary="inbound:web:text",
-                    payload={"text": "你好"},
-                )
-            ],
-            next_cursor="cursor_1",
-        )
+        return _page()
 
     async def list_timeline(
         self,
@@ -87,24 +70,28 @@ class FakeAuditService:
             cursor,
             limit,
         )
-        return AuditEventPageDTO(
-            items=[
-                AuditEventDTO(
-                    kind="message",
-                    event_id="evt_1",
-                    recorded_at="2026-03-21T12:00:00+08:00",
-                    conversation_id="conversation-1",
-                    session_id="session-1",
-                    trace_id=None,
-                    chain_id=None,
-                    request_id=None,
-                    success=True,
-                    summary="inbound:web:text",
-                    payload={"text": "你好"},
-                )
-            ],
-            next_cursor="cursor_1",
-        )
+        return _page()
+
+
+def _page() -> AuditEventPageDTO:
+    return AuditEventPageDTO(
+        items=[
+            AuditEventDTO(
+                kind="message",
+                event_id="evt_1",
+                recorded_at="2026-03-21T12:00:00+08:00",
+                conversation_id="conversation-1",
+                session_id="session-1",
+                trace_id=None,
+                chain_id=None,
+                request_id=None,
+                success=True,
+                summary="inbound:web:text",
+                payload={"text": "你好"},
+            )
+        ],
+        next_cursor="cursor_1",
+    )
 
 
 def override_audit_service() -> FakeAuditService:
