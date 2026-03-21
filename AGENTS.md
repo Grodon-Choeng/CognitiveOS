@@ -134,6 +134,10 @@ LLM providers、agent runtimes、tool execution systems、messaging / email / ca
 
 **允许的仓库内边界抽象：**
 `llm_gateway`, `agent_runtime`, `tool_runtime`, `MessagingAdapter`, `CalendarAdapter`, 其他 integration adapter。
+- 飞书等 IM SDK 只能通过 `integration adapter` 接入，不允许直接穿透到业务层或 route handler。
+- 飞书等 IM 入站 webhook 也必须先标准化成内部事件结构，再决定是否接到具体业务流程。
+- 若 IM 平台同时支持 webhook 与长连接，两种接入方式都应复用同一套内部事件标准化逻辑，而不是各自维护一套业务分支。
+- 当前若将 IM 入站消息接到 reminder continuation，必须明确说明匹配策略；若只是最小实现，可以先限定为 p2p 文本消息 + 最近一个 pending reminder，但需要把这个限制写入文档。
 
 ### ⚠️ 重要例外：Temporal
 Temporal 是核心平台决策。**禁止为了“可替换”而构建一个假的通用 workflow abstraction 来隐藏 Temporal。**

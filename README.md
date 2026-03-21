@@ -61,6 +61,8 @@ make infra-up
 - Temporal gRPC：`localhost:7233`
 - Temporal UI：`http://localhost:8080`
 - Temporal 动态配置文件：`dynamicconfig/development-sql.yaml`
+- 若需要使用飞书发送消息，还需要配置 `FEISHU_APP_ID` 与 `FEISHU_APP_SECRET`
+- 若需要接收飞书事件订阅回调，还需要配置 `FEISHU_VERIFICATION_TOKEN`；如果飞书事件订阅启用了加密，还需要配置 `FEISHU_ENCRYPT_KEY`
 
 ### 4. 执行数据库 migration
 
@@ -80,7 +82,13 @@ make api
 make worker
 ```
 
-### 7. Temporal 前置条件
+### 7. 启动飞书长连接监听
+
+```bash
+make feishu-longconn
+```
+
+### 8. Temporal 前置条件
 
 - 当前仓库已接入真实的 Temporal client / workflow signal 链路。
 - 默认本地编排已经提供 Temporal server 与 Temporal UI。
@@ -109,6 +117,10 @@ tests/
 - 当前配置会默认读取 `.env`，因此复制完成后即可直接本地运行。
 - 所有大模型调用都应通过统一记录机制留痕，默认同时写入数据库表 `model_invocation_logs` 与 `logs/model_invocations.jsonl`。
 - 所有工具调用也应通过统一记录机制留痕，默认同时写入数据库表 `tool_invocation_logs` 与 `logs/tool_invocations.jsonl`。
+- 飞书已作为可选 IM 发送入口接入，当前通过 `MessagingAdapter` 边界统一发送。
+- 飞书事件订阅回调入口为 `POST /api/v1/integrations/feishu/events`。
+- 飞书也支持通过长连接接收入站事件，入口命令为 `make feishu-longconn`。
+- 当前最小入站续执行逻辑：仅对飞书 `p2p` 文本消息生效，并按 `sender_open_id` 关联该用户最近一个 `pending` reminder。
 - 当前 reminder create / reply 路由已预留，但仍是占位实现。
 - 数据库、Temporal、消息发送适配器都已补齐骨架与契约，后续可在此基础上继续实现。
 - 更详细的技术立场见 `docs/tech-decisions.md`。

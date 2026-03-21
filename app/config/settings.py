@@ -13,6 +13,11 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+asyncpg://cognitiveos:cognitiveos@localhost:5432/cognitiveos"
     database_echo: bool = False
     redis_url: str = "redis://localhost:6379/0"
+    feishu_app_id: str | None = None
+    feishu_app_secret: str | None = None
+    feishu_message_receive_id_type: str = "open_id"
+    feishu_verification_token: str | None = None
+    feishu_encrypt_key: str | None = None
     model_invocation_jsonl_enabled: bool = True
     model_invocation_jsonl_path: str = "logs/model_invocations.jsonl"
     model_invocation_db_enabled: bool = True

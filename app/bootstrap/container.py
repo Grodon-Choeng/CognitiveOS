@@ -2,11 +2,22 @@ from functools import lru_cache
 
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
+from app.application.conversations.ports import ConversationContextResolver
 from app.application.reminders.ports import ReminderUnitOfWorkFactory
 from app.application.reminders.service import ReminderApplicationService
+from app.bootstrap.inbound_events import ReminderInboundEventRecorder
 from app.config.settings import Settings, get_settings
+from app.infrastructure.conversations import SqlAlchemyConversationContextResolver
 from app.infrastructure.db.session import get_session_factory
 from app.infrastructure.db.uow import SQLAlchemyReminderUnitOfWork
+from app.infrastructure.integrations.messaging import (
+    FeishuLongConnectionListener,
+    FeishuMessagingAdapter,
+    FeishuWebhookHandler,
+    LoggingMessagingAdapter,
+    MessagingAdapter,
+    RoutingMessagingAdapter,
+)
 from app.infrastructure.temporal.gateway import TemporalReminderWorkflowGateway
 from app.observability.model_invocations import (
     DatabaseModelInvocationRecorder,
@@ -30,6 +41,7 @@ class ApplicationContainer:
         return ReminderApplicationService(
             unit_of_work_factory=self.build_reminder_unit_of_work_factory(),
             workflow_gateway=self.workflow_gateway,
+            conversation_context_resolver=self.build_conversation_context_resolver(),
         )
 
     def build_reminder_unit_of_work_factory(self) -> ReminderUnitOfWorkFactory:
@@ -52,6 +64,9 @@ class ApplicationContainer:
             ]
         )
 
+    def build_conversation_context_resolver(self) -> ConversationContextResolver:
+        return SqlAlchemyConversationContextResolver(self.session_factory)
+
     def build_tool_invocation_recorder(self) -> MultiToolInvocationRecorder:
         return MultiToolInvocationRecorder(
             [
@@ -64,6 +79,33 @@ class ApplicationContainer:
                     enabled=self.settings.tool_invocation_jsonl_enabled,
                 ),
             ]
+        )
+
+    def build_messaging_adapter(self) -> MessagingAdapter:
+        logging_adapter = LoggingMessagingAdapter()
+
+        if self.settings.feishu_app_id and self.settings.feishu_app_secret:
+            return RoutingMessagingAdapter(
+                default_adapter=logging_adapter,
+                feishu_adapter=FeishuMessagingAdapter(settings=self.settings),
+            )
+
+        return RoutingMessagingAdapter(default_adapter=logging_adapter)
+
+    def build_feishu_webhook_handler(self) -> FeishuWebhookHandler:
+        return FeishuWebhookHandler(
+            settings=self.settings,
+            inbound_event_recorder=ReminderInboundEventRecorder(self.build_reminder_service()),
+        )
+
+    def build_feishu_long_connection_listener(self) -> FeishuLongConnectionListener:
+        return FeishuLongConnectionListener(
+            settings=self.settings,
+            webhook_handler=FeishuWebhookHandler(
+                settings=self.settings,
+                inbound_event_recorder=ReminderInboundEventRecorder(self.build_reminder_service()),
+                record_on_dispatch=True,
+            ),
         )
 
 

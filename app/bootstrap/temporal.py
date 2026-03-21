@@ -1,7 +1,7 @@
 import asyncio
 
+from app.bootstrap.container import get_container
 from app.config.settings import get_settings
-from app.infrastructure.integrations.messaging.logging_adapter import LoggingMessagingAdapter
 from app.infrastructure.temporal.client import create_temporal_client
 from app.infrastructure.temporal.workers import create_worker
 from app.observability.logging import configure_logging
@@ -13,10 +13,11 @@ async def run_temporal_worker() -> None:
     configure_logging(settings)
     configure_tracing(settings)
     client = await create_temporal_client(settings)
+    container = get_container()
     worker = create_worker(
         client=client,
         settings=settings,
-        messaging_adapter=LoggingMessagingAdapter(),
+        messaging_adapter=container.build_messaging_adapter(),
     )
     await worker.run()
 

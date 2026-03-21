@@ -1,5 +1,6 @@
 from app.infrastructure.db.base import Base
 from app.infrastructure.db.models import (
+    ConversationBindingModel,
     ModelInvocationLogModel,
     ReminderModel,
     ToolInvocationLogModel,
@@ -8,6 +9,7 @@ from app.infrastructure.db.session import get_db_session, get_engine, get_sessio
 
 __all__ = [
     "Base",
+    "ConversationBindingModel",
     "ModelInvocationLogModel",
     "ReminderModel",
     "ToolInvocationLogModel",
