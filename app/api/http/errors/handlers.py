@@ -1,10 +1,21 @@
 from fastapi import FastAPI, Request, status
 from fastapi.responses import JSONResponse
 
+from app.application.audit.errors import AuditQueryValidationError
 from app.application.reminders.errors import ReminderNotFoundError, ReminderWorkflowNotStartedError
 
 
 def register_exception_handlers(app: FastAPI) -> None:
+    @app.exception_handler(AuditQueryValidationError)
+    async def audit_query_validation_handler(
+        _request: Request,
+        exc: AuditQueryValidationError,
+    ) -> JSONResponse:
+        return JSONResponse(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            content={"detail": str(exc)},
+        )
+
     @app.exception_handler(NotImplementedError)
     async def not_implemented_handler(
         _request: Request,

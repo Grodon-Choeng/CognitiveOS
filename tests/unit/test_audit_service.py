@@ -1,5 +1,8 @@
 from datetime import UTC, datetime
 
+import pytest
+
+from app.application.audit.errors import AuditQueryValidationError
 from app.application.audit.service import decode_audit_cursor, encode_audit_cursor
 
 
@@ -12,3 +15,8 @@ def test_audit_cursor_roundtrip() -> None:
 
     assert decoded.recorded_at == "2026-03-21T12:00:00+00:00"
     assert decoded.event_id == "evt_1"
+
+
+def test_audit_cursor_rejects_invalid_payload() -> None:
+    with pytest.raises(AuditQueryValidationError):
+        decode_audit_cursor("invalid-cursor")

@@ -8,6 +8,7 @@ from sqlalchemy import and_, desc, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.application.audit.dto import AuditCursorDTO, AuditEventDTO, AuditEventPageDTO
+from app.application.audit.errors import AuditQueryValidationError
 from app.infrastructure.db.models.message_event import MessageEventLogModel
 from app.infrastructure.db.models.model_invocation import ModelInvocationLogModel
 from app.infrastructure.db.models.tool_invocation import ToolInvocationLogModel
@@ -79,7 +80,7 @@ class AuditQueryService:
                 cursor=cursor,
                 limit=limit,
             )
-        raise ValueError(f"不支持的审计类型：{kind}")
+        raise AuditQueryValidationError(f"不支持的审计类型：{kind}")
 
     async def list_timeline(
         self,
@@ -487,10 +488,19 @@ def encode_audit_cursor(*, recorded_at: datetime, event_id: str) -> str:
 
 
 def decode_audit_cursor(cursor: str) -> AuditCursorDTO:
-    payload = json.loads(base64.urlsafe_b64decode(cursor.encode("utf-8")).decode("utf-8"))
+    try:
+        payload = json.loads(base64.urlsafe_b64decode(cursor.encode("utf-8")).decode("utf-8"))
+        recorded_at = payload["recorded_at"]
+        event_id = payload["event_id"]
+    except (ValueError, KeyError, TypeError, json.JSONDecodeError) as exc:
+        raise AuditQueryValidationError("审计游标格式不合法。") from exc
+
+    if not isinstance(recorded_at, str) or not isinstance(event_id, str):
+        raise AuditQueryValidationError("审计游标格式不合法。")
+
     return AuditCursorDTO(
-        recorded_at=payload["recorded_at"],
-        event_id=payload["event_id"],
+        recorded_at=recorded_at,
+        event_id=event_id,
     )
 
 

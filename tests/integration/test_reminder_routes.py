@@ -39,18 +39,18 @@ def override_reminder_service() -> FakeReminderService:
 
 
 def test_create_reminder_route_returns_structured_response() -> None:
-    client = TestClient(app)
     app.dependency_overrides[get_reminder_service] = override_reminder_service
 
     try:
-        response = client.post(
-            "/api/v1/reminders",
-            json={
-                "text": "明天上午九点提醒我打卡",
-                "remind_at": "2026-03-20T09:00:00+08:00",
-                "timezone": "Asia/Shanghai",
-            },
-        )
+        with TestClient(app) as client:
+            response = client.post(
+                "/api/v1/reminders",
+                json={
+                    "text": "明天上午九点提醒我打卡",
+                    "remind_at": "2026-03-20T09:00:00+08:00",
+                    "timezone": "Asia/Shanghai",
+                },
+            )
     finally:
         app.dependency_overrides.clear()
 
@@ -68,14 +68,14 @@ def test_create_reminder_route_returns_structured_response() -> None:
 
 
 def test_reply_reminder_route_returns_structured_response() -> None:
-    client = TestClient(app)
     app.dependency_overrides[get_reminder_service] = override_reminder_service
 
     try:
-        response = client.post(
-            "/api/v1/reminders/00000000-0000-0000-0000-000000000001/reply",
-            json={"reply_text": "我已经处理好了"},
-        )
+        with TestClient(app) as client:
+            response = client.post(
+                "/api/v1/reminders/00000000-0000-0000-0000-000000000001/reply",
+                json={"reply_text": "我已经处理好了"},
+            )
     finally:
         app.dependency_overrides.clear()
 

@@ -5,6 +5,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Query
 
 from app.api.http.deps.services import get_audit_service
+from app.api.http.schemas.audit import AuditEventKind
 from app.api.http.schemas.common import AuditEventPageResponse, AuditEventResponse
 from app.application.audit.service import AuditQueryService
 
@@ -14,7 +15,7 @@ router = APIRouter(prefix="/audit", tags=["audit"])
 @router.get("/events", summary="查询统一审计事件")
 async def list_audit_events(
     service: Annotated[AuditQueryService, Depends(get_audit_service)],
-    kind: Annotated[str, Query(description="事件类型：message/model/tool/workflow")],
+    kind: Annotated[AuditEventKind, Query(description="事件类型：message/model/tool/workflow")],
     conversation_id: Annotated[str | None, Query()] = None,
     session_id: Annotated[str | None, Query()] = None,
     success: Annotated[bool | None, Query()] = None,

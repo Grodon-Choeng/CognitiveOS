@@ -99,11 +99,11 @@ def override_audit_service() -> FakeAuditService:
 
 
 def test_audit_events_route_returns_structured_response() -> None:
-    client = TestClient(app)
     app.dependency_overrides[get_audit_service] = override_audit_service
 
     try:
-        response = client.get("/api/v1/audit/events", params={"kind": "message"})
+        with TestClient(app) as client:
+            response = client.get("/api/v1/audit/events", params={"kind": "message"})
     finally:
         app.dependency_overrides.clear()
 
@@ -129,21 +129,21 @@ def test_audit_events_route_returns_structured_response() -> None:
 
 
 def test_audit_events_route_accepts_extended_filters() -> None:
-    client = TestClient(app)
     app.dependency_overrides[get_audit_service] = override_audit_service
 
     try:
-        response = client.get(
-            "/api/v1/audit/events",
-            params={
-                "kind": "workflow",
-                "conversation_id": "conversation-1",
-                "session_id": "session-1",
-                "success": "true",
-                "workflow_type": "reminder-workflow",
-                "limit": "20",
-            },
-        )
+        with TestClient(app) as client:
+            response = client.get(
+                "/api/v1/audit/events",
+                params={
+                    "kind": "workflow",
+                    "conversation_id": "conversation-1",
+                    "session_id": "session-1",
+                    "success": "true",
+                    "workflow_type": "reminder-workflow",
+                    "limit": "20",
+                },
+            )
     finally:
         app.dependency_overrides.clear()
 
@@ -151,17 +151,17 @@ def test_audit_events_route_accepts_extended_filters() -> None:
 
 
 def test_audit_timeline_route_returns_page_response() -> None:
-    client = TestClient(app)
     app.dependency_overrides[get_audit_service] = override_audit_service
 
     try:
-        response = client.get(
-            "/api/v1/audit/timeline",
-            params={
-                "conversation_id": "conversation-1",
-                "limit": "10",
-            },
-        )
+        with TestClient(app) as client:
+            response = client.get(
+                "/api/v1/audit/timeline",
+                params={
+                    "conversation_id": "conversation-1",
+                    "limit": "10",
+                },
+            )
     finally:
         app.dependency_overrides.clear()
 
@@ -184,3 +184,17 @@ def test_audit_timeline_route_returns_page_response() -> None:
         ],
         "next_cursor": "cursor_1",
     }
+
+
+def test_audit_events_route_rejects_invalid_kind() -> None:
+    with TestClient(app) as client:
+        response = client.get("/api/v1/audit/events", params={"kind": "invalid"})
+
+    assert response.status_code == 422
+
+
+def test_audit_timeline_route_rejects_invalid_cursor() -> None:
+    with TestClient(app) as client:
+        response = client.get("/api/v1/audit/timeline", params={"cursor": "invalid"})
+
+    assert response.status_code == 400
