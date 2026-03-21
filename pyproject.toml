@@ -36,6 +36,11 @@ packages = ["app"]
 pythonpath = ["."]
 testpaths = ["tests"]
 addopts = "-ra"
+filterwarnings = [
+  "ignore:datetime.datetime.utcfromtimestamp\\(\\) is deprecated.*:DeprecationWarning",
+  "ignore:websockets.InvalidStatusCode is deprecated:DeprecationWarning",
+  "ignore:websockets.legacy is deprecated.*:DeprecationWarning",
+]
 
 [tool.ruff]
 target-version = "py312"
