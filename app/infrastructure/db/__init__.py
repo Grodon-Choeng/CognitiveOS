@@ -5,6 +5,7 @@ from app.infrastructure.db.models import (
     ModelInvocationLogModel,
     ReminderModel,
     ToolInvocationLogModel,
+    WorkflowEventLogModel,
 )
 from app.infrastructure.db.session import get_db_session, get_engine, get_session_factory
 
@@ -15,6 +16,7 @@ __all__ = [
     "ModelInvocationLogModel",
     "ReminderModel",
     "ToolInvocationLogModel",
+    "WorkflowEventLogModel",
     "get_db_session",
     "get_engine",
     "get_session_factory",

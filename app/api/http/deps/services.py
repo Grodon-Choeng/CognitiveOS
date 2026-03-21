@@ -1,7 +1,12 @@
+from app.application.audit.service import AuditQueryService
 from app.application.conversations.service import ConversationApplicationService
 from app.application.reminders.service import ReminderApplicationService
 from app.bootstrap.container import get_container
 from app.infrastructure.integrations.messaging.feishu_webhook import FeishuWebhookHandler
+
+
+def get_audit_service() -> AuditQueryService:
+    return get_container().build_audit_service()
 
 
 def get_conversation_service() -> ConversationApplicationService:

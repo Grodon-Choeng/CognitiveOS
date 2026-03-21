@@ -19,6 +19,7 @@ async def run_temporal_worker() -> None:
         settings=settings,
         messaging_adapter=container.build_messaging_adapter(),
         session_factory=container.session_factory,
+        workflow_event_recorder=container.build_workflow_event_recorder(),
     )
     await worker.run()
 

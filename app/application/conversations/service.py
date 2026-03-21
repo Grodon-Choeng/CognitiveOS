@@ -1,8 +1,7 @@
 from app.application.conversations.commands import HandleInboundConversationMessageCommand
 from app.application.conversations.dto import ConversationInboundResult
+from app.application.conversations.handlers import ConversationInboundHandler
 from app.application.conversations.ports import ConversationContextResolver
-from app.application.reminders.commands import HandleReminderInboundMessageCommand
-from app.application.reminders.service import ReminderApplicationService
 from app.observability.message_events import MessageEventRecord, MessageEventRecorder
 
 
@@ -10,12 +9,12 @@ class ConversationApplicationService:
     def __init__(
         self,
         conversation_context_resolver: ConversationContextResolver,
-        reminder_service: ReminderApplicationService,
         message_event_recorder: MessageEventRecorder,
+        handlers: list[ConversationInboundHandler],
     ) -> None:
         self.conversation_context_resolver = conversation_context_resolver
-        self.reminder_service = reminder_service
         self.message_event_recorder = message_event_recorder
+        self.handlers = handlers
 
     async def handle_inbound_message(
         self,
@@ -49,25 +48,19 @@ class ConversationApplicationService:
             )
         )
 
-        reminder_result = await self.reminder_service.handle_inbound_message(
-            HandleReminderInboundMessageCommand(
+        for handler in self.handlers:
+            result = await handler.handle(
+                command,
                 conversation_id=conversation_context.conversation_id,
                 session_id=conversation_context.session_id,
-                channel=command.channel,
-                sender_id=command.user_identity,
-                message_id=command.external_message_id,
-                root_message_id=command.root_message_id,
-                parent_message_id=command.parent_message_id,
-                chat_id=command.chat_id,
-                thread_id=command.thread_id,
-                text=command.text or "",
             )
-        )
+            if result is not None and result.handled:
+                return result
 
         return ConversationInboundResult(
-            handled=reminder_result.handled,
+            handled=False,
             conversation_id=conversation_context.conversation_id,
             session_id=conversation_context.session_id,
-            handled_by="reminder" if reminder_result.handled else None,
-            reason=reminder_result.reason,
+            handled_by=None,
+            reason="no_handler_accepted",
         )

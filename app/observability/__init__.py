@@ -25,14 +25,26 @@ from app.observability.tool_invocations import (
     build_tool_raw_output,
 )
 from app.observability.tracing import configure_tracing
+from app.observability.workflow_events import (
+    DatabaseWorkflowEventRecorder,
+    JsonlWorkflowEventRecorder,
+    MultiWorkflowEventRecorder,
+    WorkflowEventRecord,
+    WorkflowEventRecorder,
+)
 
 __all__ = [
     "configure_logging",
     "DatabaseMessageEventRecorder",
+    "DatabaseWorkflowEventRecorder",
     "JsonlMessageEventRecorder",
+    "JsonlWorkflowEventRecorder",
     "MessageEventRecord",
     "MessageEventRecorder",
     "MultiMessageEventRecorder",
+    "MultiWorkflowEventRecorder",
+    "WorkflowEventRecord",
+    "WorkflowEventRecorder",
     "configure_metrics",
     "DatabaseModelInvocationRecorder",
     "DatabaseToolInvocationRecorder",

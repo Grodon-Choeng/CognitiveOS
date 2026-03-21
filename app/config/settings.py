@@ -21,6 +21,9 @@ class Settings(BaseSettings):
     message_event_jsonl_enabled: bool = True
     message_event_jsonl_path: str = "logs/message_events.jsonl"
     message_event_db_enabled: bool = True
+    workflow_event_jsonl_enabled: bool = True
+    workflow_event_jsonl_path: str = "logs/workflow_events.jsonl"
+    workflow_event_db_enabled: bool = True
     model_invocation_jsonl_enabled: bool = True
     model_invocation_jsonl_path: str = "logs/model_invocations.jsonl"
     model_invocation_db_enabled: bool = True

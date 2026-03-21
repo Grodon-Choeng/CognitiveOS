@@ -2,8 +2,11 @@ from functools import lru_cache
 
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
+from app.application.audit.service import AuditQueryService
+from app.application.conversations.handlers import ConversationInboundHandler
 from app.application.conversations.ports import ConversationContextResolver
 from app.application.conversations.service import ConversationApplicationService
+from app.application.reminders.conversation_handler import ReminderConversationHandler
 from app.application.reminders.ports import ReminderUnitOfWorkFactory
 from app.application.reminders.service import ReminderApplicationService
 from app.bootstrap.inbound_events import ConversationInboundEventRecorder
@@ -36,13 +39,21 @@ from app.observability.tool_invocations import (
     JsonlToolInvocationRecorder,
     MultiToolInvocationRecorder,
 )
+from app.observability.workflow_events import (
+    DatabaseWorkflowEventRecorder,
+    JsonlWorkflowEventRecorder,
+    MultiWorkflowEventRecorder,
+)
 
 
 class ApplicationContainer:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
         self.session_factory: async_sessionmaker = get_session_factory(settings)
-        self.workflow_gateway = TemporalReminderWorkflowGateway(settings=settings)
+        self.workflow_gateway = TemporalReminderWorkflowGateway(
+            settings=settings,
+            workflow_event_recorder=self.build_workflow_event_recorder(),
+        )
 
     def build_reminder_service(self) -> ReminderApplicationService:
         return ReminderApplicationService(
@@ -122,8 +133,28 @@ class ApplicationContainer:
     def build_conversation_service(self) -> ConversationApplicationService:
         return ConversationApplicationService(
             conversation_context_resolver=self.build_conversation_context_resolver(),
-            reminder_service=self.build_reminder_service(),
             message_event_recorder=self.build_message_event_recorder(),
+            handlers=self.build_conversation_handlers(),
+        )
+
+    def build_conversation_handlers(self) -> list[ConversationInboundHandler]:
+        return [ReminderConversationHandler(self.build_reminder_service())]
+
+    def build_audit_service(self) -> AuditQueryService:
+        return AuditQueryService(self.session_factory)
+
+    def build_workflow_event_recorder(self) -> MultiWorkflowEventRecorder:
+        return MultiWorkflowEventRecorder(
+            [
+                DatabaseWorkflowEventRecorder(
+                    session_factory=self.session_factory,
+                    enabled=self.settings.workflow_event_db_enabled,
+                ),
+                JsonlWorkflowEventRecorder(
+                    path=self.settings.workflow_event_jsonl_path,
+                    enabled=self.settings.workflow_event_jsonl_enabled,
+                ),
+            ]
         )
 
     def build_feishu_webhook_handler(self) -> FeishuWebhookHandler:

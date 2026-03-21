@@ -234,6 +234,7 @@ workflows, activities, signals, queries, updates, timers, retries, durable execu
 - LLM request metadata / integration call logging
 - 代码中的日志文本默认使用中文，避免中英文混杂。
 - 模型调用留痕属于强约束，不允许只记录摘要而丢失原始输入输出与关键指标。
+- workflow 关键事件和用户消息收发也应纳入统一审计体系，并且能够按 conversation / session 维度查询。
 - 用户消息收发也属于强约束，应记录入站/出站方向、渠道、外部消息 ID、chat/thread、conversation/session、原始 payload 与处理结果。
 
 **捕获异常时：**

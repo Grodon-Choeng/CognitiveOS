@@ -15,6 +15,8 @@ class ReminderWorkflowInput:
     timezone: str
     dispatch_channel: str
     dispatch_recipient_id: str
+    conversation_id: str | None = None
+    session_id: str | None = None
     dispatch_chat_id: str | None = None
     dispatch_thread_id: str | None = None
 
@@ -46,6 +48,8 @@ class ReminderWorkflow:
             args=[
                 workflow_input.reminder_id,
                 workflow_input.text,
+                workflow_input.conversation_id,
+                workflow_input.session_id,
                 workflow_input.dispatch_channel,
                 workflow_input.dispatch_recipient_id,
                 workflow_input.dispatch_chat_id,

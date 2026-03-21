@@ -14,11 +14,17 @@ from app.infrastructure.temporal.workflows.reminder_workflow import (
     RECORD_USER_REPLY_SIGNAL,
     ReminderWorkflowInput,
 )
+from app.observability.workflow_events import WorkflowEventRecord, WorkflowEventRecorder
 
 
 class TemporalReminderWorkflowGateway(ReminderWorkflowGateway):
-    def __init__(self, settings: Settings) -> None:
+    def __init__(
+        self,
+        settings: Settings,
+        workflow_event_recorder: WorkflowEventRecorder,
+    ) -> None:
         self.settings = settings
+        self.workflow_event_recorder = workflow_event_recorder
         self._client: Client | None = None
         self._client_lock = asyncio.Lock()
 
@@ -38,6 +44,8 @@ class TemporalReminderWorkflowGateway(ReminderWorkflowGateway):
                 text=reminder.text,
                 remind_at=reminder.schedule.remind_at.isoformat(),
                 timezone=reminder.schedule.timezone,
+                conversation_id=reminder.conversation_id,
+                session_id=reminder.session_id,
                 dispatch_channel=dispatch_target.channel,
                 dispatch_recipient_id=dispatch_target.recipient_id,
                 dispatch_chat_id=reminder.dispatch_chat_id,
@@ -47,12 +55,40 @@ class TemporalReminderWorkflowGateway(ReminderWorkflowGateway):
             task_queue=self.settings.temporal_task_queue,
             start_delay=start_delay,
         )
+        await self.workflow_event_recorder.record(
+            WorkflowEventRecord.create(
+                workflow_id=workflow_id,
+                workflow_type=self.settings.temporal_reminder_workflow_name,
+                event_type="workflow_started",
+                conversation_id=reminder.conversation_id,
+                session_id=reminder.session_id,
+                trace_id=None,
+                chain_id=None,
+                request_id=None,
+                message="提醒工作流已启动。",
+                payload={"reminder_id": str(reminder.reminder_id.value)},
+            )
+        )
         return workflow_id
 
     async def record_user_reply(self, workflow_id: str, reply_text: str) -> None:
         client = await self._get_client()
         handle = client.get_workflow_handle(workflow_id)
         await handle.signal(RECORD_USER_REPLY_SIGNAL, reply_text)
+        await self.workflow_event_recorder.record(
+            WorkflowEventRecord.create(
+                workflow_id=workflow_id,
+                workflow_type=self.settings.temporal_reminder_workflow_name,
+                event_type="reply_signal_sent",
+                conversation_id=None,
+                session_id=None,
+                trace_id=None,
+                chain_id=None,
+                request_id=None,
+                message="已向工作流发送回复信号。",
+                payload={"reply_text": reply_text},
+            )
+        )
 
     async def _get_client(self) -> Client:
         if self._client is None:
