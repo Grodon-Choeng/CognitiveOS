@@ -24,3 +24,8 @@ class AuditEventResponse(BaseModel):
     success: bool
     summary: str
     payload: JSONObject
+
+
+class AuditEventPageResponse(BaseModel):
+    items: list[AuditEventResponse]
+    next_cursor: str | None = None

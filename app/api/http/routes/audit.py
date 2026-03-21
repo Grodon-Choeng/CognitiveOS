@@ -1,10 +1,11 @@
 from dataclasses import asdict
+from datetime import datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query
 
 from app.api.http.deps.services import get_audit_service
-from app.api.http.schemas.common import AuditEventResponse
+from app.api.http.schemas.common import AuditEventPageResponse, AuditEventResponse
 from app.application.audit.service import AuditQueryService
 
 router = APIRouter(prefix="/audit", tags=["audit"])
@@ -13,15 +14,24 @@ router = APIRouter(prefix="/audit", tags=["audit"])
 @router.get("/events", summary="查询统一审计事件")
 async def list_audit_events(
     service: Annotated[AuditQueryService, Depends(get_audit_service)],
-    kind: str = Query(..., description="事件类型：message/model/tool/workflow"),
-    conversation_id: str | None = Query(default=None),
-    session_id: str | None = Query(default=None),
-    limit: int = Query(default=50, ge=1, le=200),
-) -> list[AuditEventResponse]:
-    records = await service.list_events(
+    kind: Annotated[str, Query(description="事件类型：message/model/tool/workflow")],
+    conversation_id: Annotated[str | None, Query()] = None,
+    session_id: Annotated[str | None, Query()] = None,
+    recorded_after: Annotated[datetime | None, Query()] = None,
+    recorded_before: Annotated[datetime | None, Query()] = None,
+    cursor: Annotated[str | None, Query()] = None,
+    limit: Annotated[int, Query(ge=1, le=200)] = 50,
+) -> AuditEventPageResponse:
+    page = await service.list_events(
         kind=kind,
         conversation_id=conversation_id,
         session_id=session_id,
+        recorded_after=recorded_after,
+        recorded_before=recorded_before,
+        cursor=cursor,
         limit=limit,
     )
-    return [AuditEventResponse(**asdict(record)) for record in records]
+    return AuditEventPageResponse(
+        items=[AuditEventResponse(**asdict(record)) for record in page.items],
+        next_cursor=page.next_cursor,
+    )

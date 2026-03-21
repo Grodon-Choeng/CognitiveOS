@@ -1,4 +1,4 @@
-from functools import lru_cache
+from functools import cached_property, lru_cache
 
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
@@ -50,12 +50,19 @@ class ApplicationContainer:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
         self.session_factory: async_sessionmaker = get_session_factory(settings)
-        self.workflow_gateway = TemporalReminderWorkflowGateway(
-            settings=settings,
+
+    @cached_property
+    def workflow_gateway(self) -> TemporalReminderWorkflowGateway:
+        return TemporalReminderWorkflowGateway(
+            settings=self.settings,
             workflow_event_recorder=self.build_workflow_event_recorder(),
         )
 
     def build_reminder_service(self) -> ReminderApplicationService:
+        return self.reminder_service
+
+    @cached_property
+    def reminder_service(self) -> ReminderApplicationService:
         return ReminderApplicationService(
             unit_of_work_factory=self.build_reminder_unit_of_work_factory(),
             workflow_gateway=self.workflow_gateway,
@@ -69,6 +76,10 @@ class ApplicationContainer:
         return create_unit_of_work
 
     def build_model_invocation_recorder(self) -> MultiModelInvocationRecorder:
+        return self.model_invocation_recorder
+
+    @cached_property
+    def model_invocation_recorder(self) -> MultiModelInvocationRecorder:
         return MultiModelInvocationRecorder(
             [
                 DatabaseModelInvocationRecorder(
@@ -83,6 +94,10 @@ class ApplicationContainer:
         )
 
     def build_message_event_recorder(self) -> MultiMessageEventRecorder:
+        return self.message_event_recorder
+
+    @cached_property
+    def message_event_recorder(self) -> MultiMessageEventRecorder:
         return MultiMessageEventRecorder(
             [
                 DatabaseMessageEventRecorder(
@@ -97,9 +112,17 @@ class ApplicationContainer:
         )
 
     def build_conversation_context_resolver(self) -> ConversationContextResolver:
+        return self.conversation_context_resolver
+
+    @cached_property
+    def conversation_context_resolver(self) -> ConversationContextResolver:
         return SqlAlchemyConversationContextResolver(self.session_factory)
 
     def build_tool_invocation_recorder(self) -> MultiToolInvocationRecorder:
+        return self.tool_invocation_recorder
+
+    @cached_property
+    def tool_invocation_recorder(self) -> MultiToolInvocationRecorder:
         return MultiToolInvocationRecorder(
             [
                 DatabaseToolInvocationRecorder(
@@ -114,8 +137,11 @@ class ApplicationContainer:
         )
 
     def build_messaging_adapter(self) -> MessagingAdapter:
-        logging_adapter = LoggingMessagingAdapter()
+        return self.messaging_adapter
 
+    @cached_property
+    def messaging_adapter(self) -> MessagingAdapter:
+        logging_adapter = LoggingMessagingAdapter()
         base_adapter: MessagingAdapter
         if self.settings.feishu_app_id and self.settings.feishu_app_secret:
             base_adapter = RoutingMessagingAdapter(
@@ -131,6 +157,10 @@ class ApplicationContainer:
         )
 
     def build_conversation_service(self) -> ConversationApplicationService:
+        return self.conversation_service
+
+    @cached_property
+    def conversation_service(self) -> ConversationApplicationService:
         return ConversationApplicationService(
             conversation_context_resolver=self.build_conversation_context_resolver(),
             message_event_recorder=self.build_message_event_recorder(),
@@ -138,12 +168,24 @@ class ApplicationContainer:
         )
 
     def build_conversation_handlers(self) -> list[ConversationInboundHandler]:
+        return self.conversation_handlers
+
+    @cached_property
+    def conversation_handlers(self) -> list[ConversationInboundHandler]:
         return [ReminderConversationHandler(self.build_reminder_service())]
 
     def build_audit_service(self) -> AuditQueryService:
+        return self.audit_service
+
+    @cached_property
+    def audit_service(self) -> AuditQueryService:
         return AuditQueryService(self.session_factory)
 
     def build_workflow_event_recorder(self) -> MultiWorkflowEventRecorder:
+        return self.workflow_event_recorder
+
+    @cached_property
+    def workflow_event_recorder(self) -> MultiWorkflowEventRecorder:
         return MultiWorkflowEventRecorder(
             [
                 DatabaseWorkflowEventRecorder(
@@ -158,21 +200,29 @@ class ApplicationContainer:
         )
 
     def build_feishu_webhook_handler(self) -> FeishuWebhookHandler:
+        return self.feishu_webhook_handler
+
+    @cached_property
+    def inbound_event_recorder(self) -> ConversationInboundEventRecorder:
+        return ConversationInboundEventRecorder(self.build_conversation_service())
+
+    @cached_property
+    def feishu_webhook_handler(self) -> FeishuWebhookHandler:
         return FeishuWebhookHandler(
             settings=self.settings,
-            inbound_event_recorder=ConversationInboundEventRecorder(
-                self.build_conversation_service()
-            ),
+            inbound_event_recorder=self.inbound_event_recorder,
         )
 
     def build_feishu_long_connection_listener(self) -> FeishuLongConnectionListener:
+        return self.feishu_long_connection_listener
+
+    @cached_property
+    def feishu_long_connection_listener(self) -> FeishuLongConnectionListener:
         return FeishuLongConnectionListener(
             settings=self.settings,
             webhook_handler=FeishuWebhookHandler(
                 settings=self.settings,
-                inbound_event_recorder=ConversationInboundEventRecorder(
-                    self.build_conversation_service()
-                ),
+                inbound_event_recorder=self.inbound_event_recorder,
                 record_on_dispatch=True,
             ),
         )

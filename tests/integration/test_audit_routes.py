@@ -1,9 +1,10 @@
 from dataclasses import dataclass
+from datetime import datetime
 
 from fastapi.testclient import TestClient
 
 from app.api.http.deps.services import get_audit_service
-from app.application.audit.dto import AuditEventDTO
+from app.application.audit.dto import AuditEventDTO, AuditEventPageDTO
 from app.main import app
 
 
@@ -15,24 +16,30 @@ class FakeAuditService:
         kind: str,
         conversation_id: str | None = None,
         session_id: str | None = None,
+        recorded_after: datetime | None = None,
+        recorded_before: datetime | None = None,
+        cursor: str | None = None,
         limit: int = 50,
-    ) -> list[AuditEventDTO]:
-        _ = (kind, conversation_id, session_id, limit)
-        return [
-            AuditEventDTO(
-                kind="message",
-                event_id="evt_1",
-                recorded_at="2026-03-21T12:00:00+08:00",
-                conversation_id="conversation-1",
-                session_id="session-1",
-                trace_id=None,
-                chain_id=None,
-                request_id=None,
-                success=True,
-                summary="inbound:web:text",
-                payload={"text": "你好"},
-            )
-        ]
+    ) -> AuditEventPageDTO:
+        _ = (kind, conversation_id, session_id, recorded_after, recorded_before, cursor, limit)
+        return AuditEventPageDTO(
+            items=[
+                AuditEventDTO(
+                    kind="message",
+                    event_id="evt_1",
+                    recorded_at="2026-03-21T12:00:00+08:00",
+                    conversation_id="conversation-1",
+                    session_id="session-1",
+                    trace_id=None,
+                    chain_id=None,
+                    request_id=None,
+                    success=True,
+                    summary="inbound:web:text",
+                    payload={"text": "你好"},
+                )
+            ],
+            next_cursor="cursor_1",
+        )
 
 
 def override_audit_service() -> FakeAuditService:
@@ -49,18 +56,21 @@ def test_audit_events_route_returns_structured_response() -> None:
         app.dependency_overrides.clear()
 
     assert response.status_code == 200
-    assert response.json() == [
-        {
-            "kind": "message",
-            "event_id": "evt_1",
-            "recorded_at": "2026-03-21T12:00:00+08:00",
-            "conversation_id": "conversation-1",
-            "session_id": "session-1",
-            "trace_id": None,
-            "chain_id": None,
-            "request_id": None,
-            "success": True,
-            "summary": "inbound:web:text",
-            "payload": {"text": "你好"},
-        }
-    ]
+    assert response.json() == {
+        "items": [
+            {
+                "kind": "message",
+                "event_id": "evt_1",
+                "recorded_at": "2026-03-21T12:00:00+08:00",
+                "conversation_id": "conversation-1",
+                "session_id": "session-1",
+                "trace_id": None,
+                "chain_id": None,
+                "request_id": None,
+                "success": True,
+                "summary": "inbound:web:text",
+                "payload": {"text": "你好"},
+            }
+        ],
+        "next_cursor": "cursor_1",
+    }

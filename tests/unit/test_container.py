@@ -1,0 +1,17 @@
+from app.bootstrap.container import ApplicationContainer
+from app.config.settings import Settings
+
+
+def test_container_reuses_singletons_for_core_services() -> None:
+    container = ApplicationContainer(
+        Settings(
+            feishu_app_id=None,
+            feishu_app_secret=None,
+        )
+    )
+
+    assert container.build_reminder_service() is container.build_reminder_service()
+    assert container.build_conversation_service() is container.build_conversation_service()
+    assert container.build_audit_service() is container.build_audit_service()
+    assert container.build_message_event_recorder() is container.build_message_event_recorder()
+    assert container.build_messaging_adapter() is container.build_messaging_adapter()

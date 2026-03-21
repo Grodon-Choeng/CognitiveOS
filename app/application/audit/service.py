@@ -1,7 +1,13 @@
-from sqlalchemy import desc, select
+import base64
+import json
+from collections.abc import Callable, Sequence
+from datetime import datetime
+from typing import Any
+
+from sqlalchemy import and_, desc, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.application.audit.dto import AuditEventDTO
+from app.application.audit.dto import AuditCursorDTO, AuditEventDTO, AuditEventPageDTO
 from app.infrastructure.db.models.message_event import MessageEventLogModel
 from app.infrastructure.db.models.model_invocation import ModelInvocationLogModel
 from app.infrastructure.db.models.tool_invocation import ToolInvocationLogModel
@@ -18,35 +24,80 @@ class AuditQueryService:
         kind: str,
         conversation_id: str | None = None,
         session_id: str | None = None,
+        recorded_after: datetime | None = None,
+        recorded_before: datetime | None = None,
+        cursor: str | None = None,
         limit: int = 50,
-    ) -> list[AuditEventDTO]:
+    ) -> AuditEventPageDTO:
         normalized_kind = kind.lower()
         if normalized_kind == "message":
-            return await self._query_message_events(conversation_id, session_id, limit)
+            return await self._query_message_events(
+                conversation_id=conversation_id,
+                session_id=session_id,
+                recorded_after=recorded_after,
+                recorded_before=recorded_before,
+                cursor=cursor,
+                limit=limit,
+            )
         if normalized_kind == "model":
-            return await self._query_model_events(conversation_id, session_id, limit)
+            return await self._query_model_events(
+                conversation_id=conversation_id,
+                session_id=session_id,
+                recorded_after=recorded_after,
+                recorded_before=recorded_before,
+                cursor=cursor,
+                limit=limit,
+            )
         if normalized_kind == "tool":
-            return await self._query_tool_events(conversation_id, session_id, limit)
+            return await self._query_tool_events(
+                conversation_id=conversation_id,
+                session_id=session_id,
+                recorded_after=recorded_after,
+                recorded_before=recorded_before,
+                cursor=cursor,
+                limit=limit,
+            )
         if normalized_kind == "workflow":
-            return await self._query_workflow_events(conversation_id, session_id, limit)
+            return await self._query_workflow_events(
+                conversation_id=conversation_id,
+                session_id=session_id,
+                recorded_after=recorded_after,
+                recorded_before=recorded_before,
+                cursor=cursor,
+                limit=limit,
+            )
         raise ValueError(f"不支持的审计类型：{kind}")
 
     async def _query_message_events(
         self,
+        *,
         conversation_id: str | None,
         session_id: str | None,
+        recorded_after: datetime | None,
+        recorded_before: datetime | None,
+        cursor: str | None,
         limit: int,
-    ) -> list[AuditEventDTO]:
+    ) -> AuditEventPageDTO:
         async with self.session_factory() as session:
             statement = select(MessageEventLogModel).order_by(
-                desc(MessageEventLogModel.recorded_at)
+                desc(MessageEventLogModel.recorded_at),
+                desc(MessageEventLogModel.event_id),
             )
-            if conversation_id:
-                statement = statement.where(MessageEventLogModel.conversation_id == conversation_id)
-            if session_id:
-                statement = statement.where(MessageEventLogModel.session_id == session_id)
-            rows = (await session.execute(statement.limit(limit))).scalars().all()
-            return [
+            statement = _apply_common_filters(
+                statement=statement,
+                conversation_column=MessageEventLogModel.conversation_id,
+                session_column=MessageEventLogModel.session_id,
+                recorded_at_column=MessageEventLogModel.recorded_at,
+                event_id_column=MessageEventLogModel.event_id,
+                conversation_id=conversation_id,
+                session_id=session_id,
+                recorded_after=recorded_after,
+                recorded_before=recorded_before,
+                cursor=cursor,
+            )
+            rows = (await session.execute(statement.limit(limit + 1))).scalars().all()
+            page_rows = rows[:limit]
+            items = [
                 AuditEventDTO(
                     kind="message",
                     event_id=row.event_id,
@@ -69,27 +120,48 @@ class AuditQueryService:
                         "metadata": row.metadata_json,
                     },
                 )
-                for row in rows
+                for row in page_rows
             ]
+            return AuditEventPageDTO(
+                items=items,
+                next_cursor=_build_next_cursor(
+                    page_rows=page_rows,
+                    rows=rows,
+                    limit=limit,
+                    event_id_getter=lambda row: row.event_id,
+                ),
+            )
 
     async def _query_model_events(
         self,
+        *,
         conversation_id: str | None,
         session_id: str | None,
+        recorded_after: datetime | None,
+        recorded_before: datetime | None,
+        cursor: str | None,
         limit: int,
-    ) -> list[AuditEventDTO]:
+    ) -> AuditEventPageDTO:
         async with self.session_factory() as session:
             statement = select(ModelInvocationLogModel).order_by(
-                desc(ModelInvocationLogModel.recorded_at)
+                desc(ModelInvocationLogModel.recorded_at),
+                desc(ModelInvocationLogModel.invocation_id),
             )
-            if conversation_id:
-                statement = statement.where(
-                    ModelInvocationLogModel.conversation_id == conversation_id
-                )
-            if session_id:
-                statement = statement.where(ModelInvocationLogModel.session_id == session_id)
-            rows = (await session.execute(statement.limit(limit))).scalars().all()
-            return [
+            statement = _apply_common_filters(
+                statement=statement,
+                conversation_column=ModelInvocationLogModel.conversation_id,
+                session_column=ModelInvocationLogModel.session_id,
+                recorded_at_column=ModelInvocationLogModel.recorded_at,
+                event_id_column=ModelInvocationLogModel.invocation_id,
+                conversation_id=conversation_id,
+                session_id=session_id,
+                recorded_after=recorded_after,
+                recorded_before=recorded_before,
+                cursor=cursor,
+            )
+            rows = (await session.execute(statement.limit(limit + 1))).scalars().all()
+            page_rows = rows[:limit]
+            items = [
                 AuditEventDTO(
                     kind="model",
                     event_id=row.invocation_id,
@@ -108,27 +180,48 @@ class AuditQueryService:
                         "usage": row.usage,
                     },
                 )
-                for row in rows
+                for row in page_rows
             ]
+            return AuditEventPageDTO(
+                items=items,
+                next_cursor=_build_next_cursor(
+                    page_rows=page_rows,
+                    rows=rows,
+                    limit=limit,
+                    event_id_getter=lambda row: row.invocation_id,
+                ),
+            )
 
     async def _query_tool_events(
         self,
+        *,
         conversation_id: str | None,
         session_id: str | None,
+        recorded_after: datetime | None,
+        recorded_before: datetime | None,
+        cursor: str | None,
         limit: int,
-    ) -> list[AuditEventDTO]:
+    ) -> AuditEventPageDTO:
         async with self.session_factory() as session:
             statement = select(ToolInvocationLogModel).order_by(
-                desc(ToolInvocationLogModel.recorded_at)
+                desc(ToolInvocationLogModel.recorded_at),
+                desc(ToolInvocationLogModel.invocation_id),
             )
-            if conversation_id:
-                statement = statement.where(
-                    ToolInvocationLogModel.conversation_id == conversation_id
-                )
-            if session_id:
-                statement = statement.where(ToolInvocationLogModel.session_id == session_id)
-            rows = (await session.execute(statement.limit(limit))).scalars().all()
-            return [
+            statement = _apply_common_filters(
+                statement=statement,
+                conversation_column=ToolInvocationLogModel.conversation_id,
+                session_column=ToolInvocationLogModel.session_id,
+                recorded_at_column=ToolInvocationLogModel.recorded_at,
+                event_id_column=ToolInvocationLogModel.invocation_id,
+                conversation_id=conversation_id,
+                session_id=session_id,
+                recorded_after=recorded_after,
+                recorded_before=recorded_before,
+                cursor=cursor,
+            )
+            rows = (await session.execute(statement.limit(limit + 1))).scalars().all()
+            page_rows = rows[:limit]
+            items = [
                 AuditEventDTO(
                     kind="tool",
                     event_id=row.invocation_id,
@@ -147,27 +240,48 @@ class AuditQueryService:
                         "retry_limit": row.retry_limit,
                     },
                 )
-                for row in rows
+                for row in page_rows
             ]
+            return AuditEventPageDTO(
+                items=items,
+                next_cursor=_build_next_cursor(
+                    page_rows=page_rows,
+                    rows=rows,
+                    limit=limit,
+                    event_id_getter=lambda row: row.invocation_id,
+                ),
+            )
 
     async def _query_workflow_events(
         self,
+        *,
         conversation_id: str | None,
         session_id: str | None,
+        recorded_after: datetime | None,
+        recorded_before: datetime | None,
+        cursor: str | None,
         limit: int,
-    ) -> list[AuditEventDTO]:
+    ) -> AuditEventPageDTO:
         async with self.session_factory() as session:
             statement = select(WorkflowEventLogModel).order_by(
-                desc(WorkflowEventLogModel.recorded_at)
+                desc(WorkflowEventLogModel.recorded_at),
+                desc(WorkflowEventLogModel.event_id),
             )
-            if conversation_id:
-                statement = statement.where(
-                    WorkflowEventLogModel.conversation_id == conversation_id
-                )
-            if session_id:
-                statement = statement.where(WorkflowEventLogModel.session_id == session_id)
-            rows = (await session.execute(statement.limit(limit))).scalars().all()
-            return [
+            statement = _apply_common_filters(
+                statement=statement,
+                conversation_column=WorkflowEventLogModel.conversation_id,
+                session_column=WorkflowEventLogModel.session_id,
+                recorded_at_column=WorkflowEventLogModel.recorded_at,
+                event_id_column=WorkflowEventLogModel.event_id,
+                conversation_id=conversation_id,
+                session_id=session_id,
+                recorded_after=recorded_after,
+                recorded_before=recorded_before,
+                cursor=cursor,
+            )
+            rows = (await session.execute(statement.limit(limit + 1))).scalars().all()
+            page_rows = rows[:limit]
+            items = [
                 AuditEventDTO(
                     kind="workflow",
                     event_id=row.event_id,
@@ -187,5 +301,82 @@ class AuditQueryService:
                         "payload": row.payload,
                     },
                 )
-                for row in rows
+                for row in page_rows
             ]
+            return AuditEventPageDTO(
+                items=items,
+                next_cursor=_build_next_cursor(
+                    page_rows=page_rows,
+                    rows=rows,
+                    limit=limit,
+                    event_id_getter=lambda row: row.event_id,
+                ),
+            )
+
+
+def _apply_common_filters(
+    *,
+    statement: Any,
+    conversation_column: Any,
+    session_column: Any,
+    recorded_at_column: Any,
+    event_id_column: Any,
+    conversation_id: str | None,
+    session_id: str | None,
+    recorded_after: datetime | None,
+    recorded_before: datetime | None,
+    cursor: str | None,
+) -> Any:
+    if conversation_id:
+        statement = statement.where(conversation_column == conversation_id)
+    if session_id:
+        statement = statement.where(session_column == session_id)
+    if recorded_after:
+        statement = statement.where(recorded_at_column >= recorded_after)
+    if recorded_before:
+        statement = statement.where(recorded_at_column <= recorded_before)
+    if cursor:
+        decoded = decode_audit_cursor(cursor)
+        recorded_at = datetime.fromisoformat(decoded.recorded_at)
+        statement = statement.where(
+            or_(
+                recorded_at_column < recorded_at,
+                and_(
+                    recorded_at_column == recorded_at,
+                    event_id_column < decoded.event_id,
+                ),
+            )
+        )
+    return statement
+
+
+def encode_audit_cursor(*, recorded_at: datetime, event_id: str) -> str:
+    payload = {
+        "recorded_at": recorded_at.isoformat(),
+        "event_id": event_id,
+    }
+    return base64.urlsafe_b64encode(json.dumps(payload).encode("utf-8")).decode("utf-8")
+
+
+def decode_audit_cursor(cursor: str) -> AuditCursorDTO:
+    payload = json.loads(base64.urlsafe_b64decode(cursor.encode("utf-8")).decode("utf-8"))
+    return AuditCursorDTO(
+        recorded_at=payload["recorded_at"],
+        event_id=payload["event_id"],
+    )
+
+
+def _build_next_cursor(
+    *,
+    page_rows: Sequence[Any],
+    rows: Sequence[Any],
+    limit: int,
+    event_id_getter: Callable[[Any], str],
+) -> str | None:
+    if len(rows) <= limit or not page_rows:
+        return None
+    last_row = page_rows[-1]
+    return encode_audit_cursor(
+        recorded_at=last_row.recorded_at,
+        event_id=event_id_getter(last_row),
+    )

@@ -4,6 +4,12 @@ from app.infrastructure.types import JSONObject
 
 
 @dataclass(slots=True, frozen=True)
+class AuditCursorDTO:
+    recorded_at: str
+    event_id: str
+
+
+@dataclass(slots=True, frozen=True)
 class AuditEventDTO:
     kind: str
     event_id: str
@@ -16,3 +22,9 @@ class AuditEventDTO:
     success: bool
     summary: str
     payload: JSONObject = field(default_factory=dict)
+
+
+@dataclass(slots=True, frozen=True)
+class AuditEventPageDTO:
+    items: list[AuditEventDTO]
+    next_cursor: str | None = None
