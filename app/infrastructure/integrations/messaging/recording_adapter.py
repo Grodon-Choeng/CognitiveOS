@@ -29,6 +29,7 @@ class RecordingMessagingAdapter(MessagingAdapter):
         try:
             result = await self.inner.send_message(target, content)
         except Exception as exc:
+            latency_ms = (perf_counter() - started_at) * 1000
             await self.recorder.record(
                 MessageEventRecord.create(
                     direction="outbound",
@@ -45,6 +46,8 @@ class RecordingMessagingAdapter(MessagingAdapter):
                     trace_id=_get_optional_string(metadata, "trace_id"),
                     chain_id=_get_optional_string(metadata, "chain_id"),
                     request_id=_get_optional_string(metadata, "request_id"),
+                    adapter_name=_resolve_adapter_name(self.inner, metadata),
+                    latency_ms=latency_ms,
                     text=content.text,
                     success=False,
                     error_code=type(exc).__name__,
@@ -55,6 +58,8 @@ class RecordingMessagingAdapter(MessagingAdapter):
             )
             raise
 
+        latency_ms = (perf_counter() - started_at) * 1000
+        merged_metadata = {**metadata, **result.metadata}
         await self.recorder.record(
             MessageEventRecord.create(
                 direction="outbound",
@@ -71,16 +76,17 @@ class RecordingMessagingAdapter(MessagingAdapter):
                 trace_id=_get_optional_string(metadata, "trace_id"),
                 chain_id=_get_optional_string(metadata, "chain_id"),
                 request_id=_get_optional_string(metadata, "request_id"),
+                adapter_name=_resolve_adapter_name(self.inner, merged_metadata),
+                latency_ms=latency_ms,
                 text=content.text,
                 raw_payload={
                     "text": content.text,
                     "metadata": metadata,
                     "result_metadata": result.metadata,
                 },
-                metadata={**metadata, **result.metadata},
+                metadata=merged_metadata,
             )
         )
-        _ = started_at
         return result
 
 
@@ -91,3 +97,10 @@ def _get_optional_string(payload: object, key: str) -> str | None:
     if isinstance(value, str):
         return value
     return None
+
+
+def _resolve_adapter_name(inner: MessagingAdapter, metadata: object) -> str:
+    adapter_name = _get_optional_string(metadata, "adapter")
+    if adapter_name:
+        return adapter_name
+    return type(inner).__name__

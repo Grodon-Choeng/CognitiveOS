@@ -118,6 +118,7 @@ tests/
 - 所有大模型调用都应通过统一记录机制留痕，默认同时写入数据库表 `model_invocation_logs` 与 `logs/model_invocations.jsonl`。
 - 所有工具调用也应通过统一记录机制留痕，默认同时写入数据库表 `tool_invocation_logs` 与 `logs/tool_invocations.jsonl`。
 - 所有用户消息收发也应通过统一记录机制留痕，默认同时写入数据库表 `message_event_logs` 与 `logs/message_events.jsonl`。
+- 消息事件留痕当前还会记录适配器名称、处理耗时，以及入站消息是否被业务链路接管。
 - 所有 workflow 关键事件也应通过统一记录机制留痕，默认同时写入数据库表 `workflow_event_logs` 与 `logs/workflow_events.jsonl`。
 - 飞书已作为可选 IM 发送入口接入，当前通过 `MessagingAdapter` 边界统一发送。
 - 飞书事件订阅回调入口为 `POST /api/v1/integrations/feishu/events`。

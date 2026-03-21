@@ -220,6 +220,8 @@ class AuditQueryService:
                         "direction": row.direction,
                         "channel": row.channel,
                         "message_type": row.message_type,
+                        "adapter_name": row.adapter_name,
+                        "latency_ms": row.latency_ms,
                         "text": row.text,
                         "chat_id": row.chat_id,
                         "thread_id": row.thread_id,

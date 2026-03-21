@@ -30,6 +30,8 @@ class MessageEventRecord:
     trace_id: str | None
     chain_id: str | None
     request_id: str | None
+    adapter_name: str | None
+    latency_ms: float | None
     text: str | None
     success: bool = True
     error_code: str | None = None
@@ -55,6 +57,8 @@ class MessageEventRecord:
         trace_id: str | None,
         chain_id: str | None,
         request_id: str | None,
+        adapter_name: str | None = None,
+        latency_ms: float | None = None,
         text: str | None,
         success: bool = True,
         error_code: str | None = None,
@@ -79,6 +83,8 @@ class MessageEventRecord:
             trace_id=trace_id,
             chain_id=chain_id,
             request_id=request_id,
+            adapter_name=adapter_name,
+            latency_ms=latency_ms,
             text=text,
             success=success,
             error_code=error_code,
@@ -173,6 +179,8 @@ def _build_message_event_model(record: MessageEventRecord) -> MessageEventLogMod
         trace_id=record.trace_id,
         chain_id=record.chain_id,
         request_id=record.request_id,
+        adapter_name=record.adapter_name,
+        latency_ms=record.latency_ms,
         text=record.text,
         success=record.success,
         error_code=record.error_code,

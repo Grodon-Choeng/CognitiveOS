@@ -7,6 +7,7 @@ from app.application.conversations.ports import (
     ResolvedConversationContext,
 )
 from app.application.conversations.service import ConversationApplicationService
+from app.observability.message_events import MessageEventRecord
 
 
 class FakeConversationContextResolver(ConversationContextResolver):
@@ -117,6 +118,11 @@ async def test_conversation_service_routes_to_first_accepting_handler() -> None:
     assert result.handled_by == "accept"
     assert result.conversation_id == "conversation-test"
     assert len(recorder.records) == 1
+    record = recorder.records[0]
+    assert isinstance(record, MessageEventRecord)
+    assert record.metadata["handled"] is True
+    assert record.metadata["handled_by"] == "accept"
+    assert isinstance(record.latency_ms, float)
 
 
 @pytest.mark.asyncio
@@ -145,3 +151,53 @@ async def test_conversation_service_returns_no_handler_when_nobody_handles() -> 
 
     assert result.handled is False
     assert result.reason == "no_handler_accepted"
+    record = recorder.records[0]
+    assert isinstance(record, MessageEventRecord)
+    assert record.metadata["handled"] is False
+    assert record.metadata["reason"] == "no_handler_accepted"
+
+
+class ErrorHandler:
+    name = "error"
+
+    async def handle(
+        self,
+        command: HandleInboundConversationMessageCommand,
+        *,
+        conversation_id: str,
+        session_id: str,
+    ) -> ConversationInboundResult | None:
+        _ = (command, conversation_id, session_id)
+        raise RuntimeError("处理失败")
+
+
+@pytest.mark.asyncio
+async def test_conversation_service_records_failure_when_handler_raises() -> None:
+    recorder = FakeMessageEventRecorder()
+    service = ConversationApplicationService(
+        conversation_context_resolver=FakeConversationContextResolver(),
+        message_event_recorder=recorder,
+        handlers=[ErrorHandler()],
+    )
+
+    with pytest.raises(RuntimeError):
+        await service.handle_inbound_message(
+            HandleInboundConversationMessageCommand(
+                channel="web",
+                message_type="text",
+                user_identity="user-1",
+                external_message_id=None,
+                root_message_id=None,
+                parent_message_id=None,
+                chat_id=None,
+                thread_id=None,
+                text="你好",
+                raw_payload={"text": "你好"},
+            )
+        )
+
+    record = recorder.records[0]
+    assert isinstance(record, MessageEventRecord)
+    assert record.success is False
+    assert record.error_code == "RuntimeError"
+    assert record.metadata["reason"] == "handler_exception"

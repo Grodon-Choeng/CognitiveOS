@@ -58,6 +58,7 @@ class FeishuMessagingAdapter(MessagingAdapter):
         response_body = self._load_response_body(response)
         message_id = self._extract_message_id(response_body)
         metadata: JSONObject = {
+            "adapter": "feishu",
             "channel": "feishu",
             "receive_id_type": receive_id_type,
             "response_body": response_body,

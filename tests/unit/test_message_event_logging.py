@@ -31,7 +31,7 @@ class FakeMessagingAdapter:
         return SendResult(
             accepted=True,
             external_message_id="om_sent_1",
-            metadata={"provider": "feishu"},
+            metadata={"provider": "feishu", "adapter": "feishu"},
         )
 
 
@@ -80,9 +80,11 @@ async def test_recording_messaging_adapter_records_outbound_success(tmp_path: Pa
     record = read_first_record(log_path)
     assert record["direction"] == "outbound"
     assert record["channel"] == "feishu"
+    assert record["adapter_name"] == "feishu"
     assert record["external_message_id"] == "om_sent_1"
     assert record["conversation_id"] == "conversation-1"
     assert record["session_id"] == "session-1"
+    assert isinstance(record["latency_ms"], float)
 
 
 @pytest.mark.asyncio
@@ -99,8 +101,10 @@ async def test_recording_messaging_adapter_records_outbound_failure(tmp_path: Pa
 
     record = read_first_record(log_path)
     assert record["direction"] == "outbound"
+    assert record["adapter_name"] == "FakeFailingMessagingAdapter"
     assert record["success"] is False
     assert record["error_code"] == "RuntimeError"
+    assert isinstance(record["latency_ms"], float)
 
 
 @pytest.mark.asyncio
@@ -126,6 +130,8 @@ async def test_multi_message_event_recorder_writes_to_both_channels(tmp_path: Pa
             trace_id=None,
             chain_id=None,
             request_id=None,
+            adapter_name=None,
+            latency_ms=12.5,
             text="你好",
             raw_payload={"text": "你好"},
         )
@@ -134,6 +140,7 @@ async def test_multi_message_event_recorder_writes_to_both_channels(tmp_path: Pa
     assert len(database_recorder.records) == 1
     jsonl_record = read_first_record(log_path)
     assert jsonl_record["direction"] == "inbound"
+    assert jsonl_record["latency_ms"] == 12.5
 
 
 def test_database_message_event_recorder_can_be_constructed() -> None:

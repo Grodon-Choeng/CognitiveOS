@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, String, Text, func
+from sqlalchemy import Boolean, DateTime, Float, String, Text, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -27,6 +27,8 @@ class MessageEventLogModel(Base):
     trace_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     chain_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     request_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    adapter_name: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    latency_ms: Mapped[float | None] = mapped_column(Float, nullable=True)
     text: Mapped[str | None] = mapped_column(Text, nullable=True)
     success: Mapped[bool] = mapped_column(Boolean, nullable=False)
     error_code: Mapped[str | None] = mapped_column(String(255), nullable=True)
