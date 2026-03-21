@@ -17,4 +17,11 @@ class Reminder:
     schedule: ReminderSchedule
     status: ReminderStatus = ReminderStatus.PENDING
     workflow_id: str | None = None
+    conversation_id: str | None = None
+    session_id: str | None = None
+    dispatch_channel: str | None = None
+    dispatch_recipient_id: str | None = None
+    dispatch_chat_id: str | None = None
+    dispatch_thread_id: str | None = None
+    dispatch_message_id: str | None = None
     last_user_reply: str | None = None

@@ -1,3 +1,4 @@
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from temporalio.client import Client
 from temporalio.worker import Worker
 
@@ -11,11 +12,18 @@ def create_worker(
     client: Client,
     settings: Settings,
     messaging_adapter: MessagingAdapter,
+    session_factory: async_sessionmaker[AsyncSession],
 ) -> Worker:
-    reminder_activities = ReminderActivities(messaging_adapter=messaging_adapter)
+    reminder_activities = ReminderActivities(
+        messaging_adapter=messaging_adapter,
+        session_factory=session_factory,
+    )
     return Worker(
         client=client,
         task_queue=settings.temporal_task_queue,
         workflows=[ReminderWorkflow],
-        activities=[reminder_activities.send_reminder_message],
+        activities=[
+            reminder_activities.send_reminder_message,
+            reminder_activities.record_dispatch_message_id,
+        ],
     )

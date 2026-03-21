@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 from dataclasses import dataclass
@@ -19,6 +20,8 @@ class InboundMessageEvent:
     channel: str
     event_type: str
     message_id: str | None
+    root_message_id: str | None
+    parent_message_id: str | None
     chat_id: str | None
     thread_id: str | None
     chat_type: str | None
@@ -57,19 +60,19 @@ class FeishuWebhookHandler:
         settings: Settings,
         inbound_event_recorder: FeishuInboundEventRecorder | None = None,
         dispatcher: Any | None = None,
+        record_on_dispatch: bool = False,
     ) -> None:
         self.settings = settings
         self.inbound_event_recorder = inbound_event_recorder or NoopFeishuInboundEventRecorder()
         self.logger = logging.getLogger(__name__)
+        self.record_on_dispatch = record_on_dispatch
         self.dispatcher = dispatcher or self._build_dispatcher(settings)
 
     async def handle(self, request: RawRequestProtocol) -> tuple[int, JSONObject]:
         response = self.dispatcher.do(request)
         payload = self._decode_response_payload(response.content or b"{}")
-
-        if request.body:
+        if request.body and not self.record_on_dispatch:
             await self._record_if_message_event(request.body)
-
         return response.status_code, payload
 
     def _build_dispatcher(self, settings: Settings) -> Any:
@@ -90,7 +93,8 @@ class FeishuWebhookHandler:
         )
 
     def _handle_message_event(self, data: Any) -> None:
-        event = self._normalize_message_event(data)
+        payload = json.loads(json.dumps(data, default=lambda value: value.__dict__))
+        event = self._normalize_message_event_from_payload(payload)
         self.logger.info(
             "飞书事件分发器收到消息事件。",
             extra={
@@ -100,6 +104,8 @@ class FeishuWebhookHandler:
                 "sender_open_id": event.sender_open_id,
             },
         )
+        if self.record_on_dispatch:
+            self._schedule_inbound_event_record(event)
 
     async def _record_if_message_event(self, body: bytes) -> None:
         payload = self._decode_response_payload(body)
@@ -113,10 +119,6 @@ class FeishuWebhookHandler:
 
         event = self._normalize_message_event_from_payload(payload)
         await self.inbound_event_recorder.record(event)
-
-    def _normalize_message_event(self, data: Any) -> InboundMessageEvent:
-        payload = json.loads(json.dumps(data, default=lambda value: value.__dict__))
-        return self._normalize_message_event_from_payload(payload)
 
     def _normalize_message_event_from_payload(
         self,
@@ -144,6 +146,8 @@ class FeishuWebhookHandler:
             channel="feishu",
             event_type="im.message.receive_v1",
             message_id=self._get_optional_string(message, "message_id"),
+            root_message_id=self._get_optional_string(message, "root_id"),
+            parent_message_id=self._get_optional_string(message, "parent_id"),
             chat_id=self._get_optional_string(message, "chat_id"),
             thread_id=self._get_optional_string(message, "thread_id"),
             chat_type=self._get_optional_string(message, "chat_type"),
@@ -171,3 +175,10 @@ class FeishuWebhookHandler:
         if isinstance(value, str):
             return value
         return None
+
+    def _schedule_inbound_event_record(self, event: InboundMessageEvent) -> None:
+        try:
+            loop = asyncio.get_running_loop()
+            loop.create_task(self.inbound_event_recorder.record(event))
+        except RuntimeError:
+            asyncio.run(self.inbound_event_recorder.record(event))

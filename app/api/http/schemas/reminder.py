@@ -7,6 +7,12 @@ class CreateReminderRequest(BaseModel):
     text: str = Field(min_length=1, description="用户输入的提醒原文。")
     remind_at: datetime
     timezone: str = Field(default="UTC")
+    conversation_id: str | None = Field(default=None, description="内部统一对话 ID。")
+    session_id: str | None = Field(default=None, description="内部统一会话 ID。")
+    source_channel: str | None = Field(default=None, description="来源渠道。")
+    source_user_id: str | None = Field(default=None, description="来源用户标识。")
+    source_chat_id: str | None = Field(default=None, description="来源会话标识。")
+    source_thread_id: str | None = Field(default=None, description="来源话题标识。")
     dispatch_channel: str = Field(default="console", description="提醒消息投递渠道。")
     dispatch_recipient_id: str = Field(default="local-user", description="提醒消息接收目标。")
 
@@ -21,6 +27,8 @@ class ReminderResponse(BaseModel):
     remind_at: datetime
     timezone: str
     status: str
+    conversation_id: str | None = None
+    session_id: str | None = None
     workflow_id: str | None = None
 
 

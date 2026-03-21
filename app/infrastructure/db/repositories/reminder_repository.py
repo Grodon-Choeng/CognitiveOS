@@ -24,6 +24,88 @@ class SQLAlchemyReminderRepository(ReminderRepository):
 
         return self._to_domain(model)
 
+    async def get_by_dispatch_message_id(self, dispatch_message_id: str) -> Reminder | None:
+        statement = (
+            select(ReminderModel)
+            .where(ReminderModel.dispatch_message_id == dispatch_message_id)
+            .limit(1)
+        )
+        result = await self.session.execute(statement)
+        model = result.scalar_one_or_none()
+
+        if model is None:
+            return None
+
+        return self._to_domain(model)
+
+    async def get_latest_pending_by_conversation(
+        self,
+        conversation_id: str,
+    ) -> Reminder | None:
+        statement = (
+            select(ReminderModel)
+            .where(ReminderModel.status == ReminderStatus.PENDING.value)
+            .where(ReminderModel.conversation_id == conversation_id)
+            .order_by(ReminderModel.created_at.desc())
+            .limit(1)
+        )
+        result = await self.session.execute(statement)
+        model = result.scalar_one_or_none()
+
+        if model is None:
+            return None
+
+        return self._to_domain(model)
+
+    async def get_latest_pending_by_dispatch_chat(
+        self,
+        channel: str,
+        recipient_id: str,
+        chat_id: str,
+        thread_id: str | None = None,
+    ) -> Reminder | None:
+        statement = (
+            select(ReminderModel)
+            .where(ReminderModel.status == ReminderStatus.PENDING.value)
+            .where(ReminderModel.dispatch_channel == channel)
+            .where(ReminderModel.dispatch_recipient_id == recipient_id)
+            .where(ReminderModel.dispatch_chat_id == chat_id)
+        )
+        if thread_id is None:
+            statement = statement.where(ReminderModel.dispatch_thread_id.is_(None))
+        else:
+            statement = statement.where(ReminderModel.dispatch_thread_id == thread_id)
+
+        statement = statement.order_by(ReminderModel.created_at.desc()).limit(1)
+        result = await self.session.execute(statement)
+        model = result.scalar_one_or_none()
+
+        if model is None:
+            return None
+
+        return self._to_domain(model)
+
+    async def get_latest_pending_by_dispatch(
+        self,
+        channel: str,
+        recipient_id: str,
+    ) -> Reminder | None:
+        statement = (
+            select(ReminderModel)
+            .where(ReminderModel.status == ReminderStatus.PENDING.value)
+            .where(ReminderModel.dispatch_channel == channel)
+            .where(ReminderModel.dispatch_recipient_id == recipient_id)
+            .order_by(ReminderModel.created_at.desc())
+            .limit(1)
+        )
+        result = await self.session.execute(statement)
+        model = result.scalar_one_or_none()
+
+        if model is None:
+            return None
+
+        return self._to_domain(model)
+
     async def update(self, reminder: Reminder) -> None:
         model = await self.session.get(ReminderModel, str(reminder.reminder_id.value))
         if model is None:
@@ -35,6 +117,13 @@ class SQLAlchemyReminderRepository(ReminderRepository):
         model.timezone = reminder.schedule.timezone
         model.status = reminder.status.value
         model.workflow_id = reminder.workflow_id
+        model.conversation_id = reminder.conversation_id
+        model.session_id = reminder.session_id
+        model.dispatch_channel = reminder.dispatch_channel
+        model.dispatch_recipient_id = reminder.dispatch_recipient_id
+        model.dispatch_chat_id = reminder.dispatch_chat_id
+        model.dispatch_thread_id = reminder.dispatch_thread_id
+        model.dispatch_message_id = reminder.dispatch_message_id
         model.last_user_reply = reminder.last_user_reply
 
     @staticmethod
@@ -46,6 +135,13 @@ class SQLAlchemyReminderRepository(ReminderRepository):
             timezone=reminder.schedule.timezone,
             status=reminder.status.value,
             workflow_id=reminder.workflow_id,
+            conversation_id=reminder.conversation_id,
+            session_id=reminder.session_id,
+            dispatch_channel=reminder.dispatch_channel,
+            dispatch_recipient_id=reminder.dispatch_recipient_id,
+            dispatch_chat_id=reminder.dispatch_chat_id,
+            dispatch_thread_id=reminder.dispatch_thread_id,
+            dispatch_message_id=reminder.dispatch_message_id,
             last_user_reply=reminder.last_user_reply,
         )
 
@@ -60,5 +156,12 @@ class SQLAlchemyReminderRepository(ReminderRepository):
             ),
             status=ReminderStatus(model.status),
             workflow_id=model.workflow_id,
+            conversation_id=model.conversation_id,
+            session_id=model.session_id,
+            dispatch_channel=model.dispatch_channel,
+            dispatch_recipient_id=model.dispatch_recipient_id,
+            dispatch_chat_id=model.dispatch_chat_id,
+            dispatch_thread_id=model.dispatch_thread_id,
+            dispatch_message_id=model.dispatch_message_id,
             last_user_reply=model.last_user_reply,
         )

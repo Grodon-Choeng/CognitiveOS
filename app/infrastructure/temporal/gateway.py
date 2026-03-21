@@ -40,6 +40,8 @@ class TemporalReminderWorkflowGateway(ReminderWorkflowGateway):
                 timezone=reminder.schedule.timezone,
                 dispatch_channel=dispatch_target.channel,
                 dispatch_recipient_id=dispatch_target.recipient_id,
+                dispatch_chat_id=reminder.dispatch_chat_id,
+                dispatch_thread_id=reminder.dispatch_thread_id,
             ),
             id=workflow_id,
             task_queue=self.settings.temporal_task_queue,

@@ -15,6 +15,8 @@ class ReminderWorkflowInput:
     timezone: str
     dispatch_channel: str
     dispatch_recipient_id: str
+    dispatch_chat_id: str | None = None
+    dispatch_thread_id: str | None = None
 
 
 @dataclass(slots=True)
@@ -46,8 +48,15 @@ class ReminderWorkflow:
                 workflow_input.text,
                 workflow_input.dispatch_channel,
                 workflow_input.dispatch_recipient_id,
+                workflow_input.dispatch_chat_id,
+                workflow_input.dispatch_thread_id,
             ],
             start_to_close_timeout=timedelta(seconds=30),
+        )
+        await workflow.execute_activity(
+            "record-dispatch-message-id",
+            args=[workflow_input.reminder_id, dispatch_message_id],
+            start_to_close_timeout=timedelta(seconds=10),
         )
         self.state.dispatch_message_id = dispatch_message_id
         self.state.status = "waiting_for_reply"

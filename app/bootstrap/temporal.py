@@ -18,6 +18,7 @@ async def run_temporal_worker() -> None:
         client=client,
         settings=settings,
         messaging_adapter=container.build_messaging_adapter(),
+        session_factory=container.session_factory,
     )
     await worker.run()
 

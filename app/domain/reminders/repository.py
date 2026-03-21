@@ -9,4 +9,25 @@ class ReminderRepository(Protocol):
 
     async def get(self, reminder_id: ReminderId) -> Reminder | None: ...
 
+    async def get_by_dispatch_message_id(self, dispatch_message_id: str) -> Reminder | None: ...
+
+    async def get_latest_pending_by_conversation(
+        self,
+        conversation_id: str,
+    ) -> Reminder | None: ...
+
+    async def get_latest_pending_by_dispatch_chat(
+        self,
+        channel: str,
+        recipient_id: str,
+        chat_id: str,
+        thread_id: str | None = None,
+    ) -> Reminder | None: ...
+
+    async def get_latest_pending_by_dispatch(
+        self,
+        channel: str,
+        recipient_id: str,
+    ) -> Reminder | None: ...
+
     async def update(self, reminder: Reminder) -> None: ...

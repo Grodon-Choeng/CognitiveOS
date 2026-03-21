@@ -2,7 +2,7 @@ UV := uv
 DOCKER_COMPOSE := docker compose
 COMPOSE_SERVICES := postgres redis temporal temporal-ui
 
-.PHONY: help install infra-up infra-down infra-logs migrate api worker fmt lint test typecheck check compose-config
+.PHONY: help install infra-up infra-down infra-logs migrate api worker feishu-longconn fmt lint test typecheck check compose-config
 
 help:
 	@echo "可用命令："
@@ -13,6 +13,7 @@ help:
 	@echo "  make migrate         执行数据库 migration"
 	@echo "  make api             启动 FastAPI 服务"
 	@echo "  make worker          启动 Temporal worker"
+	@echo "  make feishu-longconn 启动飞书长连接监听"
 	@echo "  make fmt             自动修复并格式化代码"
 	@echo "  make lint            执行 Ruff 检查"
 	@echo "  make test            执行测试"
@@ -40,6 +41,9 @@ api:
 
 worker:
 	$(UV) run python -m app.bootstrap.temporal
+
+feishu-longconn:
+	$(UV) run python -m app.bootstrap.feishu_long_connection
 
 fmt:
 	$(UV) run ruff check --fix app tests

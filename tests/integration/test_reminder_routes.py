@@ -19,6 +19,8 @@ class FakeReminderService:
             remind_at=datetime(2026, 3, 20, 9, 0, tzinfo=UTC),
             timezone="Asia/Shanghai",
             status="pending",
+            conversation_id="conversation-1",
+            session_id="session-1",
             workflow_id="reminder:00000000-0000-0000-0000-000000000001",
         )
 
@@ -59,6 +61,8 @@ def test_create_reminder_route_returns_structured_response() -> None:
         "remind_at": "2026-03-20T09:00:00Z",
         "timezone": "Asia/Shanghai",
         "status": "pending",
+        "conversation_id": "conversation-1",
+        "session_id": "session-1",
         "workflow_id": "reminder:00000000-0000-0000-0000-000000000001",
     }
 

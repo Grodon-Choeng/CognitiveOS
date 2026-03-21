@@ -15,6 +15,13 @@ class ReminderModel(Base):
     timezone: Mapped[str] = mapped_column(String(64), nullable=False)
     status: Mapped[str] = mapped_column(String(32), nullable=False)
     workflow_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    conversation_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    session_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    dispatch_channel: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    dispatch_recipient_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    dispatch_chat_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    dispatch_thread_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    dispatch_message_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     last_user_reply: Mapped[str | None] = mapped_column(String(500), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

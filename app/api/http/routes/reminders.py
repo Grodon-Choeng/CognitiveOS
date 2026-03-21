@@ -31,6 +31,12 @@ async def create_reminder(
         text=payload.text,
         remind_at=payload.remind_at,
         timezone=payload.timezone,
+        conversation_id=payload.conversation_id,
+        session_id=payload.session_id,
+        source_channel=payload.source_channel,
+        source_user_id=payload.source_user_id,
+        source_chat_id=payload.source_chat_id,
+        source_thread_id=payload.source_thread_id,
         dispatch_channel=payload.dispatch_channel,
         dispatch_recipient_id=payload.dispatch_recipient_id,
     )

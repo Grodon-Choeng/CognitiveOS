@@ -9,6 +9,8 @@ class ReminderDTO:
     remind_at: datetime
     timezone: str
     status: str
+    conversation_id: str | None = None
+    session_id: str | None = None
     workflow_id: str | None = None
 
 
@@ -18,3 +20,10 @@ class ReminderReplyDTO:
     reply_text: str
     accepted: bool
     status: str
+
+
+@dataclass(slots=True, frozen=True)
+class ReminderInboundMessageResult:
+    handled: bool
+    reminder_id: str | None = None
+    reason: str | None = None

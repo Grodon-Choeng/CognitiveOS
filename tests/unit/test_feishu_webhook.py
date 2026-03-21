@@ -64,6 +64,8 @@ def build_message_event_payload() -> JSONObject:
             },
             "message": {
                 "message_id": "om_123",
+                "root_id": "om_root_123",
+                "parent_id": "om_parent_123",
                 "chat_id": "oc_123",
                 "thread_id": "ot_123",
                 "chat_type": "p2p",
@@ -102,7 +104,10 @@ async def test_feishu_webhook_handler_normalizes_message_event() -> None:
     event = recorder.events[0]
     assert event.channel == "feishu"
     assert event.message_id == "om_123"
+    assert event.root_message_id == "om_root_123"
+    assert event.parent_message_id == "om_parent_123"
     assert event.chat_id == "oc_123"
+    assert event.thread_id == "ot_123"
     assert event.sender_open_id == "ou_123"
     assert event.text == "你好"
 
