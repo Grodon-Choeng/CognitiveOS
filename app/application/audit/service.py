@@ -81,6 +81,92 @@ class AuditQueryService:
             )
         raise ValueError(f"不支持的审计类型：{kind}")
 
+    async def list_timeline(
+        self,
+        *,
+        conversation_id: str | None = None,
+        session_id: str | None = None,
+        success: bool | None = None,
+        channel: str | None = None,
+        provider: str | None = None,
+        tool_name: str | None = None,
+        workflow_type: str | None = None,
+        recorded_after: datetime | None = None,
+        recorded_before: datetime | None = None,
+        cursor: str | None = None,
+        limit: int = 50,
+    ) -> AuditEventPageDTO:
+        model_page = await self._query_model_events(
+            conversation_id=conversation_id,
+            session_id=session_id,
+            success=success,
+            provider=provider,
+            recorded_after=recorded_after,
+            recorded_before=recorded_before,
+            cursor=cursor,
+            limit=limit,
+        )
+        tool_page = await self._query_tool_events(
+            conversation_id=conversation_id,
+            session_id=session_id,
+            success=success,
+            tool_name=tool_name,
+            recorded_after=recorded_after,
+            recorded_before=recorded_before,
+            cursor=cursor,
+            limit=limit,
+        )
+        message_page = await self._query_message_events(
+            conversation_id=conversation_id,
+            session_id=session_id,
+            success=success,
+            channel=channel,
+            recorded_after=recorded_after,
+            recorded_before=recorded_before,
+            cursor=cursor,
+            limit=limit,
+        )
+        workflow_page = await self._query_workflow_events(
+            conversation_id=conversation_id,
+            session_id=session_id,
+            success=success,
+            workflow_type=workflow_type,
+            recorded_after=recorded_after,
+            recorded_before=recorded_before,
+            cursor=cursor,
+            limit=limit,
+        )
+
+        items = sorted(
+            [
+                *message_page.items,
+                *model_page.items,
+                *tool_page.items,
+                *workflow_page.items,
+            ],
+            key=lambda item: (item.recorded_at, item.event_id),
+            reverse=True,
+        )
+        page_items = items[:limit]
+
+        has_more = (
+            any(
+                page.next_cursor is not None
+                for page in (message_page, model_page, tool_page, workflow_page)
+            )
+            or len(items) > limit
+        )
+
+        if not has_more or not page_items:
+            return AuditEventPageDTO(items=page_items, next_cursor=None)
+
+        last_item = page_items[-1]
+        next_cursor = encode_audit_cursor(
+            recorded_at=datetime.fromisoformat(last_item.recorded_at),
+            event_id=last_item.event_id,
+        )
+        return AuditEventPageDTO(items=page_items, next_cursor=next_cursor)
+
     async def _query_message_events(
         self,
         *,
