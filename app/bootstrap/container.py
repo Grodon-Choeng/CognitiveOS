@@ -2,8 +2,8 @@ from functools import lru_cache
 
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from app.application.conversations.service import ConversationApplicationService
 from app.application.conversations.ports import ConversationContextResolver
+from app.application.conversations.service import ConversationApplicationService
 from app.application.reminders.ports import ReminderUnitOfWorkFactory
 from app.application.reminders.service import ReminderApplicationService
 from app.bootstrap.inbound_events import ConversationInboundEventRecorder
@@ -21,15 +21,15 @@ from app.infrastructure.integrations.messaging import (
     RoutingMessagingAdapter,
 )
 from app.infrastructure.temporal.gateway import TemporalReminderWorkflowGateway
-from app.observability.model_invocations import (
-    DatabaseModelInvocationRecorder,
-    JsonlModelInvocationRecorder,
-    MultiModelInvocationRecorder,
-)
 from app.observability.message_events import (
     DatabaseMessageEventRecorder,
     JsonlMessageEventRecorder,
     MultiMessageEventRecorder,
+)
+from app.observability.model_invocations import (
+    DatabaseModelInvocationRecorder,
+    JsonlModelInvocationRecorder,
+    MultiModelInvocationRecorder,
 )
 from app.observability.tool_invocations import (
     DatabaseToolInvocationRecorder,
