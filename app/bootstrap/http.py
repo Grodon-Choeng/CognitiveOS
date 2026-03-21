@@ -1,11 +1,23 @@
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 
 from app.api.http.errors.handlers import register_exception_handlers
 from app.api.http.routes import api_router, health_router
+from app.bootstrap.container import reset_container
 from app.config.settings import get_settings
+from app.infrastructure.db.session import dispose_engine
 from app.observability.logging import configure_logging
 from app.observability.metrics import configure_metrics
 from app.observability.tracing import configure_tracing
+
+
+@asynccontextmanager
+async def application_lifespan(_app: FastAPI) -> AsyncIterator[None]:
+    yield
+    reset_container()
+    await dispose_engine()
 
 
 def create_application() -> FastAPI:
@@ -17,6 +29,7 @@ def create_application() -> FastAPI:
         title=settings.app_name,
         version=settings.app_version,
         debug=settings.debug,
+        lifespan=application_lifespan,
     )
     register_exception_handlers(app)
     app.include_router(health_router)

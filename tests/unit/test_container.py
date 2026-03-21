@@ -1,4 +1,4 @@
-from app.bootstrap.container import ApplicationContainer
+from app.bootstrap.container import ApplicationContainer, get_container, reset_container
 from app.config.settings import Settings
 
 
@@ -15,3 +15,12 @@ def test_container_reuses_singletons_for_core_services() -> None:
     assert container.build_audit_service() is container.build_audit_service()
     assert container.build_message_event_recorder() is container.build_message_event_recorder()
     assert container.build_messaging_adapter() is container.build_messaging_adapter()
+
+
+def test_reset_container_rebuilds_cached_container() -> None:
+    reset_container()
+    first = get_container()
+    reset_container()
+    second = get_container()
+
+    assert first is not second

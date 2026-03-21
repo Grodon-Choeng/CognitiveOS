@@ -231,3 +231,7 @@ class ApplicationContainer:
 @lru_cache
 def get_container() -> ApplicationContainer:
     return ApplicationContainer(settings=get_settings())
+
+
+def reset_container() -> None:
+    get_container.cache_clear()
