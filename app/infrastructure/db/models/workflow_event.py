@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, String, Text, func
+from sqlalchemy import Boolean, DateTime, Index, String, Text, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -10,6 +10,12 @@ from app.infrastructure.types import JSONObject
 
 class WorkflowEventLogModel(Base):
     __tablename__ = "workflow_event_logs"
+    __table_args__ = (
+        Index("ix_workflow_event_logs_recorded_at", "recorded_at"),
+        Index("ix_workflow_event_logs_conversation_id", "conversation_id"),
+        Index("ix_workflow_event_logs_session_id", "session_id"),
+        Index("ix_workflow_event_logs_workflow_type", "workflow_type"),
+    )
 
     event_id: Mapped[str] = mapped_column(String(36), primary_key=True)
     recorded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

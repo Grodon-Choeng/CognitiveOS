@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import DateTime, String, func
+from sqlalchemy import DateTime, Index, String, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.infrastructure.db.base import Base
@@ -8,6 +8,15 @@ from app.infrastructure.db.base import Base
 
 class ConversationBindingModel(Base):
     __tablename__ = "conversation_bindings"
+    __table_args__ = (
+        Index(
+            "ix_conversation_bindings_lookup",
+            "channel",
+            "user_identity",
+            "chat_id",
+            "thread_id",
+        ),
+    )
 
     binding_id: Mapped[str] = mapped_column(String(36), primary_key=True)
     conversation_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)

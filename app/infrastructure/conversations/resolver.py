@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from typing import Any
 from uuid import uuid4
 
 from sqlalchemy import select
@@ -114,21 +115,15 @@ class SqlAlchemyConversationContextResolver(ConversationContextResolver):
     ) -> _ConversationBinding | None:
         async with self.session_factory() as session:
             statement = (
-                select(ConversationBindingModel)
-                .where(ConversationBindingModel.channel == channel)
-                .where(ConversationBindingModel.user_identity == user_identity)
+                _build_binding_lookup_statement(
+                    channel=channel,
+                    user_identity=user_identity,
+                    chat_id=chat_id,
+                    thread_id=thread_id,
+                )
+                .order_by(ConversationBindingModel.updated_at.desc())
+                .limit(1)
             )
-            if chat_id is None:
-                statement = statement.where(ConversationBindingModel.chat_id.is_(None))
-            else:
-                statement = statement.where(ConversationBindingModel.chat_id == chat_id)
-
-            if thread_id is None:
-                statement = statement.where(ConversationBindingModel.thread_id.is_(None))
-            else:
-                statement = statement.where(ConversationBindingModel.thread_id == thread_id)
-
-            statement = statement.order_by(ConversationBindingModel.created_at.desc()).limit(1)
             result = await session.execute(statement)
             model = result.scalar_one_or_none()
             if model is None:
@@ -143,7 +138,7 @@ class SqlAlchemyConversationContextResolver(ConversationContextResolver):
             statement = (
                 select(ConversationBindingModel)
                 .where(ConversationBindingModel.conversation_id == conversation_id)
-                .order_by(ConversationBindingModel.created_at.desc())
+                .order_by(ConversationBindingModel.updated_at.desc())
                 .limit(1)
             )
             result = await session.execute(statement)
@@ -163,20 +158,12 @@ class SqlAlchemyConversationContextResolver(ConversationContextResolver):
         thread_id: str | None,
     ) -> None:
         async with self.session_factory() as session:
-            statement = (
-                select(ConversationBindingModel)
-                .where(ConversationBindingModel.channel == channel)
-                .where(ConversationBindingModel.user_identity == user_identity)
+            statement = _build_binding_lookup_statement(
+                channel=channel,
+                user_identity=user_identity,
+                chat_id=chat_id,
+                thread_id=thread_id,
             )
-            if chat_id is None:
-                statement = statement.where(ConversationBindingModel.chat_id.is_(None))
-            else:
-                statement = statement.where(ConversationBindingModel.chat_id == chat_id)
-            if thread_id is None:
-                statement = statement.where(ConversationBindingModel.thread_id.is_(None))
-            else:
-                statement = statement.where(ConversationBindingModel.thread_id == thread_id)
-
             existing = (await session.execute(statement.limit(1))).scalar_one_or_none()
             if existing is None:
                 session.add(
@@ -212,3 +199,26 @@ class SqlAlchemyConversationContextResolver(ConversationContextResolver):
     @staticmethod
     def _new_id() -> str:
         return str(uuid4())
+
+
+def _build_binding_lookup_statement(
+    *,
+    channel: str,
+    user_identity: str,
+    chat_id: str | None,
+    thread_id: str | None,
+) -> Any:
+    statement = (
+        select(ConversationBindingModel)
+        .where(ConversationBindingModel.channel == channel)
+        .where(ConversationBindingModel.user_identity == user_identity)
+    )
+    if chat_id is None:
+        statement = statement.where(ConversationBindingModel.chat_id.is_(None))
+    else:
+        statement = statement.where(ConversationBindingModel.chat_id == chat_id)
+    if thread_id is None:
+        statement = statement.where(ConversationBindingModel.thread_id.is_(None))
+    else:
+        statement = statement.where(ConversationBindingModel.thread_id == thread_id)
+    return statement

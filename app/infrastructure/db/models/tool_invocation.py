@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Float, Integer, String, Text, func
+from sqlalchemy import Boolean, DateTime, Float, Index, Integer, String, Text, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -10,6 +10,13 @@ from app.infrastructure.types import JSONObject
 
 class ToolInvocationLogModel(Base):
     __tablename__ = "tool_invocation_logs"
+    __table_args__ = (
+        Index("ix_tool_invocation_logs_recorded_at", "recorded_at"),
+        Index("ix_tool_invocation_logs_session_id", "session_id"),
+        Index("ix_tool_invocation_logs_trace_id", "trace_id"),
+        Index("ix_tool_invocation_logs_tool_name", "tool_name"),
+        Index("ix_tool_invocation_logs_conversation_id", "conversation_id"),
+    )
 
     invocation_id: Mapped[str] = mapped_column(String(36), primary_key=True)
     recorded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
