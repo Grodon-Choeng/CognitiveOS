@@ -7,6 +7,7 @@ from app.infrastructure.types import JSONObject
 class AuditCursorDTO:
     recorded_at: str
     event_id: str
+    kind: str | None = None
 
 
 @dataclass(slots=True, frozen=True)

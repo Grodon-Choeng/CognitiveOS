@@ -4,7 +4,7 @@ from collections.abc import Callable, Sequence
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import and_, desc, or_, select
+from sqlalchemy import and_, desc, literal, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.application.audit.dto import AuditCursorDTO, AuditEventDTO, AuditEventPageDTO
@@ -106,6 +106,7 @@ class AuditQueryService:
             recorded_before=recorded_before,
             cursor=cursor,
             limit=limit,
+            timeline_kind="message",
         )
         model_page = await self._query_model_events(
             conversation_id=conversation_id,
@@ -116,6 +117,7 @@ class AuditQueryService:
             recorded_before=recorded_before,
             cursor=cursor,
             limit=limit,
+            timeline_kind="model",
         )
         tool_page = await self._query_tool_events(
             conversation_id=conversation_id,
@@ -126,6 +128,7 @@ class AuditQueryService:
             recorded_before=recorded_before,
             cursor=cursor,
             limit=limit,
+            timeline_kind="tool",
         )
         workflow_page = await self._query_workflow_events(
             conversation_id=conversation_id,
@@ -136,6 +139,7 @@ class AuditQueryService:
             recorded_before=recorded_before,
             cursor=cursor,
             limit=limit,
+            timeline_kind="workflow",
         )
 
         merged_items = sorted(
@@ -145,7 +149,7 @@ class AuditQueryService:
                 *tool_page.items,
                 *workflow_page.items,
             ],
-            key=lambda item: (item.recorded_at, item.event_id),
+            key=_build_timeline_sort_key,
             reverse=True,
         )
         page_items = merged_items[:limit]
@@ -166,6 +170,7 @@ class AuditQueryService:
             next_cursor=encode_audit_cursor(
                 recorded_at=datetime.fromisoformat(last_item.recorded_at),
                 event_id=last_item.event_id,
+                kind=last_item.kind,
             ),
         )
 
@@ -180,6 +185,7 @@ class AuditQueryService:
         recorded_before: datetime | None,
         cursor: str | None,
         limit: int,
+        timeline_kind: str | None = None,
     ) -> AuditEventPageDTO:
         async with self.session_factory() as session:
             statement = select(MessageEventLogModel).order_by(
@@ -199,6 +205,7 @@ class AuditQueryService:
                 recorded_after=recorded_after,
                 recorded_before=recorded_before,
                 cursor=cursor,
+                timeline_kind=timeline_kind,
             )
             if channel:
                 statement = statement.where(MessageEventLogModel.channel == channel)
@@ -252,6 +259,7 @@ class AuditQueryService:
         recorded_before: datetime | None,
         cursor: str | None,
         limit: int,
+        timeline_kind: str | None = None,
     ) -> AuditEventPageDTO:
         async with self.session_factory() as session:
             statement = select(ModelInvocationLogModel).order_by(
@@ -271,6 +279,7 @@ class AuditQueryService:
                 recorded_after=recorded_after,
                 recorded_before=recorded_before,
                 cursor=cursor,
+                timeline_kind=timeline_kind,
             )
             if provider:
                 statement = statement.where(ModelInvocationLogModel.provider == provider)
@@ -318,6 +327,7 @@ class AuditQueryService:
         recorded_before: datetime | None,
         cursor: str | None,
         limit: int,
+        timeline_kind: str | None = None,
     ) -> AuditEventPageDTO:
         async with self.session_factory() as session:
             statement = select(ToolInvocationLogModel).order_by(
@@ -337,6 +347,7 @@ class AuditQueryService:
                 recorded_after=recorded_after,
                 recorded_before=recorded_before,
                 cursor=cursor,
+                timeline_kind=timeline_kind,
             )
             if tool_name:
                 statement = statement.where(ToolInvocationLogModel.tool_name == tool_name)
@@ -384,6 +395,7 @@ class AuditQueryService:
         recorded_before: datetime | None,
         cursor: str | None,
         limit: int,
+        timeline_kind: str | None = None,
     ) -> AuditEventPageDTO:
         async with self.session_factory() as session:
             statement = select(WorkflowEventLogModel).order_by(
@@ -403,6 +415,7 @@ class AuditQueryService:
                 recorded_after=recorded_after,
                 recorded_before=recorded_before,
                 cursor=cursor,
+                timeline_kind=timeline_kind,
             )
             if workflow_type:
                 statement = statement.where(WorkflowEventLogModel.workflow_type == workflow_type)
@@ -455,6 +468,7 @@ def _apply_common_filters(
     recorded_after: datetime | None,
     recorded_before: datetime | None,
     cursor: str | None,
+    timeline_kind: str | None = None,
 ) -> Any:
     if conversation_id:
         statement = statement.where(conversation_column == conversation_id)
@@ -469,22 +483,45 @@ def _apply_common_filters(
     if cursor:
         decoded = decode_audit_cursor(cursor)
         recorded_at = datetime.fromisoformat(decoded.recorded_at)
-        statement = statement.where(
-            or_(
-                recorded_at_column < recorded_at,
-                and_(
-                    recorded_at_column == recorded_at,
-                    event_id_column < decoded.event_id,
-                ),
+        if decoded.kind is not None and timeline_kind is not None:
+            statement = statement.where(
+                or_(
+                    recorded_at_column < recorded_at,
+                    and_(
+                        recorded_at_column == recorded_at,
+                        or_(
+                            literal(timeline_kind) < decoded.kind,
+                            and_(
+                                literal(timeline_kind) == decoded.kind,
+                                event_id_column < decoded.event_id,
+                            ),
+                        ),
+                    ),
+                )
             )
-        )
+        else:
+            statement = statement.where(
+                or_(
+                    recorded_at_column < recorded_at,
+                    and_(
+                        recorded_at_column == recorded_at,
+                        event_id_column < decoded.event_id,
+                    ),
+                )
+            )
     return statement
 
 
-def encode_audit_cursor(*, recorded_at: datetime, event_id: str) -> str:
+def encode_audit_cursor(
+    *,
+    recorded_at: datetime,
+    event_id: str,
+    kind: str | None = None,
+) -> str:
     payload = {
         "recorded_at": recorded_at.isoformat(),
         "event_id": event_id,
+        "kind": kind,
     }
     return base64.urlsafe_b64encode(json.dumps(payload).encode("utf-8")).decode("utf-8")
 
@@ -503,6 +540,7 @@ def decode_audit_cursor(cursor: str) -> AuditCursorDTO:
     return AuditCursorDTO(
         recorded_at=recorded_at,
         event_id=event_id,
+        kind=payload.get("kind"),
     )
 
 
@@ -520,3 +558,7 @@ def _build_next_cursor(
         recorded_at=last_row.recorded_at,
         event_id=event_id_getter(last_row),
     )
+
+
+def _build_timeline_sort_key(item: AuditEventDTO) -> tuple[str, str, str]:
+    return (item.recorded_at, item.kind, item.event_id)

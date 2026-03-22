@@ -127,6 +127,7 @@ tests/
 - conversation source binding 当前使用数据库唯一约束 + upsert 写入，避免并发场景下为同一来源键写出重复映射。
 - 统一审计查询入口为 `GET /api/v1/audit/events`，支持按 `kind`、`conversation_id`、`session_id`、`success`、`channel`、`provider`、`tool_name`、`workflow_type`、时间范围与游标分页查询 `message/model/tool/workflow` 四类事件。
 - 聚合时间线入口为 `GET /api/v1/audit/timeline`，会把 `message/model/tool/workflow` 四类事件按时间混排返回。
+- 聚合时间线的游标当前带有事件类型信息，用于避免不同审计表在同一时间戳下分页时出现跨类型漂移。
 - 当前最小入站续执行逻辑：仅对飞书 `p2p` 文本消息生效，并按 `sender_open_id` 关联该用户最近一个 `pending` reminder。
 - 当前 reminder create / reply 路由已接入 application service，可用于最小 reminder 创建与回复闭环验证。
 - `POST /api/v1/reminders` 当前也支持显式传入 `dispatch_chat_id` 与 `dispatch_thread_id`，便于通过 HTTP 创建群聊 / 话题内 reminder。
