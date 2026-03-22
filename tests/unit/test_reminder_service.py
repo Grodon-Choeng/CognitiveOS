@@ -14,7 +14,7 @@ from app.application.reminders.commands import (
     HandleReminderInboundMessageCommand,
     HandleReminderReplyCommand,
 )
-from app.application.reminders.errors import ReminderNotFoundError
+from app.application.reminders.errors import ReminderNotFoundError, ReminderWorkflowStartError
 from app.application.reminders.ports import (
     ReminderDispatchTarget,
     ReminderUnitOfWork,
@@ -120,12 +120,15 @@ class FakeReminderWorkflowGateway(ReminderWorkflowGateway):
     def __init__(self) -> None:
         self.started: list[StartedWorkflow] = []
         self.recorded_replies: list[tuple[str, str]] = []
+        self.start_error: Exception | None = None
 
     async def start_reminder(
         self,
         reminder: Reminder,
         dispatch_target: ReminderDispatchTarget,
     ) -> str:
+        if self.start_error is not None:
+            raise self.start_error
         reminder_id = str(reminder.reminder_id.value)
         self.started.append(
             StartedWorkflow(
@@ -211,6 +214,34 @@ async def test_create_reminder_persists_and_starts_workflow() -> None:
     assert saved.dispatch_recipient_id == "user-1"
     assert workflow_gateway.started[0].dispatch_target.channel == "console"
     assert workflow_gateway.started[0].dispatch_target.recipient_id == "user-1"
+
+
+@pytest.mark.asyncio
+async def test_create_reminder_marks_failed_when_workflow_start_fails() -> None:
+    repository = FakeReminderRepository()
+    workflow_gateway = FakeReminderWorkflowGateway()
+    workflow_gateway.start_error = RuntimeError("Temporal 不可用")
+    service = ReminderApplicationService(
+        unit_of_work_factory=create_fake_unit_of_work_factory(repository),
+        workflow_gateway=workflow_gateway,
+        conversation_context_resolver=FakeConversationContextResolver(),
+    )
+
+    with pytest.raises(ReminderWorkflowStartError) as exc_info:
+        await service.create_reminder(
+            CreateReminderCommand(
+                text="明天上午九点提醒我打卡",
+                remind_at=datetime(2026, 3, 20, 9, 0, tzinfo=UTC),
+                timezone="Asia/Shanghai",
+                dispatch_channel="console",
+                dispatch_recipient_id="user-1",
+            )
+        )
+
+    saved = next(iter(repository.items.values()))
+    assert "提醒工作流启动失败" in str(exc_info.value)
+    assert saved.status.value == "failed"
+    assert saved.workflow_id is None
 
 
 @pytest.mark.asyncio

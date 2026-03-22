@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 from app.api.http.deps.services import get_reminder_service
 from app.application.reminders.commands import CreateReminderCommand, HandleReminderReplyCommand
 from app.application.reminders.dto import ReminderDTO, ReminderReplyDTO
+from app.application.reminders.errors import ReminderWorkflowStartError
 from app.main import app
 
 
@@ -36,6 +37,21 @@ class FakeReminderService:
 
 def override_reminder_service() -> FakeReminderService:
     return FakeReminderService()
+
+
+@dataclass
+class FakeFailingReminderService:
+    async def create_reminder(self, command: CreateReminderCommand) -> ReminderDTO:
+        _ = command
+        raise ReminderWorkflowStartError("提醒工作流启动失败：RuntimeError: Temporal 不可用")
+
+    async def handle_reply(self, command: HandleReminderReplyCommand) -> ReminderReplyDTO:
+        _ = command
+        raise AssertionError("本测试不应调用 handle_reply")
+
+
+def override_failing_reminder_service() -> FakeFailingReminderService:
+    return FakeFailingReminderService()
 
 
 def test_create_reminder_route_returns_structured_response() -> None:
@@ -85,4 +101,26 @@ def test_reply_reminder_route_returns_structured_response() -> None:
         "reply_text": "我已经处理好了",
         "accepted": True,
         "status": "completed",
+    }
+
+
+def test_create_reminder_route_returns_503_when_workflow_start_fails() -> None:
+    app.dependency_overrides[get_reminder_service] = override_failing_reminder_service
+
+    try:
+        with TestClient(app) as client:
+            response = client.post(
+                "/api/v1/reminders",
+                json={
+                    "text": "明天上午九点提醒我打卡",
+                    "remind_at": "2026-03-20T09:00:00+08:00",
+                    "timezone": "Asia/Shanghai",
+                },
+            )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 503
+    assert response.json() == {
+        "detail": "提醒工作流启动失败：RuntimeError: Temporal 不可用",
     }

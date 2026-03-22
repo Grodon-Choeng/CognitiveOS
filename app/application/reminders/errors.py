@@ -8,3 +8,7 @@ class ReminderNotFoundError(ReminderApplicationError):
 
 class ReminderWorkflowNotStartedError(ReminderApplicationError):
     """提醒尚未关联工作流。"""
+
+
+class ReminderWorkflowStartError(ReminderApplicationError):
+    """提醒工作流启动失败。"""

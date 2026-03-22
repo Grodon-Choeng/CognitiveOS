@@ -9,7 +9,11 @@ from app.application.reminders.dto import (
     ReminderInboundMessageResult,
     ReminderReplyDTO,
 )
-from app.application.reminders.errors import ReminderNotFoundError, ReminderWorkflowNotStartedError
+from app.application.reminders.errors import (
+    ReminderNotFoundError,
+    ReminderWorkflowNotStartedError,
+    ReminderWorkflowStartError,
+)
 from app.application.reminders.matcher import ReminderInboundMatcher
 from app.application.reminders.ports import (
     ReminderDispatchTarget,
@@ -54,24 +58,25 @@ class ReminderApplicationService:
             dispatch_chat_id=command.dispatch_chat_id,
             dispatch_thread_id=command.dispatch_thread_id,
         )
+        reminder.workflow_id = _build_reminder_workflow_id(reminder.reminder_id)
 
         async with self.unit_of_work_factory() as unit_of_work:
             await unit_of_work.reminders.add(reminder)
             await unit_of_work.commit()
 
-        workflow_id = await self.workflow_gateway.start_reminder(
-            reminder=reminder,
-            dispatch_target=ReminderDispatchTarget(
-                channel=command.dispatch_channel,
-                recipient_id=command.dispatch_recipient_id,
-            ),
-        )
-
-        reminder.workflow_id = workflow_id
-
-        async with self.unit_of_work_factory() as unit_of_work:
-            await unit_of_work.reminders.update(reminder)
-            await unit_of_work.commit()
+        try:
+            await self.workflow_gateway.start_reminder(
+                reminder=reminder,
+                dispatch_target=ReminderDispatchTarget(
+                    channel=command.dispatch_channel,
+                    recipient_id=command.dispatch_recipient_id,
+                ),
+            )
+        except Exception as workflow_error:
+            await self._mark_workflow_start_failed(reminder, workflow_error)
+            raise ReminderWorkflowStartError(
+                f"提醒工作流启动失败：{type(workflow_error).__name__}: {workflow_error}"
+            ) from workflow_error
 
         return self._to_dto(reminder)
 
@@ -166,3 +171,26 @@ class ReminderApplicationService:
             session_id=reminder.session_id,
             workflow_id=reminder.workflow_id,
         )
+
+    async def _mark_workflow_start_failed(
+        self,
+        reminder: Reminder,
+        workflow_error: Exception,
+    ) -> None:
+        reminder.status = ReminderStatus.FAILED
+        reminder.workflow_id = None
+
+        try:
+            async with self.unit_of_work_factory() as unit_of_work:
+                await unit_of_work.reminders.update(reminder)
+                await unit_of_work.commit()
+        except Exception as persist_error:
+            raise ReminderWorkflowStartError(
+                "提醒工作流启动失败，且写回失败状态时发生错误："
+                f"{type(workflow_error).__name__}: {workflow_error}；"
+                f"{type(persist_error).__name__}: {persist_error}"
+            ) from persist_error
+
+
+def _build_reminder_workflow_id(reminder_id: ReminderId) -> str:
+    return f"reminder:{reminder_id.value}"

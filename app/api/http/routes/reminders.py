@@ -20,7 +20,11 @@ router = APIRouter(prefix="/reminders", tags=["reminders"])
 @router.post(
     "",
     response_model=ReminderResponse,
-    responses={404: {"model": ErrorResponse}, 409: {"model": ErrorResponse}},
+    responses={
+        404: {"model": ErrorResponse},
+        409: {"model": ErrorResponse},
+        503: {"model": ErrorResponse},
+    },
     summary="创建提醒",
 )
 async def create_reminder(

@@ -34,27 +34,49 @@ class TemporalReminderWorkflowGateway(ReminderWorkflowGateway):
         dispatch_target: ReminderDispatchTarget,
     ) -> str:
         client = await self._get_client()
-        workflow_id = f"reminder:{reminder.reminder_id.value}"
+        workflow_id = reminder.workflow_id or _build_workflow_id(reminder)
         start_delay = self._build_start_delay(reminder.schedule.remind_at)
 
-        await client.start_workflow(
-            self.settings.temporal_reminder_workflow_name,
-            ReminderWorkflowInput(
-                reminder_id=str(reminder.reminder_id.value),
-                text=reminder.text,
-                remind_at=reminder.schedule.remind_at.isoformat(),
-                timezone=reminder.schedule.timezone,
-                conversation_id=reminder.conversation_id,
-                session_id=reminder.session_id,
-                dispatch_channel=dispatch_target.channel,
-                dispatch_recipient_id=dispatch_target.recipient_id,
-                dispatch_chat_id=reminder.dispatch_chat_id,
-                dispatch_thread_id=reminder.dispatch_thread_id,
-            ),
-            id=workflow_id,
-            task_queue=self.settings.temporal_task_queue,
-            start_delay=start_delay,
-        )
+        try:
+            await client.start_workflow(
+                self.settings.temporal_reminder_workflow_name,
+                ReminderWorkflowInput(
+                    reminder_id=str(reminder.reminder_id.value),
+                    text=reminder.text,
+                    remind_at=reminder.schedule.remind_at.isoformat(),
+                    timezone=reminder.schedule.timezone,
+                    conversation_id=reminder.conversation_id,
+                    session_id=reminder.session_id,
+                    dispatch_channel=dispatch_target.channel,
+                    dispatch_recipient_id=dispatch_target.recipient_id,
+                    dispatch_chat_id=reminder.dispatch_chat_id,
+                    dispatch_thread_id=reminder.dispatch_thread_id,
+                ),
+                id=workflow_id,
+                task_queue=self.settings.temporal_task_queue,
+                start_delay=start_delay,
+            )
+        except Exception as exc:
+            await self.workflow_event_recorder.record(
+                WorkflowEventRecord.create(
+                    workflow_id=workflow_id,
+                    workflow_type=self.settings.temporal_reminder_workflow_name,
+                    event_type="workflow_start_failed",
+                    conversation_id=reminder.conversation_id,
+                    session_id=reminder.session_id,
+                    trace_id=None,
+                    chain_id=None,
+                    request_id=None,
+                    success=False,
+                    message="提醒工作流启动失败。",
+                    payload={
+                        "reminder_id": str(reminder.reminder_id.value),
+                        "error_type": type(exc).__name__,
+                        "error_message": str(exc),
+                    },
+                )
+            )
+            raise
         await self.workflow_event_recorder.record(
             WorkflowEventRecord.create(
                 workflow_id=workflow_id,
@@ -107,3 +129,7 @@ class TemporalReminderWorkflowGateway(ReminderWorkflowGateway):
         if delay <= timedelta(0):
             return None
         return delay
+
+
+def _build_workflow_id(reminder: Reminder) -> str:
+    return f"reminder:{reminder.reminder_id.value}"

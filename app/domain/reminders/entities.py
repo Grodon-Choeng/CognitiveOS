@@ -8,6 +8,7 @@ class ReminderStatus(StrEnum):
     PENDING = "pending"
     COMPLETED = "completed"
     CANCELED = "canceled"
+    FAILED = "failed"
 
 
 @dataclass(slots=True)
