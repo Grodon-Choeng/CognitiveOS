@@ -43,6 +43,8 @@ async def create_reminder(
         source_thread_id=payload.source_thread_id,
         dispatch_channel=payload.dispatch_channel,
         dispatch_recipient_id=payload.dispatch_recipient_id,
+        dispatch_chat_id=payload.dispatch_chat_id,
+        dispatch_thread_id=payload.dispatch_thread_id,
     )
     result = await service.create_reminder(command)
     return ReminderResponse(**asdict(result))

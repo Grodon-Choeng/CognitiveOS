@@ -15,6 +15,8 @@ class CreateReminderRequest(BaseModel):
     source_thread_id: str | None = Field(default=None, description="来源话题标识。")
     dispatch_channel: str = Field(default="console", description="提醒消息投递渠道。")
     dispatch_recipient_id: str = Field(default="local-user", description="提醒消息接收目标。")
+    dispatch_chat_id: str | None = Field(default=None, description="提醒消息投递会话标识。")
+    dispatch_thread_id: str | None = Field(default=None, description="提醒消息投递话题标识。")
 
 
 class ReplyReminderRequest(BaseModel):

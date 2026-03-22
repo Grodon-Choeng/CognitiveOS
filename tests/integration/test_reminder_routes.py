@@ -9,11 +9,13 @@ from app.application.reminders.dto import ReminderDTO, ReminderReplyDTO
 from app.application.reminders.errors import ReminderWorkflowStartError
 from app.main import app
 
+captured_create_commands: list[CreateReminderCommand] = []
+
 
 @dataclass
 class FakeReminderService:
     async def create_reminder(self, command: CreateReminderCommand) -> ReminderDTO:
-        _ = command
+        captured_create_commands.append(command)
         return ReminderDTO(
             reminder_id="00000000-0000-0000-0000-000000000001",
             text="明天上午九点提醒我打卡",
@@ -55,6 +57,7 @@ def override_failing_reminder_service() -> FakeFailingReminderService:
 
 
 def test_create_reminder_route_returns_structured_response() -> None:
+    captured_create_commands.clear()
     app.dependency_overrides[get_reminder_service] = override_reminder_service
 
     try:
@@ -81,6 +84,35 @@ def test_create_reminder_route_returns_structured_response() -> None:
         "session_id": "session-1",
         "workflow_id": "reminder:00000000-0000-0000-0000-000000000001",
     }
+
+
+def test_create_reminder_route_passes_dispatch_chat_and_thread_fields() -> None:
+    captured_create_commands.clear()
+    app.dependency_overrides[get_reminder_service] = override_reminder_service
+
+    try:
+        with TestClient(app) as client:
+            response = client.post(
+                "/api/v1/reminders",
+                json={
+                    "text": "群聊线程里提醒我打卡",
+                    "remind_at": "2026-03-20T09:00:00+08:00",
+                    "timezone": "Asia/Shanghai",
+                    "dispatch_channel": "feishu",
+                    "dispatch_recipient_id": "ou_123",
+                    "dispatch_chat_id": "oc_group_123",
+                    "dispatch_thread_id": "ot_thread_123",
+                },
+            )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    command = captured_create_commands[-1]
+    assert command.dispatch_channel == "feishu"
+    assert command.dispatch_recipient_id == "ou_123"
+    assert command.dispatch_chat_id == "oc_group_123"
+    assert command.dispatch_thread_id == "ot_thread_123"
 
 
 def test_reply_reminder_route_returns_structured_response() -> None:
