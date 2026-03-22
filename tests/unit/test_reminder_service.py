@@ -26,6 +26,7 @@ from app.application.reminders.ports import (
     ReminderUnitOfWork,
     ReminderWorkflowGateway,
 )
+from app.application.reminders.queries import ListRemindersQuery
 from app.application.reminders.service import ReminderApplicationService
 from app.domain.reminders.entities import Reminder, ReminderStatus
 from app.domain.reminders.repository import ReminderRepository
@@ -41,6 +42,26 @@ class FakeReminderRepository(ReminderRepository):
 
     async def get(self, reminder_id: ReminderId) -> Reminder | None:
         return self.items.get(str(reminder_id.value))
+
+    async def list(
+        self,
+        *,
+        conversation_id: str | None = None,
+        session_id: str | None = None,
+        status: str | None = None,
+        limit: int = 20,
+    ) -> list[Reminder]:
+        reminders = list(self.items.values())
+        reminders.sort(key=lambda reminder: reminder.schedule.remind_at, reverse=True)
+        if conversation_id is not None:
+            reminders = [
+                reminder for reminder in reminders if reminder.conversation_id == conversation_id
+            ]
+        if session_id is not None:
+            reminders = [reminder for reminder in reminders if reminder.session_id == session_id]
+        if status is not None:
+            reminders = [reminder for reminder in reminders if reminder.status.value == status]
+        return reminders[:limit]
 
     async def get_by_dispatch_message_id(self, dispatch_message_id: str) -> Reminder | None:
         for reminder in self.items.values():
@@ -340,6 +361,43 @@ async def test_get_reminder_returns_existing_reminder() -> None:
 
     assert fetched.reminder_id == created.reminder_id
     assert fetched.status == "pending"
+
+
+@pytest.mark.asyncio
+async def test_list_reminders_returns_filtered_items() -> None:
+    repository = FakeReminderRepository()
+    workflow_gateway = FakeReminderWorkflowGateway()
+    service = ReminderApplicationService(
+        unit_of_work_factory=create_fake_unit_of_work_factory(repository),
+        workflow_gateway=workflow_gateway,
+        conversation_context_resolver=FakeConversationContextResolver(),
+    )
+
+    first = await service.create_reminder(
+        CreateReminderCommand(
+            text="第一个提醒",
+            remind_at=datetime(2026, 3, 20, 9, 0, tzinfo=UTC),
+            timezone="Asia/Shanghai",
+            conversation_id="conversation-1",
+            session_id="session-1",
+        )
+    )
+    second = await service.create_reminder(
+        CreateReminderCommand(
+            text="第二个提醒",
+            remind_at=datetime(2026, 3, 20, 10, 0, tzinfo=UTC),
+            timezone="Asia/Shanghai",
+            conversation_id="conversation-2",
+            session_id="session-2",
+        )
+    )
+    repository.items[second.reminder_id].status = ReminderStatus.CANCELED
+
+    result = await service.list_reminders(
+        ListRemindersQuery(conversation_id="conversation-1", status="pending", limit=10)
+    )
+
+    assert [item.reminder_id for item in result.items] == [first.reminder_id]
 
 
 @pytest.mark.asyncio

@@ -1,14 +1,16 @@
 from dataclasses import asdict
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 
 from app.api.http.deps.services import get_reminder_service
 from app.api.http.schemas.common import ErrorResponse
 from app.api.http.schemas.reminder import (
     CreateReminderRequest,
+    ReminderListResponse,
     ReminderReplyResponse,
     ReminderResponse,
+    ReminderStatusFilter,
     ReplyReminderRequest,
 )
 from app.application.reminders.commands import (
@@ -16,9 +18,35 @@ from app.application.reminders.commands import (
     CreateReminderCommand,
     HandleReminderReplyCommand,
 )
+from app.application.reminders.queries import ListRemindersQuery
 from app.application.reminders.service import ReminderApplicationService
 
 router = APIRouter(prefix="/reminders", tags=["reminders"])
+
+
+@router.get(
+    "",
+    response_model=ReminderListResponse,
+    summary="查询提醒列表",
+)
+async def list_reminders(
+    service: Annotated[ReminderApplicationService, Depends(get_reminder_service)],
+    conversation_id: str | None = None,
+    session_id: str | None = None,
+    status: ReminderStatusFilter | None = None,
+    limit: Annotated[int, Query(ge=1, le=100)] = 20,
+) -> ReminderListResponse:
+    result = await service.list_reminders(
+        ListRemindersQuery(
+            conversation_id=conversation_id,
+            session_id=session_id,
+            status=status,
+            limit=limit,
+        )
+    )
+    return ReminderListResponse(
+        items=[ReminderResponse(**asdict(reminder)) for reminder in result.items]
+    )
 
 
 @router.post(

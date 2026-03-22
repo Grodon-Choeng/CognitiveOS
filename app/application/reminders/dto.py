@@ -15,6 +15,11 @@ class ReminderDTO:
 
 
 @dataclass(slots=True, frozen=True)
+class ReminderListDTO:
+    items: list[ReminderDTO]
+
+
+@dataclass(slots=True, frozen=True)
 class ReminderReplyDTO:
     reminder_id: str
     reply_text: str

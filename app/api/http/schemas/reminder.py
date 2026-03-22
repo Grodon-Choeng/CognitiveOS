@@ -1,6 +1,9 @@
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, Field, model_validator
+
+ReminderStatusFilter = Literal["pending", "completed", "canceled", "failed"]
 
 
 class CreateReminderRequest(BaseModel):
@@ -52,6 +55,10 @@ class ReminderResponse(BaseModel):
     conversation_id: str | None = None
     session_id: str | None = None
     workflow_id: str | None = None
+
+
+class ReminderListResponse(BaseModel):
+    items: list[ReminderResponse]
 
 
 class ReminderReplyResponse(BaseModel):

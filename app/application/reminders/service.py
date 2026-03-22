@@ -8,6 +8,7 @@ from app.application.reminders.commands import (
 from app.application.reminders.dto import (
     ReminderDTO,
     ReminderInboundMessageResult,
+    ReminderListDTO,
     ReminderReplyDTO,
 )
 from app.application.reminders.errors import (
@@ -23,6 +24,7 @@ from app.application.reminders.ports import (
     ReminderUnitOfWorkFactory,
     ReminderWorkflowGateway,
 )
+from app.application.reminders.queries import ListRemindersQuery
 from app.domain.reminders.entities import Reminder, ReminderStatus
 from app.domain.reminders.value_objects import ReminderId, ReminderSchedule
 
@@ -121,6 +123,17 @@ class ReminderApplicationService:
                 raise ReminderNotFoundError(f"提醒不存在：{reminder_id}")
 
         return self._to_dto(reminder)
+
+    async def list_reminders(self, query: ListRemindersQuery) -> ReminderListDTO:
+        async with self.unit_of_work_factory() as unit_of_work:
+            reminders = await unit_of_work.reminders.list(
+                conversation_id=query.conversation_id,
+                session_id=query.session_id,
+                status=query.status,
+                limit=query.limit,
+            )
+
+        return ReminderListDTO(items=[self._to_dto(reminder) for reminder in reminders])
 
     async def cancel_reminder(self, command: CancelReminderCommand) -> ReminderDTO:
         reminder_id = ReminderId.from_string(command.reminder_id)

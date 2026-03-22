@@ -24,6 +24,25 @@ class SQLAlchemyReminderRepository(ReminderRepository):
 
         return self._to_domain(model)
 
+    async def list(
+        self,
+        *,
+        conversation_id: str | None = None,
+        session_id: str | None = None,
+        status: str | None = None,
+        limit: int = 20,
+    ) -> list[Reminder]:
+        statement = select(ReminderModel).order_by(ReminderModel.created_at.desc()).limit(limit)
+        if conversation_id is not None:
+            statement = statement.where(ReminderModel.conversation_id == conversation_id)
+        if session_id is not None:
+            statement = statement.where(ReminderModel.session_id == session_id)
+        if status is not None:
+            statement = statement.where(ReminderModel.status == status)
+
+        models = (await self.session.execute(statement)).scalars().all()
+        return [self._to_domain(model) for model in models]
+
     async def get_by_dispatch_message_id(self, dispatch_message_id: str) -> Reminder | None:
         statement = (
             select(ReminderModel)

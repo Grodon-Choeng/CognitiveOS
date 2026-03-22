@@ -9,6 +9,15 @@ class ReminderRepository(Protocol):
 
     async def get(self, reminder_id: ReminderId) -> Reminder | None: ...
 
+    async def list(
+        self,
+        *,
+        conversation_id: str | None = None,
+        session_id: str | None = None,
+        status: str | None = None,
+        limit: int = 20,
+    ) -> list[Reminder]: ...
+
     async def get_by_dispatch_message_id(self, dispatch_message_id: str) -> Reminder | None: ...
 
     async def get_latest_pending_by_conversation(

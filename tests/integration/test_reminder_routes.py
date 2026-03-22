@@ -9,7 +9,7 @@ from app.application.reminders.commands import (
     CreateReminderCommand,
     HandleReminderReplyCommand,
 )
-from app.application.reminders.dto import ReminderDTO, ReminderReplyDTO
+from app.application.reminders.dto import ReminderDTO, ReminderListDTO, ReminderReplyDTO
 from app.application.reminders.errors import ReminderWorkflowCancelError, ReminderWorkflowStartError
 from app.main import app
 
@@ -42,6 +42,33 @@ class FakeReminderService:
             conversation_id="conversation-1",
             session_id="session-1",
             workflow_id="reminder:00000000-0000-0000-0000-000000000001",
+        )
+
+    async def list_reminders(self, query: object) -> ReminderListDTO:
+        _ = query
+        return ReminderListDTO(
+            items=[
+                ReminderDTO(
+                    reminder_id="00000000-0000-0000-0000-000000000001",
+                    text="明天上午九点提醒我打卡",
+                    remind_at=datetime(2026, 3, 20, 9, 0, tzinfo=UTC),
+                    timezone="Asia/Shanghai",
+                    status="pending",
+                    conversation_id="conversation-1",
+                    session_id="session-1",
+                    workflow_id="reminder:00000000-0000-0000-0000-000000000001",
+                ),
+                ReminderDTO(
+                    reminder_id="00000000-0000-0000-0000-000000000002",
+                    text="晚上提醒我复盘",
+                    remind_at=datetime(2026, 3, 20, 12, 0, tzinfo=UTC),
+                    timezone="Asia/Shanghai",
+                    status="completed",
+                    conversation_id="conversation-1",
+                    session_id="session-1",
+                    workflow_id="reminder:00000000-0000-0000-0000-000000000002",
+                ),
+            ]
         )
 
     async def handle_reply(self, command: HandleReminderReplyCommand) -> ReminderReplyDTO:
@@ -84,6 +111,10 @@ class FakeFailingReminderService:
     async def get_reminder(self, reminder_id: str) -> ReminderDTO:
         _ = reminder_id
         raise AssertionError("本测试不应调用 get_reminder")
+
+    async def list_reminders(self, query: object) -> ReminderListDTO:
+        _ = query
+        raise AssertionError("本测试不应调用 list_reminders")
 
     async def cancel_reminder(self, command: CancelReminderCommand) -> ReminderDTO:
         _ = command
@@ -135,6 +166,23 @@ def test_get_reminder_route_returns_structured_response() -> None:
 
     assert response.status_code == 200
     assert response.json()["status"] == "pending"
+
+
+def test_list_reminders_route_returns_structured_response() -> None:
+    app.dependency_overrides[get_reminder_service] = override_reminder_service
+
+    try:
+        with TestClient(app) as client:
+            response = client.get(
+                "/api/v1/reminders",
+                params={"conversation_id": "conversation-1", "status": "pending", "limit": "10"},
+            )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert len(response.json()["items"]) == 2
+    assert response.json()["items"][0]["reminder_id"] == "00000000-0000-0000-0000-000000000001"
 
 
 def test_create_reminder_route_passes_dispatch_chat_and_thread_fields() -> None:
