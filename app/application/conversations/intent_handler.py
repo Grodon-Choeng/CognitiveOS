@@ -20,7 +20,9 @@ from app.infrastructure.llm.models import GenerateRequest
 
 class ConversationIntent(StrEnum):
     REMINDER_CREATE = "reminder_create"
+    REMINDER_CANCEL = "reminder_cancel"
     TASK_CREATE = "task_create"
+    TASK_CANCEL = "task_cancel"
     TASK_COMPLETE = "task_complete"
     MEMORY_WRITE = "memory_write"
     MEMORY_ARCHIVE = "memory_archive"
@@ -46,6 +48,13 @@ class TaskCreator(Protocol):
         session_id: str,
     ) -> TaskDTO: ...
 
+    async def cancel_latest_task(
+        self,
+        *,
+        conversation_id: str,
+        session_id: str,
+    ) -> TaskDTO: ...
+
 
 class MemoryCreator(Protocol):
     async def create_memory(self, command: CreateMemoryCommand) -> MemoryDTO: ...
@@ -60,6 +69,13 @@ class MemoryCreator(Protocol):
 
 class ReminderCreator(Protocol):
     async def create_reminder(self, command: CreateReminderCommand) -> ReminderDTO: ...
+
+    async def cancel_latest_reminder(
+        self,
+        *,
+        conversation_id: str,
+        session_id: str,
+    ) -> ReminderDTO: ...
 
 
 class LLMFirstConversationIntentClassifier:
@@ -215,6 +231,18 @@ class IntentConversationHandler:
                 handled_by="reminder",
                 reason=f"reminder_created_via_{decision.source}",
             )
+        if decision.intent == ConversationIntent.REMINDER_CANCEL:
+            await self.reminder_service.cancel_latest_reminder(
+                conversation_id=conversation_id,
+                session_id=session_id,
+            )
+            return ConversationInboundResult(
+                handled=True,
+                conversation_id=conversation_id,
+                session_id=session_id,
+                handled_by="reminder",
+                reason=f"reminder_canceled_via_{decision.source}",
+            )
         if decision.intent == ConversationIntent.MEMORY_WRITE and decision.content is not None:
             await self.memory_service.create_memory(
                 CreateMemoryCommand(
@@ -246,6 +274,18 @@ class IntentConversationHandler:
                 handled_by="memory",
                 reason=f"memory_archived_via_{decision.source}",
             )
+        if decision.intent == ConversationIntent.TASK_CANCEL:
+            await self.task_service.cancel_latest_task(
+                conversation_id=conversation_id,
+                session_id=session_id,
+            )
+            return ConversationInboundResult(
+                handled=True,
+                conversation_id=conversation_id,
+                session_id=session_id,
+                handled_by="task",
+                reason=f"task_canceled_via_{decision.source}",
+            )
         return None
 
 
@@ -275,6 +315,15 @@ def _classify_with_rules(
             source="rules",
         )
 
+    if _is_task_cancel_request(command):
+        return ConversationIntentDecision(
+            intent=ConversationIntent.TASK_CANCEL,
+            content=None,
+            remind_at=None,
+            timezone=None,
+            source="rules",
+        )
+
     memory_content = _extract_memory_content(command)
     if memory_content is not None:
         return ConversationIntentDecision(
@@ -294,6 +343,15 @@ def _classify_with_rules(
             source="rules",
         )
 
+    if _is_reminder_cancel_request(command):
+        return ConversationIntentDecision(
+            intent=ConversationIntent.REMINDER_CANCEL,
+            content=None,
+            remind_at=None,
+            timezone=None,
+            source="rules",
+        )
+
     return ConversationIntentDecision(
         intent=ConversationIntent.UNKNOWN,
         content=None,
@@ -306,16 +364,18 @@ def _classify_with_rules(
 def _build_intent_system_prompt() -> str:
     return (
         "你是 CognitiveOS 的对话意图分类器。"
-        "你只负责判断当前文本是否应该创建 reminder、创建 task、"
-        "完成 task、写入 memory、归档 memory，或者都不是。"
+        "你只负责判断当前文本是否应该创建 reminder、取消 reminder、创建 task、"
+        "完成 task、取消 task、写入 memory、归档 memory，或者都不是。"
         "你必须返回 JSON，格式为"
-        '{"intent":"reminder_create|task_create|task_complete|memory_write|memory_archive|unknown",'
+        '{"intent":"reminder_create|reminder_cancel|task_create|task_complete|task_cancel|memory_write|memory_archive|unknown",'
         '"content":"提取后的正文或 null",'
         '"remind_at":"ISO8601时间或 null","timezone":"时区或 null"}。'
         "如果文本是在表达未来要提醒的事项，返回 reminder_create，"
         "并提取提醒正文、带时区的 ISO8601 提醒时间，以及 IANA 时区字符串；"
+        "如果文本是在要求取消当前会话最近一个提醒，返回 reminder_cancel；"
         "如果文本是在表达待办事项，返回 task_create；"
         "如果文本是在要求完成当前会话里最近一个待办，返回 task_complete；"
+        "如果文本是在要求取消当前会话里最近一个待办，返回 task_cancel；"
         "如果文本是在要求系统记住某件事实或偏好，返回 memory_write；"
         "如果文本是在要求归档当前会话里最近一条活跃记忆，返回 memory_archive；"
         "否则返回 unknown。"
@@ -365,7 +425,9 @@ def _parse_intent_response(content: str) -> ConversationIntentDecision | None:
             return None
     elif intent not in {
         ConversationIntent.UNKNOWN,
+        ConversationIntent.REMINDER_CANCEL,
         ConversationIntent.TASK_COMPLETE,
+        ConversationIntent.TASK_CANCEL,
         ConversationIntent.MEMORY_ARCHIVE,
     }:
         return None
@@ -438,8 +500,22 @@ def _is_task_complete_request(command: HandleInboundConversationMessageCommand) 
     return normalized in {"完成任务", "完成待办", "done task", "complete task"}
 
 
+def _is_task_cancel_request(command: HandleInboundConversationMessageCommand) -> bool:
+    if command.message_type != "text" or command.text is None:
+        return False
+    normalized = command.text.strip().casefold()
+    return normalized in {"取消任务", "取消待办", "cancel task"}
+
+
 def _is_memory_archive_request(command: HandleInboundConversationMessageCommand) -> bool:
     if command.message_type != "text" or command.text is None:
         return False
     normalized = command.text.strip().casefold()
     return normalized in {"归档记忆", "archive memory", "归档这条记忆"}
+
+
+def _is_reminder_cancel_request(command: HandleInboundConversationMessageCommand) -> bool:
+    if command.message_type != "text" or command.text is None:
+        return False
+    normalized = command.text.strip().casefold()
+    return normalized in {"取消提醒", "cancel reminder", "取消这个提醒"}

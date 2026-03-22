@@ -269,3 +269,27 @@ async def test_complete_latest_task_uses_latest_pending_task() -> None:
     assert completed.task_id == latest.task_id
     assert repository.items[older.task_id].status == TaskStatus.PENDING
     assert repository.items[latest.task_id].status == TaskStatus.COMPLETED
+
+
+@pytest.mark.asyncio
+async def test_cancel_latest_task_uses_latest_pending_task() -> None:
+    repository = FakeTaskRepository()
+    service = TaskApplicationService(
+        unit_of_work_factory=create_fake_unit_of_work_factory(repository),
+        conversation_context_resolver=FakeConversationContextResolver(),
+    )
+    older = await service.create_task(
+        CreateTaskCommand(title="旧任务", conversation_id="conversation-1", session_id="session-1")
+    )
+    latest = await service.create_task(
+        CreateTaskCommand(title="新任务", conversation_id="conversation-1", session_id="session-1")
+    )
+
+    canceled = await service.cancel_latest_task(
+        conversation_id="conversation-1",
+        session_id="session-1",
+    )
+
+    assert canceled.task_id == latest.task_id
+    assert repository.items[older.task_id].status == TaskStatus.PENDING
+    assert repository.items[latest.task_id].status == TaskStatus.CANCELED

@@ -162,6 +162,26 @@ class ReminderApplicationService:
 
         return self._to_dto(reminder)
 
+    async def cancel_latest_reminder(
+        self,
+        *,
+        conversation_id: str,
+        session_id: str,
+    ) -> ReminderDTO:
+        reminder_list = await self.list_reminders(
+            ListRemindersQuery(
+                conversation_id=conversation_id,
+                session_id=session_id,
+                status=ReminderStatus.PENDING.value,
+                limit=1,
+            )
+        )
+        if not reminder_list.items:
+            raise ReminderNotFoundError("当前会话没有可取消的提醒。")
+        return await self.cancel_reminder(
+            CancelReminderCommand(reminder_id=reminder_list.items[0].reminder_id)
+        )
+
     async def handle_inbound_message(
         self,
         command: HandleReminderInboundMessageCommand,
