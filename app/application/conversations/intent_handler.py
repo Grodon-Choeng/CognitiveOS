@@ -8,14 +8,17 @@ from app.application.conversations.commands import HandleInboundConversationMess
 from app.application.conversations.dto import ConversationInboundResult
 from app.application.memory.commands import CreateMemoryCommand
 from app.application.memory.conversation_handler import _extract_memory_content
-from app.application.memory.dto import MemoryDTO
+from app.application.memory.dto import MemoryDTO, MemoryListDTO
+from app.application.memory.queries import ListMemoriesQuery
 from app.application.overview.dto import OverviewDTO
 from app.application.overview.queries import GetOverviewQuery
 from app.application.reminders.commands import CreateReminderCommand
-from app.application.reminders.dto import ReminderDTO
+from app.application.reminders.dto import ReminderDTO, ReminderListDTO
+from app.application.reminders.queries import ListRemindersQuery
 from app.application.tasks.commands import CreateTaskCommand
 from app.application.tasks.conversation_handler import _extract_task_title
-from app.application.tasks.dto import TaskDTO
+from app.application.tasks.dto import TaskDTO, TaskListDTO
+from app.application.tasks.queries import ListTasksQuery
 from app.infrastructure.llm.gateway import LLMGateway
 from app.infrastructure.llm.models import GenerateRequest
 
@@ -23,11 +26,14 @@ from app.infrastructure.llm.models import GenerateRequest
 class ConversationIntent(StrEnum):
     REMINDER_CREATE = "reminder_create"
     REMINDER_CANCEL = "reminder_cancel"
+    REMINDER_LIST = "reminder_list"
     TASK_CREATE = "task_create"
     TASK_CANCEL = "task_cancel"
     TASK_COMPLETE = "task_complete"
+    TASK_LIST = "task_list"
     MEMORY_WRITE = "memory_write"
     MEMORY_ARCHIVE = "memory_archive"
+    MEMORY_LIST = "memory_list"
     OVERVIEW_SHOW = "overview_show"
     UNKNOWN = "unknown"
 
@@ -58,6 +64,8 @@ class TaskCreator(Protocol):
         session_id: str,
     ) -> TaskDTO: ...
 
+    async def list_tasks(self, query: ListTasksQuery) -> TaskListDTO: ...
+
 
 class MemoryCreator(Protocol):
     async def create_memory(self, command: CreateMemoryCommand) -> MemoryDTO: ...
@@ -69,6 +77,8 @@ class MemoryCreator(Protocol):
         session_id: str,
     ) -> MemoryDTO: ...
 
+    async def list_memories(self, query: ListMemoriesQuery) -> MemoryListDTO: ...
+
 
 class ReminderCreator(Protocol):
     async def create_reminder(self, command: CreateReminderCommand) -> ReminderDTO: ...
@@ -79,6 +89,8 @@ class ReminderCreator(Protocol):
         conversation_id: str,
         session_id: str,
     ) -> ReminderDTO: ...
+
+    async def list_reminders(self, query: ListRemindersQuery) -> ReminderListDTO: ...
 
 
 class OverviewReader(Protocol):
@@ -199,6 +211,22 @@ class IntentConversationHandler:
                 reason=f"task_created_via_{decision.source}",
                 response_text=f"好的，已创建待办：{decision.content}",
             )
+        if decision.intent == ConversationIntent.TASK_LIST:
+            task_list = await self.task_service.list_tasks(
+                ListTasksQuery(
+                    conversation_id=conversation_id,
+                    session_id=session_id,
+                    limit=5,
+                )
+            )
+            return ConversationInboundResult(
+                handled=True,
+                conversation_id=conversation_id,
+                session_id=session_id,
+                handled_by="task",
+                reason=f"task_listed_via_{decision.source}",
+                response_text=_format_task_list_text(task_list),
+            )
         if decision.intent == ConversationIntent.TASK_COMPLETE:
             await self.task_service.complete_latest_task(
                 conversation_id=conversation_id,
@@ -258,6 +286,22 @@ class IntentConversationHandler:
                 reason=f"reminder_canceled_via_{decision.source}",
                 response_text="好的，已取消最近一条提醒。",
             )
+        if decision.intent == ConversationIntent.REMINDER_LIST:
+            reminder_list = await self.reminder_service.list_reminders(
+                ListRemindersQuery(
+                    conversation_id=conversation_id,
+                    session_id=session_id,
+                    limit=5,
+                )
+            )
+            return ConversationInboundResult(
+                handled=True,
+                conversation_id=conversation_id,
+                session_id=session_id,
+                handled_by="reminder",
+                reason=f"reminder_listed_via_{decision.source}",
+                response_text=_format_reminder_list_text(reminder_list),
+            )
         if decision.intent == ConversationIntent.MEMORY_WRITE and decision.content is not None:
             await self.memory_service.create_memory(
                 CreateMemoryCommand(
@@ -290,6 +334,22 @@ class IntentConversationHandler:
                 handled_by="memory",
                 reason=f"memory_archived_via_{decision.source}",
                 response_text="好的，已归档最近一条记忆。",
+            )
+        if decision.intent == ConversationIntent.MEMORY_LIST:
+            memory_list = await self.memory_service.list_memories(
+                ListMemoriesQuery(
+                    conversation_id=conversation_id,
+                    session_id=session_id,
+                    limit=5,
+                )
+            )
+            return ConversationInboundResult(
+                handled=True,
+                conversation_id=conversation_id,
+                session_id=session_id,
+                handled_by="memory",
+                reason=f"memory_listed_via_{decision.source}",
+                response_text=_format_memory_list_text(memory_list),
             )
         if decision.intent == ConversationIntent.TASK_CANCEL:
             await self.task_service.cancel_latest_task(
@@ -348,6 +408,15 @@ def _classify_with_rules(
             source="rules",
         )
 
+    if _is_task_list_request(command):
+        return ConversationIntentDecision(
+            intent=ConversationIntent.TASK_LIST,
+            content=None,
+            remind_at=None,
+            timezone=None,
+            source="rules",
+        )
+
     if _is_task_cancel_request(command):
         return ConversationIntentDecision(
             intent=ConversationIntent.TASK_CANCEL,
@@ -376,9 +445,27 @@ def _classify_with_rules(
             source="rules",
         )
 
+    if _is_memory_list_request(command):
+        return ConversationIntentDecision(
+            intent=ConversationIntent.MEMORY_LIST,
+            content=None,
+            remind_at=None,
+            timezone=None,
+            source="rules",
+        )
+
     if _is_reminder_cancel_request(command):
         return ConversationIntentDecision(
             intent=ConversationIntent.REMINDER_CANCEL,
+            content=None,
+            remind_at=None,
+            timezone=None,
+            source="rules",
+        )
+
+    if _is_reminder_list_request(command):
+        return ConversationIntentDecision(
+            intent=ConversationIntent.REMINDER_LIST,
             content=None,
             remind_at=None,
             timezone=None,
@@ -409,17 +496,20 @@ def _build_intent_system_prompt() -> str:
         "你只负责判断当前文本是否应该创建 reminder、取消 reminder、创建 task、"
         "完成 task、取消 task、写入 memory、归档 memory，或者都不是。"
         "你必须返回 JSON，格式为"
-        '{"intent":"reminder_create|reminder_cancel|task_create|task_complete|task_cancel|memory_write|memory_archive|overview_show|unknown",'
+        '{"intent":"reminder_create|reminder_cancel|reminder_list|task_create|task_complete|task_cancel|task_list|memory_write|memory_archive|memory_list|overview_show|unknown",'
         '"content":"提取后的正文或 null",'
         '"remind_at":"ISO8601时间或 null","timezone":"时区或 null"}。'
         "如果文本是在表达未来要提醒的事项，返回 reminder_create，"
         "并提取提醒正文、带时区的 ISO8601 提醒时间，以及 IANA 时区字符串；"
         "如果文本是在要求取消当前会话最近一个提醒，返回 reminder_cancel；"
+        "如果文本是在要求查看当前会话里的提醒列表，返回 reminder_list；"
         "如果文本是在表达待办事项，返回 task_create；"
         "如果文本是在要求完成当前会话里最近一个待办，返回 task_complete；"
         "如果文本是在要求取消当前会话里最近一个待办，返回 task_cancel；"
+        "如果文本是在要求查看当前会话里的待办列表，返回 task_list；"
         "如果文本是在要求系统记住某件事实或偏好，返回 memory_write；"
         "如果文本是在要求归档当前会话里最近一条活跃记忆，返回 memory_archive；"
+        "如果文本是在要求查看当前会话里的记忆列表，返回 memory_list；"
         "如果文本是在要求查看当前会话概览，返回 overview_show；"
         "否则返回 unknown。"
     )
@@ -469,9 +559,12 @@ def _parse_intent_response(content: str) -> ConversationIntentDecision | None:
     elif intent not in {
         ConversationIntent.UNKNOWN,
         ConversationIntent.REMINDER_CANCEL,
+        ConversationIntent.REMINDER_LIST,
         ConversationIntent.TASK_COMPLETE,
         ConversationIntent.TASK_CANCEL,
+        ConversationIntent.TASK_LIST,
         ConversationIntent.MEMORY_ARCHIVE,
+        ConversationIntent.MEMORY_LIST,
         ConversationIntent.OVERVIEW_SHOW,
     }:
         return None
@@ -544,6 +637,13 @@ def _is_task_complete_request(command: HandleInboundConversationMessageCommand) 
     return normalized in {"完成任务", "完成待办", "done task", "complete task"}
 
 
+def _is_task_list_request(command: HandleInboundConversationMessageCommand) -> bool:
+    if command.message_type != "text" or command.text is None:
+        return False
+    normalized = command.text.strip().casefold()
+    return normalized in {"查看待办", "查看任务", "task list", "show tasks"}
+
+
 def _is_task_cancel_request(command: HandleInboundConversationMessageCommand) -> bool:
     if command.message_type != "text" or command.text is None:
         return False
@@ -558,11 +658,25 @@ def _is_memory_archive_request(command: HandleInboundConversationMessageCommand)
     return normalized in {"归档记忆", "archive memory", "归档这条记忆"}
 
 
+def _is_memory_list_request(command: HandleInboundConversationMessageCommand) -> bool:
+    if command.message_type != "text" or command.text is None:
+        return False
+    normalized = command.text.strip().casefold()
+    return normalized in {"查看记忆", "查看记忆列表", "memory list", "show memories"}
+
+
 def _is_reminder_cancel_request(command: HandleInboundConversationMessageCommand) -> bool:
     if command.message_type != "text" or command.text is None:
         return False
     normalized = command.text.strip().casefold()
     return normalized in {"取消提醒", "cancel reminder", "取消这个提醒"}
+
+
+def _is_reminder_list_request(command: HandleInboundConversationMessageCommand) -> bool:
+    if command.message_type != "text" or command.text is None:
+        return False
+    normalized = command.text.strip().casefold()
+    return normalized in {"查看提醒", "查看提醒列表", "reminder list", "show reminders"}
 
 
 def _is_overview_request(command: HandleInboundConversationMessageCommand) -> bool:
@@ -596,4 +710,31 @@ def _format_overview_text(overview: OverviewDTO) -> str:
     else:
         lines.append("活跃记忆：无")
 
+    return "\n".join(lines)
+
+
+def _format_task_list_text(task_list: TaskListDTO) -> str:
+    if not task_list.items:
+        return "当前没有待办任务。"
+    lines = ["当前任务："]
+    for task in task_list.items:
+        lines.append(f"- [{task.status}] {task.title}")
+    return "\n".join(lines)
+
+
+def _format_reminder_list_text(reminder_list: ReminderListDTO) -> str:
+    if not reminder_list.items:
+        return "当前没有提醒。"
+    lines = ["当前提醒："]
+    for reminder in reminder_list.items:
+        lines.append(f"- [{reminder.status}] {reminder.text} @ {reminder.remind_at.isoformat()}")
+    return "\n".join(lines)
+
+
+def _format_memory_list_text(memory_list: MemoryListDTO) -> str:
+    if not memory_list.items:
+        return "当前没有记忆。"
+    lines = ["当前记忆："]
+    for memory in memory_list.items:
+        lines.append(f"- [{memory.status}] {memory.content}")
     return "\n".join(lines)
