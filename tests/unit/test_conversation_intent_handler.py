@@ -507,6 +507,35 @@ async def test_intent_handler_dispatches_to_task_list() -> None:
 
 
 @pytest.mark.asyncio
+async def test_intent_handler_dispatches_to_completed_task_list_by_rule() -> None:
+    classifier = LLMFirstConversationIntentClassifier(
+        llm_gateway=FailingLLMGateway(),
+        model="gpt-test",
+        api_key_suffix="90abcdef",
+    )
+
+    result = await classifier.classify(
+        HandleInboundConversationMessageCommand(
+            channel="web",
+            message_type="text",
+            user_identity="user-1",
+            external_message_id=None,
+            root_message_id=None,
+            parent_message_id=None,
+            chat_id=None,
+            thread_id=None,
+            text="查看已完成任务",
+            raw_payload={"text": "查看已完成任务"},
+        ),
+        conversation_id="conversation-1",
+        session_id="session-1",
+    )
+
+    assert result.intent == ConversationIntent.TASK_LIST
+    assert result.status == "completed"
+
+
+@pytest.mark.asyncio
 async def test_intent_classifier_falls_back_to_rules_when_llm_returns_unknown() -> None:
     classifier = LLMFirstConversationIntentClassifier(
         llm_gateway=FakeLLMGateway('{"intent":"unknown","content":null}'),
@@ -920,6 +949,35 @@ async def test_intent_handler_dispatches_to_memory_list() -> None:
 
 
 @pytest.mark.asyncio
+async def test_intent_handler_dispatches_to_archived_memory_list_by_rule() -> None:
+    classifier = LLMFirstConversationIntentClassifier(
+        llm_gateway=FailingLLMGateway(),
+        model="gpt-test",
+        api_key_suffix="90abcdef",
+    )
+
+    result = await classifier.classify(
+        HandleInboundConversationMessageCommand(
+            channel="web",
+            message_type="text",
+            user_identity="user-1",
+            external_message_id=None,
+            root_message_id=None,
+            parent_message_id=None,
+            chat_id=None,
+            thread_id=None,
+            text="查看已归档记忆",
+            raw_payload={"text": "查看已归档记忆"},
+        ),
+        conversation_id="conversation-1",
+        session_id="session-1",
+    )
+
+    assert result.intent == ConversationIntent.MEMORY_LIST
+    assert result.status == "archived"
+
+
+@pytest.mark.asyncio
 async def test_intent_handler_dispatches_to_cancel_latest_reminder() -> None:
     task_service = FakeTaskService()
     memory_service = FakeMemoryService()
@@ -1040,6 +1098,35 @@ async def test_intent_handler_dispatches_to_reminder_list() -> None:
     assert result.reason == "reminder_listed_via_llm"
     assert "当前提醒：" in (result.response_text or "")
     assert reminder_service.list_queries
+
+
+@pytest.mark.asyncio
+async def test_intent_handler_dispatches_to_canceled_reminder_list_by_rule() -> None:
+    classifier = LLMFirstConversationIntentClassifier(
+        llm_gateway=FailingLLMGateway(),
+        model="gpt-test",
+        api_key_suffix="90abcdef",
+    )
+
+    result = await classifier.classify(
+        HandleInboundConversationMessageCommand(
+            channel="web",
+            message_type="text",
+            user_identity="user-1",
+            external_message_id=None,
+            root_message_id=None,
+            parent_message_id=None,
+            chat_id=None,
+            thread_id=None,
+            text="查看已取消提醒",
+            raw_payload={"text": "查看已取消提醒"},
+        ),
+        conversation_id="conversation-1",
+        session_id="session-1",
+    )
+
+    assert result.intent == ConversationIntent.REMINDER_LIST
+    assert result.status == "canceled"
 
 
 @pytest.mark.asyncio

@@ -46,6 +46,7 @@ class ConversationIntent(StrEnum):
 class ConversationIntentDecision:
     intent: ConversationIntent
     content: str | None
+    status: str | None
     remind_at: datetime | None
     timezone: str | None
     source: str
@@ -261,6 +262,7 @@ class IntentConversationHandler:
                     ListTasksQuery(
                         conversation_id=conversation_id,
                         session_id=session_id,
+                        status=decision.status,
                         limit=5,
                     )
                 )
@@ -270,7 +272,7 @@ class IntentConversationHandler:
                     session_id=session_id,
                     handled_by="task",
                     reason=f"task_listed_via_{decision.source}",
-                    response_text=_format_task_list_text(task_list),
+                    response_text=_format_task_list_text(task_list, decision.status),
                 )
             if decision.intent == ConversationIntent.TASK_COMPLETE:
                 if decision.content:
@@ -350,6 +352,7 @@ class IntentConversationHandler:
                     ListRemindersQuery(
                         conversation_id=conversation_id,
                         session_id=session_id,
+                        status=decision.status,
                         limit=5,
                     )
                 )
@@ -359,7 +362,7 @@ class IntentConversationHandler:
                     session_id=session_id,
                     handled_by="reminder",
                     reason=f"reminder_listed_via_{decision.source}",
-                    response_text=_format_reminder_list_text(reminder_list),
+                    response_text=_format_reminder_list_text(reminder_list, decision.status),
                 )
             if decision.intent == ConversationIntent.MEMORY_WRITE and decision.content is not None:
                 await self.memory_service.create_memory(
@@ -406,6 +409,7 @@ class IntentConversationHandler:
                     ListMemoriesQuery(
                         conversation_id=conversation_id,
                         session_id=session_id,
+                        status=decision.status,
                         limit=5,
                     )
                 )
@@ -415,7 +419,7 @@ class IntentConversationHandler:
                     session_id=session_id,
                     handled_by="memory",
                     reason=f"memory_listed_via_{decision.source}",
-                    response_text=_format_memory_list_text(memory_list),
+                    response_text=_format_memory_list_text(memory_list, decision.status),
                 )
             if decision.intent == ConversationIntent.TASK_CANCEL:
                 if decision.content:
@@ -521,6 +525,7 @@ def _classify_with_rules(
         return ConversationIntentDecision(
             intent=ConversationIntent.TASK_CREATE,
             content=task_title,
+            status=None,
             remind_at=None,
             timezone=None,
             source="rules",
@@ -534,15 +539,18 @@ def _classify_with_rules(
         return ConversationIntentDecision(
             intent=ConversationIntent.TASK_COMPLETE,
             content=content,
+            status=None,
             remind_at=None,
             timezone=None,
             source="rules",
         )
 
-    if _is_task_list_request(command):
+    task_list_status = _extract_task_list_status(command)
+    if task_list_status is not None:
         return ConversationIntentDecision(
             intent=ConversationIntent.TASK_LIST,
             content=None,
+            status=task_list_status,
             remind_at=None,
             timezone=None,
             source="rules",
@@ -556,6 +564,7 @@ def _classify_with_rules(
         return ConversationIntentDecision(
             intent=ConversationIntent.TASK_CANCEL,
             content=content,
+            status=None,
             remind_at=None,
             timezone=None,
             source="rules",
@@ -566,6 +575,7 @@ def _classify_with_rules(
         return ConversationIntentDecision(
             intent=ConversationIntent.MEMORY_WRITE,
             content=memory_content,
+            status=None,
             remind_at=None,
             timezone=None,
             source="rules",
@@ -579,15 +589,18 @@ def _classify_with_rules(
         return ConversationIntentDecision(
             intent=ConversationIntent.MEMORY_ARCHIVE,
             content=content,
+            status=None,
             remind_at=None,
             timezone=None,
             source="rules",
         )
 
-    if _is_memory_list_request(command):
+    memory_list_status = _extract_memory_list_status(command)
+    if memory_list_status is not None:
         return ConversationIntentDecision(
             intent=ConversationIntent.MEMORY_LIST,
             content=None,
+            status=memory_list_status,
             remind_at=None,
             timezone=None,
             source="rules",
@@ -601,15 +614,18 @@ def _classify_with_rules(
         return ConversationIntentDecision(
             intent=ConversationIntent.REMINDER_CANCEL,
             content=content,
+            status=None,
             remind_at=None,
             timezone=None,
             source="rules",
         )
 
-    if _is_reminder_list_request(command):
+    reminder_list_status = _extract_reminder_list_status(command)
+    if reminder_list_status is not None:
         return ConversationIntentDecision(
             intent=ConversationIntent.REMINDER_LIST,
             content=None,
+            status=reminder_list_status,
             remind_at=None,
             timezone=None,
             source="rules",
@@ -619,6 +635,7 @@ def _classify_with_rules(
         return ConversationIntentDecision(
             intent=ConversationIntent.OVERVIEW_SHOW,
             content=None,
+            status=None,
             remind_at=None,
             timezone=None,
             source="rules",
@@ -628,6 +645,7 @@ def _classify_with_rules(
         return ConversationIntentDecision(
             intent=ConversationIntent.ACTIVITY_SHOW,
             content=None,
+            status=None,
             remind_at=None,
             timezone=None,
             source="rules",
@@ -636,6 +654,7 @@ def _classify_with_rules(
     return ConversationIntentDecision(
         intent=ConversationIntent.UNKNOWN,
         content=None,
+        status=None,
         remind_at=None,
         timezone=None,
         source="rules",
@@ -650,6 +669,7 @@ def _build_intent_system_prompt() -> str:
         "你必须返回 JSON，格式为"
         '{"intent":"reminder_create|reminder_cancel|reminder_list|task_create|task_complete|task_cancel|task_list|memory_write|memory_archive|memory_list|overview_show|activity_show|unknown",'
         '"content":"提取后的正文或 null",'
+        '"status":"pending|completed|canceled|failed|active|archived|unknown|null",'
         '"remind_at":"ISO8601时间或 null","timezone":"时区或 null"}。'
         "如果文本是在表达未来要提醒的事项，返回 reminder_create，"
         "并提取提醒正文、带时区的 ISO8601 提醒时间，以及 IANA 时区字符串；"
@@ -684,6 +704,7 @@ def _parse_intent_response(content: str) -> ConversationIntentDecision | None:
 
     intent_value = parsed.get("intent")
     content_value = parsed.get("content")
+    status_value = parsed.get("status")
     remind_at_value = parsed.get("remind_at")
     timezone_value = parsed.get("timezone")
     if not isinstance(intent_value, str):
@@ -697,6 +718,9 @@ def _parse_intent_response(content: str) -> ConversationIntentDecision | None:
     normalized_content = content_value if isinstance(content_value, str) else None
     if normalized_content is not None:
         normalized_content = normalized_content.strip() or None
+    normalized_status = status_value if isinstance(status_value, str) else None
+    if normalized_status is not None:
+        normalized_status = normalized_status.strip() or None
     remind_at: datetime | None = None
     timezone: str | None = timezone_value if isinstance(timezone_value, str) else None
     if timezone is not None:
@@ -727,6 +751,7 @@ def _parse_intent_response(content: str) -> ConversationIntentDecision | None:
     return ConversationIntentDecision(
         intent=intent,
         content=normalized_content,
+        status=normalized_status,
         remind_at=remind_at,
         timezone=timezone,
         source="llm",
@@ -778,6 +803,7 @@ def _extract_reminder_request(
         return ConversationIntentDecision(
             intent=ConversationIntent.REMINDER_CREATE,
             content=reminder_content,
+            status=None,
             remind_at=remind_at,
             timezone=timezone,
             source="rules",
@@ -795,10 +821,7 @@ def _is_task_complete_request(command: HandleInboundConversationMessageCommand) 
 
 
 def _is_task_list_request(command: HandleInboundConversationMessageCommand) -> bool:
-    if command.message_type != "text" or command.text is None:
-        return False
-    normalized = command.text.strip().casefold()
-    return normalized in {"查看待办", "查看任务", "task list", "show tasks"}
+    return _extract_task_list_status(command) is not None
 
 
 def _is_task_cancel_request(command: HandleInboundConversationMessageCommand) -> bool:
@@ -818,10 +841,7 @@ def _is_memory_archive_request(command: HandleInboundConversationMessageCommand)
 
 
 def _is_memory_list_request(command: HandleInboundConversationMessageCommand) -> bool:
-    if command.message_type != "text" or command.text is None:
-        return False
-    normalized = command.text.strip().casefold()
-    return normalized in {"查看记忆", "查看记忆列表", "memory list", "show memories"}
+    return _extract_memory_list_status(command) is not None
 
 
 def _is_reminder_cancel_request(command: HandleInboundConversationMessageCommand) -> bool:
@@ -833,10 +853,7 @@ def _is_reminder_cancel_request(command: HandleInboundConversationMessageCommand
 
 
 def _is_reminder_list_request(command: HandleInboundConversationMessageCommand) -> bool:
-    if command.message_type != "text" or command.text is None:
-        return False
-    normalized = command.text.strip().casefold()
-    return normalized in {"查看提醒", "查看提醒列表", "reminder list", "show reminders"}
+    return _extract_reminder_list_status(command) is not None
 
 
 def _is_overview_request(command: HandleInboundConversationMessageCommand) -> bool:
@@ -915,28 +932,31 @@ def _format_overview_context_hint(overview: OverviewDTO) -> str:
     return "\n".join(lines) if lines else "当前会话暂无上下文。"
 
 
-def _format_task_list_text(task_list: TaskListDTO) -> str:
+def _format_task_list_text(task_list: TaskListDTO, status: str | None) -> str:
+    title = _build_status_title("任务", status)
     if not task_list.items:
-        return "当前没有待办任务。"
-    lines = ["当前任务："]
+        return f"当前没有{title}。"
+    lines = [f"当前{title}："]
     for task in task_list.items:
         lines.append(f"- [{task.status}] {task.title}")
     return "\n".join(lines)
 
 
-def _format_reminder_list_text(reminder_list: ReminderListDTO) -> str:
+def _format_reminder_list_text(reminder_list: ReminderListDTO, status: str | None) -> str:
+    title = _build_status_title("提醒", status)
     if not reminder_list.items:
-        return "当前没有提醒。"
-    lines = ["当前提醒："]
+        return f"当前没有{title}。"
+    lines = [f"当前{title}："]
     for reminder in reminder_list.items:
         lines.append(f"- [{reminder.status}] {reminder.text} @ {reminder.remind_at.isoformat()}")
     return "\n".join(lines)
 
 
-def _format_memory_list_text(memory_list: MemoryListDTO) -> str:
+def _format_memory_list_text(memory_list: MemoryListDTO, status: str | None) -> str:
+    title = _build_status_title("记忆", status)
     if not memory_list.items:
-        return "当前没有记忆。"
-    lines = ["当前记忆："]
+        return f"当前没有{title}。"
+    lines = [f"当前{title}："]
     for memory in memory_list.items:
         lines.append(f"- [{memory.status}] {memory.content}")
     return "\n".join(lines)
@@ -959,6 +979,64 @@ def _extract_action_content(
             content = normalized_text[len(prefix) :].lstrip("：: \n\t")
             return True, content or None
     return False, None
+
+
+def _extract_task_list_status(command: HandleInboundConversationMessageCommand) -> str | None:
+    if command.message_type != "text" or command.text is None:
+        return None
+    normalized = command.text.strip().casefold()
+    mapping = {
+        "查看待办": "pending",
+        "查看任务": None,
+        "查看已完成任务": "completed",
+        "查看已取消任务": "canceled",
+        "task list": None,
+        "show tasks": None,
+    }
+    return mapping.get(normalized)
+
+
+def _extract_memory_list_status(command: HandleInboundConversationMessageCommand) -> str | None:
+    if command.message_type != "text" or command.text is None:
+        return None
+    normalized = command.text.strip().casefold()
+    mapping = {
+        "查看记忆": "active",
+        "查看记忆列表": "active",
+        "查看已归档记忆": "archived",
+        "memory list": "active",
+        "show memories": "active",
+    }
+    return mapping.get(normalized)
+
+
+def _extract_reminder_list_status(command: HandleInboundConversationMessageCommand) -> str | None:
+    if command.message_type != "text" or command.text is None:
+        return None
+    normalized = command.text.strip().casefold()
+    mapping = {
+        "查看提醒": None,
+        "查看提醒列表": None,
+        "查看已取消提醒": "canceled",
+        "查看已完成提醒": "completed",
+        "reminder list": None,
+        "show reminders": None,
+    }
+    return mapping.get(normalized)
+
+
+def _build_status_title(noun: str, status: str | None) -> str:
+    if status == "pending":
+        return f"待办{noun}"
+    if status == "completed":
+        return f"已完成{noun}"
+    if status == "canceled":
+        return f"已取消{noun}"
+    if status == "archived":
+        return f"已归档{noun}"
+    if status == "active":
+        return f"活跃{noun}"
+    return noun
 
 
 def _handled_by_for_intent(intent: ConversationIntent) -> str | None:
