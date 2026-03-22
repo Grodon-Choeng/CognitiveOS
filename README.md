@@ -132,7 +132,7 @@ tests/
 - conversation intent 当前改为 `LLM 优先、规则兜底`：若配置了 `COGNITIVE_OS_OPENAI_API_KEY` 与 `COGNITIVE_OS_CONVERSATION_INTENT_MODEL`，会优先走 `llm_gateway` 做 reminder/task/memory 意图识别；未配置或模型失败时再退回显式规则。
 - 当前 reminder create / list / get / reply / cancel 路由已接入 application service，可用于最小 reminder 生命周期闭环验证。
 - 已支持 `GET /api/v1/reminders` 查看提醒列表、`GET /api/v1/reminders/{reminder_id}` 查询状态，以及 `POST /api/v1/reminders/{reminder_id}/cancel` 主动取消 pending reminder。
-- 已支持 `POST /api/v1/memories` 写入记忆、`GET /api/v1/memories` 查询记忆列表，以及 `GET /api/v1/memories/{memory_id}` 点查记忆。
+- 已支持 `POST /api/v1/memories` 写入记忆、`GET /api/v1/memories` 查询记忆列表、`GET /api/v1/memories/{memory_id}` 点查记忆，以及 `POST /api/v1/memories/{memory_id}/archive` 归档记忆。
 - 已支持 `POST /api/v1/tasks` 创建任务、`GET /api/v1/tasks` 查询任务列表、`GET /api/v1/tasks/{task_id}` 点查任务，以及 `POST /api/v1/tasks/{task_id}/complete` / `POST /api/v1/tasks/{task_id}/cancel` 完成或取消任务。
 - 统一 conversation 入口当前还支持显式口令分流：`待办：...` / `todo: ...` 会创建 task，`记住：...` / `记一下：...` 会写入 memory；reminder 续执行仍优先于这些规则。
 - `POST /api/v1/reminders` 当前也支持显式传入 `dispatch_chat_id` 与 `dispatch_thread_id`，便于通过 HTTP 创建群聊 / 话题内 reminder。

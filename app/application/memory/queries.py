@@ -10,4 +10,5 @@ class GetMemoryQuery:
 class ListMemoriesQuery:
     conversation_id: str | None = None
     session_id: str | None = None
+    status: str | None = None
     limit: int = 20

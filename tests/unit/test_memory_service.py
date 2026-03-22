@@ -7,12 +7,12 @@ from app.application.conversations.ports import (
     ConversationContextResolver,
     ResolvedConversationContext,
 )
-from app.application.memory.commands import CreateMemoryCommand
+from app.application.memory.commands import ArchiveMemoryCommand, CreateMemoryCommand
 from app.application.memory.errors import MemoryNotFoundError
 from app.application.memory.ports import MemoryUnitOfWork
 from app.application.memory.queries import ListMemoriesQuery
 from app.application.memory.service import MemoryApplicationService
-from app.domain.memory.entities import MemoryEntry
+from app.domain.memory.entities import MemoryEntry, MemoryStatus
 from app.domain.memory.repository import MemoryRepository
 from app.domain.memory.value_objects import MemoryId
 
@@ -32,6 +32,7 @@ class FakeMemoryRepository(MemoryRepository):
         *,
         conversation_id: str | None = None,
         session_id: str | None = None,
+        status: str | None = None,
         limit: int = 20,
     ) -> list[MemoryEntry]:
         memories = list(self.items.values())
@@ -40,7 +41,12 @@ class FakeMemoryRepository(MemoryRepository):
             memories = [memory for memory in memories if memory.conversation_id == conversation_id]
         if session_id is not None:
             memories = [memory for memory in memories if memory.session_id == session_id]
+        if status is not None:
+            memories = [memory for memory in memories if memory.status.value == status]
         return memories[:limit]
+
+    async def update(self, memory: MemoryEntry) -> None:
+        self.items[str(memory.memory_id.value)] = memory
 
 
 class FakeMemoryUnitOfWork(MemoryUnitOfWork):
@@ -126,6 +132,7 @@ async def test_create_memory_persists_memory() -> None:
     assert saved.content == "用户偏好：喜欢早上九点收到提醒"
     assert saved.conversation_id == "conversation-1"
     assert result.session_id == "session-test"
+    assert result.status == "active"
 
 
 @pytest.mark.asyncio
@@ -182,3 +189,53 @@ async def test_list_memories_returns_filtered_items() -> None:
     )
 
     assert [item.memory_id for item in result.items] == [first.memory_id]
+
+
+@pytest.mark.asyncio
+async def test_archive_memory_updates_status() -> None:
+    repository = FakeMemoryRepository()
+    service = MemoryApplicationService(
+        unit_of_work_factory=create_fake_unit_of_work_factory(repository),
+        conversation_context_resolver=FakeConversationContextResolver(),
+    )
+    created = await service.create_memory(CreateMemoryCommand(content="需要归档的记忆"))
+
+    archived = await service.archive_memory(ArchiveMemoryCommand(memory_id=created.memory_id))
+
+    assert archived.status == "archived"
+    assert repository.items[created.memory_id].status == MemoryStatus.ARCHIVED
+    assert repository.items[created.memory_id].archived_at is not None
+
+
+@pytest.mark.asyncio
+async def test_archive_memory_is_idempotent_for_archived_memory() -> None:
+    repository = FakeMemoryRepository()
+    service = MemoryApplicationService(
+        unit_of_work_factory=create_fake_unit_of_work_factory(repository),
+        conversation_context_resolver=FakeConversationContextResolver(),
+    )
+    created = await service.create_memory(CreateMemoryCommand(content="需要归档的记忆"))
+    repository.items[created.memory_id].status = MemoryStatus.ARCHIVED
+
+    archived = await service.archive_memory(ArchiveMemoryCommand(memory_id=created.memory_id))
+
+    assert archived.status == "archived"
+
+
+@pytest.mark.asyncio
+async def test_list_memories_defaults_to_active_only() -> None:
+    repository = FakeMemoryRepository()
+    service = MemoryApplicationService(
+        unit_of_work_factory=create_fake_unit_of_work_factory(repository),
+        conversation_context_resolver=FakeConversationContextResolver(),
+    )
+    active = await service.create_memory(CreateMemoryCommand(content="活跃记忆"))
+    archived = await service.create_memory(CreateMemoryCommand(content="归档记忆"))
+    repository.items[archived.memory_id].status = MemoryStatus.ARCHIVED
+    repository.items[archived.memory_id].archived_at = repository.items[
+        archived.memory_id
+    ].created_at
+
+    result = await service.list_memories(ListMemoriesQuery(limit=10))
+
+    assert [item.memory_id for item in result.items] == [active.memory_id]

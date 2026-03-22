@@ -5,8 +5,13 @@ from fastapi import APIRouter, Depends, Query
 
 from app.api.http.deps.services import get_memory_service
 from app.api.http.schemas.common import ErrorResponse
-from app.api.http.schemas.memory import CreateMemoryRequest, MemoryListResponse, MemoryResponse
-from app.application.memory.commands import CreateMemoryCommand
+from app.api.http.schemas.memory import (
+    CreateMemoryRequest,
+    MemoryListResponse,
+    MemoryResponse,
+    MemoryStatusFilter,
+)
+from app.application.memory.commands import ArchiveMemoryCommand, CreateMemoryCommand
 from app.application.memory.queries import ListMemoriesQuery
 from app.application.memory.service import MemoryApplicationService
 
@@ -46,12 +51,14 @@ async def list_memories(
     service: Annotated[MemoryApplicationService, Depends(get_memory_service)],
     conversation_id: str | None = None,
     session_id: str | None = None,
+    status: MemoryStatusFilter | None = None,
     limit: Annotated[int, Query(ge=1, le=100)] = 20,
 ) -> MemoryListResponse:
     result = await service.list_memories(
         ListMemoriesQuery(
             conversation_id=conversation_id,
             session_id=session_id,
+            status=status,
             limit=limit,
         )
     )
@@ -69,4 +76,18 @@ async def get_memory(
     service: Annotated[MemoryApplicationService, Depends(get_memory_service)],
 ) -> MemoryResponse:
     result = await service.get_memory(memory_id)
+    return MemoryResponse(**asdict(result))
+
+
+@router.post(
+    "/{memory_id}/archive",
+    response_model=MemoryResponse,
+    responses={404: {"model": ErrorResponse}, 409: {"model": ErrorResponse}},
+    summary="归档记忆",
+)
+async def archive_memory(
+    memory_id: str,
+    service: Annotated[MemoryApplicationService, Depends(get_memory_service)],
+) -> MemoryResponse:
+    result = await service.archive_memory(ArchiveMemoryCommand(memory_id=memory_id))
     return MemoryResponse(**asdict(result))

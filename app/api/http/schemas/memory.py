@@ -1,6 +1,9 @@
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, Field
+
+MemoryStatusFilter = Literal["active", "archived"]
 
 
 class CreateMemoryRequest(BaseModel):
@@ -17,8 +20,10 @@ class MemoryResponse(BaseModel):
     memory_id: str
     content: str
     created_at: datetime
+    status: str
     conversation_id: str | None = None
     session_id: str | None = None
+    archived_at: datetime | None = None
 
 
 class MemoryListResponse(BaseModel):

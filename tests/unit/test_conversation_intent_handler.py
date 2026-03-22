@@ -65,8 +65,10 @@ class FakeMemoryService:
             memory_id="00000000-0000-0000-0000-000000000001",
             content=content,
             created_at=datetime(2026, 3, 22, 9, 0, tzinfo=UTC),
+            status="active",
             conversation_id="conversation-1",
             session_id="session-1",
+            archived_at=None,
         )
 
 

@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 from fastapi.testclient import TestClient
 
 from app.api.http.deps.services import get_memory_service
-from app.application.memory.commands import CreateMemoryCommand
+from app.application.memory.commands import ArchiveMemoryCommand, CreateMemoryCommand
 from app.application.memory.dto import MemoryDTO, MemoryListDTO
 from app.application.memory.errors import MemoryNotFoundError
 from app.main import app
@@ -18,8 +18,10 @@ class FakeMemoryService:
             memory_id="00000000-0000-0000-0000-000000000001",
             content="用户偏好：早上九点提醒",
             created_at=datetime(2026, 3, 22, 9, 0, tzinfo=UTC),
+            status="active",
             conversation_id="conversation-1",
             session_id="session-1",
+            archived_at=None,
         )
 
     async def get_memory(self, memory_id: str) -> MemoryDTO:
@@ -29,8 +31,10 @@ class FakeMemoryService:
             memory_id="00000000-0000-0000-0000-000000000001",
             content="用户偏好：早上九点提醒",
             created_at=datetime(2026, 3, 22, 9, 0, tzinfo=UTC),
+            status="active",
             conversation_id="conversation-1",
             session_id="session-1",
+            archived_at=None,
         )
 
     async def list_memories(self, query: object) -> MemoryListDTO:
@@ -41,10 +45,24 @@ class FakeMemoryService:
                     memory_id="00000000-0000-0000-0000-000000000001",
                     content="用户偏好：早上九点提醒",
                     created_at=datetime(2026, 3, 22, 9, 0, tzinfo=UTC),
+                    status="active",
                     conversation_id="conversation-1",
                     session_id="session-1",
+                    archived_at=None,
                 )
             ]
+        )
+
+    async def archive_memory(self, command: ArchiveMemoryCommand) -> MemoryDTO:
+        _ = command
+        return MemoryDTO(
+            memory_id="00000000-0000-0000-0000-000000000001",
+            content="用户偏好：早上九点提醒",
+            created_at=datetime(2026, 3, 22, 9, 0, tzinfo=UTC),
+            status="archived",
+            conversation_id="conversation-1",
+            session_id="session-1",
+            archived_at=datetime(2026, 3, 22, 10, 0, tzinfo=UTC),
         )
 
 
@@ -79,6 +97,7 @@ def test_list_memories_route_returns_structured_response() -> None:
 
     assert response.status_code == 200
     assert len(response.json()["items"]) == 1
+    assert response.json()["items"][0]["status"] == "active"
 
 
 def test_get_memory_route_returns_structured_response() -> None:
@@ -92,6 +111,19 @@ def test_get_memory_route_returns_structured_response() -> None:
 
     assert response.status_code == 200
     assert response.json()["content"] == "用户偏好：早上九点提醒"
+
+
+def test_archive_memory_route_returns_structured_response() -> None:
+    app.dependency_overrides[get_memory_service] = override_memory_service
+
+    try:
+        with TestClient(app) as client:
+            response = client.post("/api/v1/memories/00000000-0000-0000-0000-000000000001/archive")
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "archived"
 
 
 def test_get_memory_route_returns_404_when_missing() -> None:

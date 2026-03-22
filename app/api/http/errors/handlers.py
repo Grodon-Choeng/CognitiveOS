@@ -2,7 +2,7 @@ from fastapi import FastAPI, Request, status
 from fastapi.responses import JSONResponse
 
 from app.application.audit.errors import AuditQueryValidationError
-from app.application.memory.errors import MemoryNotFoundError
+from app.application.memory.errors import MemoryNotFoundError, MemoryStateConflictError
 from app.application.reminders.errors import (
     ReminderNotFoundError,
     ReminderStateConflictError,
@@ -91,6 +91,16 @@ def register_exception_handlers(app: FastAPI) -> None:
     ) -> JSONResponse:
         return JSONResponse(
             status_code=status.HTTP_404_NOT_FOUND,
+            content={"detail": str(exc)},
+        )
+
+    @app.exception_handler(MemoryStateConflictError)
+    async def memory_state_conflict_handler(
+        _request: Request,
+        exc: MemoryStateConflictError,
+    ) -> JSONResponse:
+        return JSONResponse(
+            status_code=status.HTTP_409_CONFLICT,
             content={"detail": str(exc)},
         )
 

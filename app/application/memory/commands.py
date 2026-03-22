@@ -10,3 +10,8 @@ class CreateMemoryCommand:
     source_user_id: str | None = None
     source_chat_id: str | None = None
     source_thread_id: str | None = None
+
+
+@dataclass(slots=True, frozen=True)
+class ArchiveMemoryCommand:
+    memory_id: str

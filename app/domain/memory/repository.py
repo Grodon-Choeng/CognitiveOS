@@ -14,5 +14,8 @@ class MemoryRepository(Protocol):
         *,
         conversation_id: str | None = None,
         session_id: str | None = None,
+        status: str | None = None,
         limit: int = 20,
     ) -> list[MemoryEntry]: ...
+
+    async def update(self, memory: MemoryEntry) -> None: ...
