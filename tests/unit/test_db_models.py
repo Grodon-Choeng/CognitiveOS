@@ -11,9 +11,10 @@ from app.infrastructure.db.models.workflow_event import WorkflowEventLogModel
 
 def test_conversation_binding_model_declares_lookup_index() -> None:
     table = cast(Table, ConversationBindingModel.__table__)
-    index_names = {index.name for index in table.indexes}
+    index_map = {str(index.name): index for index in table.indexes}
 
-    assert "ix_conversation_bindings_lookup" in index_names
+    assert "ux_conversation_bindings_source" in index_map
+    assert index_map["ux_conversation_bindings_source"].unique is True
 
 
 def test_audit_models_declare_hot_path_indexes() -> None:

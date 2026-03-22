@@ -2,7 +2,8 @@ from dataclasses import dataclass
 from typing import Any
 from uuid import uuid4
 
-from sqlalchemy import select
+from sqlalchemy import func, select
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.application.conversations.ports import (
@@ -114,15 +115,11 @@ class SqlAlchemyConversationContextResolver(ConversationContextResolver):
         thread_id: str | None,
     ) -> _ConversationBinding | None:
         async with self.session_factory() as session:
-            statement = (
-                _build_binding_lookup_statement(
-                    channel=channel,
-                    user_identity=user_identity,
-                    chat_id=chat_id,
-                    thread_id=thread_id,
-                )
-                .order_by(ConversationBindingModel.updated_at.desc())
-                .limit(1)
+            statement = _build_binding_lookup_statement(
+                channel=channel,
+                user_identity=user_identity,
+                chat_id=chat_id,
+                thread_id=thread_id,
             )
             result = await session.execute(statement)
             model = result.scalar_one_or_none()
@@ -158,30 +155,16 @@ class SqlAlchemyConversationContextResolver(ConversationContextResolver):
         thread_id: str | None,
     ) -> None:
         async with self.session_factory() as session:
-            statement = _build_binding_lookup_statement(
+            statement = _build_binding_upsert_statement(
+                binding_id=self._new_id(),
+                conversation_id=conversation_id,
+                session_id=session_id,
                 channel=channel,
                 user_identity=user_identity,
                 chat_id=chat_id,
                 thread_id=thread_id,
             )
-            existing = (await session.execute(statement.limit(1))).scalar_one_or_none()
-            if existing is None:
-                session.add(
-                    ConversationBindingModel(
-                        binding_id=self._new_id(),
-                        conversation_id=conversation_id,
-                        session_id=session_id,
-                        channel=channel,
-                        user_identity=user_identity,
-                        chat_id=chat_id,
-                        thread_id=thread_id,
-                    )
-                )
-            else:
-                existing.conversation_id = conversation_id
-                existing.session_id = session_id
-                existing.chat_id = chat_id
-                existing.thread_id = thread_id
+            await session.execute(statement)
             await session.commit()
 
     @staticmethod
@@ -222,3 +205,34 @@ def _build_binding_lookup_statement(
     else:
         statement = statement.where(ConversationBindingModel.thread_id == thread_id)
     return statement
+
+
+def _build_binding_upsert_statement(
+    *,
+    binding_id: str,
+    conversation_id: str,
+    session_id: str,
+    channel: str,
+    user_identity: str,
+    chat_id: str | None,
+    thread_id: str | None,
+) -> Any:
+    insert_statement = insert(ConversationBindingModel).values(
+        binding_id=binding_id,
+        conversation_id=conversation_id,
+        session_id=session_id,
+        channel=channel,
+        user_identity=user_identity,
+        chat_id=chat_id,
+        thread_id=thread_id,
+    )
+    return insert_statement.on_conflict_do_update(
+        constraint="ux_conversation_bindings_source",
+        set_={
+            "conversation_id": insert_statement.excluded.conversation_id,
+            "session_id": insert_statement.excluded.session_id,
+            "chat_id": insert_statement.excluded.chat_id,
+            "thread_id": insert_statement.excluded.thread_id,
+            "updated_at": func.now(),
+        },
+    )

@@ -10,11 +10,13 @@ class ConversationBindingModel(Base):
     __tablename__ = "conversation_bindings"
     __table_args__ = (
         Index(
-            "ix_conversation_bindings_lookup",
+            "ux_conversation_bindings_source",
             "channel",
             "user_identity",
             "chat_id",
             "thread_id",
+            unique=True,
+            postgresql_nulls_not_distinct=True,
         ),
     )
 
