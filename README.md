@@ -131,6 +131,7 @@ tests/
 - 当前最小入站续执行逻辑：仅对飞书 `p2p` 文本消息生效，并按 `sender_open_id` 关联该用户最近一个 `pending` reminder。
 - 当前 reminder create / reply 路由已接入 application service，可用于最小 reminder 创建与回复闭环验证。
 - `POST /api/v1/reminders` 当前也支持显式传入 `dispatch_chat_id` 与 `dispatch_thread_id`，便于通过 HTTP 创建群聊 / 话题内 reminder。
+- reminder 与 conversation 入口中，`thread_id` 不能脱离对应的 `chat_id` 单独提供，避免写入不可解析的线程上下文。
 - reminder 创建阶段若 Temporal 工作流启动失败，当前会把 reminder 标记为 `failed`，并通过 HTTP `503` 返回错误，避免留下“仍是 pending 但实际不可继续”的脏状态。
 - 数据库、Temporal、消息发送适配器都已补齐骨架与契约，后续可在此基础上继续实现。
 - 更详细的技术立场见 `docs/tech-decisions.md`。

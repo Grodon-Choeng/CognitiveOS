@@ -68,3 +68,19 @@ def test_receive_conversation_message_route_rejects_invalid_payload() -> None:
         )
 
     assert response.status_code == 422
+
+
+def test_receive_conversation_message_route_rejects_thread_without_chat() -> None:
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/v1/conversations/messages",
+            json={
+                "channel": "feishu",
+                "message_type": "text",
+                "user_identity": "ou_123",
+                "thread_id": "ot_thread_123",
+                "text": "你好",
+            },
+        )
+
+    assert response.status_code == 422

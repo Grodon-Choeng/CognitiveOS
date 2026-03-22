@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from app.infrastructure.types import JSONObject
 
@@ -17,6 +17,12 @@ class ConversationMessageRequest(BaseModel):
         default_factory=dict,
         description="原始入站载荷；如果未提供，将由当前请求体自动构造。",
     )
+
+    @model_validator(mode="after")
+    def validate_thread_fields(self) -> "ConversationMessageRequest":
+        if self.thread_id is not None and self.chat_id is None:
+            raise ValueError("thread_id 不能脱离 chat_id 单独提供。")
+        return self
 
 
 class ConversationMessageResponse(BaseModel):

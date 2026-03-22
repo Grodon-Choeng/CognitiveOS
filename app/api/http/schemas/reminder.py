@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class CreateReminderRequest(BaseModel):
@@ -17,6 +17,22 @@ class CreateReminderRequest(BaseModel):
     dispatch_recipient_id: str = Field(default="local-user", description="提醒消息接收目标。")
     dispatch_chat_id: str | None = Field(default=None, description="提醒消息投递会话标识。")
     dispatch_thread_id: str | None = Field(default=None, description="提醒消息投递话题标识。")
+
+    @model_validator(mode="after")
+    def validate_thread_fields(self) -> "CreateReminderRequest":
+        _validate_chat_thread_pair(
+            chat_id=self.source_chat_id,
+            thread_id=self.source_thread_id,
+            chat_label="source_chat_id",
+            thread_label="source_thread_id",
+        )
+        _validate_chat_thread_pair(
+            chat_id=self.dispatch_chat_id,
+            thread_id=self.dispatch_thread_id,
+            chat_label="dispatch_chat_id",
+            thread_label="dispatch_thread_id",
+        )
+        return self
 
 
 class ReplyReminderRequest(BaseModel):
@@ -39,3 +55,14 @@ class ReminderReplyResponse(BaseModel):
     reply_text: str
     accepted: bool
     status: str
+
+
+def _validate_chat_thread_pair(
+    *,
+    chat_id: str | None,
+    thread_id: str | None,
+    chat_label: str,
+    thread_label: str,
+) -> None:
+    if thread_id is not None and chat_id is None:
+        raise ValueError(f"{thread_label} 不能脱离 {chat_label} 单独提供。")

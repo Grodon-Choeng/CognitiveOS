@@ -156,3 +156,33 @@ def test_create_reminder_route_returns_503_when_workflow_start_fails() -> None:
     assert response.json() == {
         "detail": "提醒工作流启动失败：RuntimeError: Temporal 不可用",
     }
+
+
+def test_create_reminder_route_rejects_dispatch_thread_without_chat() -> None:
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/v1/reminders",
+            json={
+                "text": "群聊线程里提醒我打卡",
+                "remind_at": "2026-03-20T09:00:00+08:00",
+                "timezone": "Asia/Shanghai",
+                "dispatch_thread_id": "ot_thread_123",
+            },
+        )
+
+    assert response.status_code == 422
+
+
+def test_create_reminder_route_rejects_source_thread_without_chat() -> None:
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/v1/reminders",
+            json={
+                "text": "来源线程不完整",
+                "remind_at": "2026-03-20T09:00:00+08:00",
+                "timezone": "Asia/Shanghai",
+                "source_thread_id": "source_thread_123",
+            },
+        )
+
+    assert response.status_code == 422
