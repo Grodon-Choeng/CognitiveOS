@@ -7,7 +7,7 @@ from app.application.conversations.ports import (
     ConversationContextResolver,
     ResolvedConversationContext,
 )
-from app.application.tasks.commands import CompleteTaskCommand, CreateTaskCommand
+from app.application.tasks.commands import CancelTaskCommand, CompleteTaskCommand, CreateTaskCommand
 from app.application.tasks.errors import TaskNotFoundError, TaskStateConflictError
 from app.application.tasks.ports import TaskUnitOfWork
 from app.application.tasks.queries import ListTasksQuery
@@ -201,3 +201,47 @@ async def test_complete_task_rejects_non_pending_task() -> None:
 
     with pytest.raises(TaskStateConflictError):
         await service.complete_task(CompleteTaskCommand(task_id=created.task_id))
+
+
+@pytest.mark.asyncio
+async def test_cancel_task_updates_status() -> None:
+    repository = FakeTaskRepository()
+    service = TaskApplicationService(
+        unit_of_work_factory=create_fake_unit_of_work_factory(repository),
+        conversation_context_resolver=FakeConversationContextResolver(),
+    )
+    created = await service.create_task(CreateTaskCommand(title="整理今天的会议纪要"))
+
+    canceled = await service.cancel_task(CancelTaskCommand(task_id=created.task_id))
+
+    assert canceled.status == "canceled"
+    assert repository.items[created.task_id].status == TaskStatus.CANCELED
+
+
+@pytest.mark.asyncio
+async def test_cancel_task_is_idempotent_for_already_canceled_task() -> None:
+    repository = FakeTaskRepository()
+    service = TaskApplicationService(
+        unit_of_work_factory=create_fake_unit_of_work_factory(repository),
+        conversation_context_resolver=FakeConversationContextResolver(),
+    )
+    created = await service.create_task(CreateTaskCommand(title="整理今天的会议纪要"))
+    repository.items[created.task_id].status = TaskStatus.CANCELED
+
+    canceled = await service.cancel_task(CancelTaskCommand(task_id=created.task_id))
+
+    assert canceled.status == "canceled"
+
+
+@pytest.mark.asyncio
+async def test_cancel_task_rejects_non_pending_task() -> None:
+    repository = FakeTaskRepository()
+    service = TaskApplicationService(
+        unit_of_work_factory=create_fake_unit_of_work_factory(repository),
+        conversation_context_resolver=FakeConversationContextResolver(),
+    )
+    created = await service.create_task(CreateTaskCommand(title="整理今天的会议纪要"))
+    repository.items[created.task_id].status = TaskStatus.COMPLETED
+
+    with pytest.raises(TaskStateConflictError):
+        await service.cancel_task(CancelTaskCommand(task_id=created.task_id))

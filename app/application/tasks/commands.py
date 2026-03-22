@@ -15,3 +15,8 @@ class CreateTaskCommand:
 @dataclass(slots=True, frozen=True)
 class CompleteTaskCommand:
     task_id: str
+
+
+@dataclass(slots=True, frozen=True)
+class CancelTaskCommand:
+    task_id: str

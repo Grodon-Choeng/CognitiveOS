@@ -11,7 +11,7 @@ from app.api.http.schemas.task import (
     TaskResponse,
     TaskStatusFilter,
 )
-from app.application.tasks.commands import CompleteTaskCommand, CreateTaskCommand
+from app.application.tasks.commands import CancelTaskCommand, CompleteTaskCommand, CreateTaskCommand
 from app.application.tasks.queries import ListTasksQuery
 from app.application.tasks.service import TaskApplicationService
 
@@ -89,4 +89,18 @@ async def complete_task(
     service: Annotated[TaskApplicationService, Depends(get_task_service)],
 ) -> TaskResponse:
     result = await service.complete_task(CompleteTaskCommand(task_id=task_id))
+    return TaskResponse(**asdict(result))
+
+
+@router.post(
+    "/{task_id}/cancel",
+    response_model=TaskResponse,
+    responses={404: {"model": ErrorResponse}, 409: {"model": ErrorResponse}},
+    summary="取消任务",
+)
+async def cancel_task(
+    task_id: str,
+    service: Annotated[TaskApplicationService, Depends(get_task_service)],
+) -> TaskResponse:
+    result = await service.cancel_task(CancelTaskCommand(task_id=task_id))
     return TaskResponse(**asdict(result))

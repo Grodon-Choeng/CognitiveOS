@@ -1,7 +1,7 @@
 from datetime import UTC, datetime
 
 from app.application.conversations.ports import ConversationContextResolver
-from app.application.tasks.commands import CompleteTaskCommand, CreateTaskCommand
+from app.application.tasks.commands import CancelTaskCommand, CompleteTaskCommand, CreateTaskCommand
 from app.application.tasks.dto import TaskDTO, TaskListDTO
 from app.application.tasks.errors import TaskNotFoundError, TaskStateConflictError
 from app.application.tasks.ports import TaskUnitOfWorkFactory
@@ -77,6 +77,24 @@ class TaskApplicationService:
 
             task.status = TaskStatus.COMPLETED
             task.completed_at = datetime.now(UTC)
+            await unit_of_work.tasks.update(task)
+            await unit_of_work.commit()
+
+        return self._to_dto(task)
+
+    async def cancel_task(self, command: CancelTaskCommand) -> TaskDTO:
+        parsed_task_id = TaskId.from_string(command.task_id)
+
+        async with self.unit_of_work_factory() as unit_of_work:
+            task = await unit_of_work.tasks.get(parsed_task_id)
+            if task is None:
+                raise TaskNotFoundError(f"任务不存在：{command.task_id}")
+            if task.status == TaskStatus.CANCELED:
+                return self._to_dto(task)
+            if task.status != TaskStatus.PENDING:
+                raise TaskStateConflictError(f"任务当前状态不允许取消：{task.status.value}")
+
+            task.status = TaskStatus.CANCELED
             await unit_of_work.tasks.update(task)
             await unit_of_work.commit()
 
