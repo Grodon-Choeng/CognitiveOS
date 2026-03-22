@@ -12,6 +12,7 @@ from app.application.conversations.ports import ConversationContextResolver
 from app.application.conversations.service import ConversationApplicationService
 from app.application.memory.ports import MemoryUnitOfWorkFactory
 from app.application.memory.service import MemoryApplicationService
+from app.application.overview.service import OverviewApplicationService
 from app.application.reminders.conversation_handler import ReminderConversationHandler
 from app.application.reminders.ports import ReminderUnitOfWorkFactory
 from app.application.reminders.service import ReminderApplicationService
@@ -102,6 +103,17 @@ class ApplicationContainer:
         return TaskApplicationService(
             unit_of_work_factory=self.build_task_unit_of_work_factory(),
             conversation_context_resolver=self.build_conversation_context_resolver(),
+        )
+
+    def build_overview_service(self) -> OverviewApplicationService:
+        return self.overview_service
+
+    @cached_property
+    def overview_service(self) -> OverviewApplicationService:
+        return OverviewApplicationService(
+            reminder_service=self.build_reminder_service(),
+            task_service=self.build_task_service(),
+            memory_service=self.build_memory_service(),
         )
 
     def build_reminder_unit_of_work_factory(self) -> ReminderUnitOfWorkFactory:
