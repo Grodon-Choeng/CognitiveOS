@@ -6,6 +6,8 @@ from app.application.audit.service import AuditQueryService
 from app.application.conversations.handlers import ConversationInboundHandler
 from app.application.conversations.ports import ConversationContextResolver
 from app.application.conversations.service import ConversationApplicationService
+from app.application.memory.ports import MemoryUnitOfWorkFactory
+from app.application.memory.service import MemoryApplicationService
 from app.application.reminders.conversation_handler import ReminderConversationHandler
 from app.application.reminders.ports import ReminderUnitOfWorkFactory
 from app.application.reminders.service import ReminderApplicationService
@@ -13,7 +15,7 @@ from app.bootstrap.inbound_events import ConversationInboundEventRecorder
 from app.config.settings import Settings, get_settings
 from app.infrastructure.conversations import SqlAlchemyConversationContextResolver
 from app.infrastructure.db.session import get_session_factory
-from app.infrastructure.db.uow import SQLAlchemyReminderUnitOfWork
+from app.infrastructure.db.uow import SQLAlchemyMemoryUnitOfWork, SQLAlchemyReminderUnitOfWork
 from app.infrastructure.integrations.messaging import (
     FeishuLongConnectionListener,
     FeishuMessagingAdapter,
@@ -69,9 +71,25 @@ class ApplicationContainer:
             conversation_context_resolver=self.build_conversation_context_resolver(),
         )
 
+    def build_memory_service(self) -> MemoryApplicationService:
+        return self.memory_service
+
+    @cached_property
+    def memory_service(self) -> MemoryApplicationService:
+        return MemoryApplicationService(
+            unit_of_work_factory=self.build_memory_unit_of_work_factory(),
+            conversation_context_resolver=self.build_conversation_context_resolver(),
+        )
+
     def build_reminder_unit_of_work_factory(self) -> ReminderUnitOfWorkFactory:
         def create_unit_of_work() -> SQLAlchemyReminderUnitOfWork:
             return SQLAlchemyReminderUnitOfWork(self.session_factory)
+
+        return create_unit_of_work
+
+    def build_memory_unit_of_work_factory(self) -> MemoryUnitOfWorkFactory:
+        def create_unit_of_work() -> SQLAlchemyMemoryUnitOfWork:
+            return SQLAlchemyMemoryUnitOfWork(self.session_factory)
 
         return create_unit_of_work
 

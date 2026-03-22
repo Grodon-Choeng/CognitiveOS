@@ -131,6 +131,7 @@ tests/
 - 当前最小入站续执行逻辑：仅对飞书 `p2p` 文本消息生效，并按 `sender_open_id` 关联该用户最近一个 `pending` reminder。
 - 当前 reminder create / list / get / reply / cancel 路由已接入 application service，可用于最小 reminder 生命周期闭环验证。
 - 已支持 `GET /api/v1/reminders` 查看提醒列表、`GET /api/v1/reminders/{reminder_id}` 查询状态，以及 `POST /api/v1/reminders/{reminder_id}/cancel` 主动取消 pending reminder。
+- 已支持 `POST /api/v1/memories` 写入记忆、`GET /api/v1/memories` 查询记忆列表，以及 `GET /api/v1/memories/{memory_id}` 点查记忆。
 - `POST /api/v1/reminders` 当前也支持显式传入 `dispatch_chat_id` 与 `dispatch_thread_id`，便于通过 HTTP 创建群聊 / 话题内 reminder。
 - reminder 与 conversation 入口中，`thread_id` 不能脱离对应的 `chat_id` 单独提供，避免写入不可解析的线程上下文。
 - `remind_at` 当前要求显式带时区；`text` 类型的 conversation 消息也必须提供非空 `text` 内容。
