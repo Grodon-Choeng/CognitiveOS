@@ -3,6 +3,7 @@ from datetime import UTC, datetime
 
 import pytest
 
+from app.application.audit.dto import AuditEventDTO, AuditEventPageDTO
 from app.application.memory.dto import MemoryDTO, MemoryListDTO
 from app.application.overview.queries import GetOverviewQuery
 from app.application.overview.service import OverviewApplicationService
@@ -68,12 +69,62 @@ class FakeMemoryService:
         )
 
 
+@dataclass
+class FakeAuditService:
+    async def list_timeline(
+        self,
+        *,
+        conversation_id: str | None = None,
+        session_id: str | None = None,
+        success: bool | None = None,
+        channel: str | None = None,
+        provider: str | None = None,
+        tool_name: str | None = None,
+        workflow_type: str | None = None,
+        recorded_after: object | None = None,
+        recorded_before: object | None = None,
+        cursor: str | None = None,
+        limit: int = 50,
+    ) -> AuditEventPageDTO:
+        _ = (
+            conversation_id,
+            session_id,
+            success,
+            channel,
+            provider,
+            tool_name,
+            workflow_type,
+            recorded_after,
+            recorded_before,
+            cursor,
+            limit,
+        )
+        return AuditEventPageDTO(
+            items=[
+                AuditEventDTO(
+                    kind="message",
+                    event_id="evt-1",
+                    recorded_at="2026-03-22T10:00:00+00:00",
+                    conversation_id="conversation-1",
+                    session_id="session-1",
+                    trace_id=None,
+                    chain_id=None,
+                    request_id=None,
+                    success=True,
+                    summary="inbound:feishu:text",
+                    payload={"text": "你好"},
+                )
+            ]
+        )
+
+
 @pytest.mark.asyncio
 async def test_overview_service_aggregates_sections() -> None:
     service = OverviewApplicationService(
         reminder_service=FakeReminderService(),
         task_service=FakeTaskService(),
         memory_service=FakeMemoryService(),
+        audit_service=FakeAuditService(),
     )
 
     result = await service.get_overview(
@@ -91,3 +142,4 @@ async def test_overview_service_aggregates_sections() -> None:
     assert result.pending_reminders[0].reminder_id == "r-1"
     assert result.pending_tasks[0].task_id == "t-1"
     assert result.active_memories[0].memory_id == "m-1"
+    assert result.recent_activity[0].event_id == "evt-1"

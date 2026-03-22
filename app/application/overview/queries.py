@@ -8,3 +8,4 @@ class GetOverviewQuery:
     reminder_limit: int = 5
     task_limit: int = 5
     memory_limit: int = 5
+    recent_activity_limit: int = 5

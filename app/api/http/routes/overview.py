@@ -4,6 +4,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Query
 
 from app.api.http.deps.services import get_overview_service
+from app.api.http.schemas.common import AuditEventResponse
 from app.api.http.schemas.memory import MemoryResponse
 from app.api.http.schemas.overview import OverviewResponse
 from app.api.http.schemas.reminder import ReminderResponse
@@ -26,6 +27,7 @@ async def get_overview(
     reminder_limit: Annotated[int, Query(ge=1, le=20)] = 5,
     task_limit: Annotated[int, Query(ge=1, le=20)] = 5,
     memory_limit: Annotated[int, Query(ge=1, le=20)] = 5,
+    recent_activity_limit: Annotated[int, Query(ge=1, le=20)] = 5,
 ) -> OverviewResponse:
     result = await service.get_overview(
         GetOverviewQuery(
@@ -34,6 +36,7 @@ async def get_overview(
             reminder_limit=reminder_limit,
             task_limit=task_limit,
             memory_limit=memory_limit,
+            recent_activity_limit=recent_activity_limit,
         )
     )
     return OverviewResponse(
@@ -44,4 +47,5 @@ async def get_overview(
         ],
         pending_tasks=[TaskResponse(**asdict(task)) for task in result.pending_tasks],
         active_memories=[MemoryResponse(**asdict(memory)) for memory in result.active_memories],
+        recent_activity=[AuditEventResponse(**asdict(event)) for event in result.recent_activity],
     )

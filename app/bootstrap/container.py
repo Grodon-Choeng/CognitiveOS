@@ -114,6 +114,7 @@ class ApplicationContainer:
             reminder_service=self.build_reminder_service(),
             task_service=self.build_task_service(),
             memory_service=self.build_memory_service(),
+            audit_service=self.build_audit_service(),
         )
 
     def build_reminder_unit_of_work_factory(self) -> ReminderUnitOfWorkFactory:

@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 from fastapi.testclient import TestClient
 
 from app.api.http.deps.services import get_overview_service
+from app.application.audit.dto import AuditEventDTO
 from app.application.memory.dto import MemoryDTO
 from app.application.overview.dto import OverviewDTO
 from app.application.overview.queries import GetOverviewQuery
@@ -53,6 +54,21 @@ class FakeOverviewService:
                     archived_at=None,
                 )
             ],
+            recent_activity=[
+                AuditEventDTO(
+                    kind="message",
+                    event_id="evt-1",
+                    recorded_at="2026-03-22T10:00:00+00:00",
+                    conversation_id="conversation-1",
+                    session_id="session-1",
+                    trace_id=None,
+                    chain_id=None,
+                    request_id=None,
+                    success=True,
+                    summary="inbound:feishu:text",
+                    payload={"text": "你好"},
+                )
+            ],
         )
 
 
@@ -75,3 +91,4 @@ def test_get_overview_route_returns_structured_response() -> None:
     assert body["pending_reminders"][0]["reminder_id"] == "r-1"
     assert body["pending_tasks"][0]["task_id"] == "t-1"
     assert body["active_memories"][0]["memory_id"] == "m-1"
+    assert body["recent_activity"][0]["event_id"] == "evt-1"

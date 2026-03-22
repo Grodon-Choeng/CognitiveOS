@@ -1,5 +1,7 @@
+from datetime import datetime
 from typing import Protocol
 
+from app.application.audit.dto import AuditEventPageDTO
 from app.application.memory.dto import MemoryListDTO
 from app.application.memory.queries import ListMemoriesQuery
 from app.application.overview.dto import OverviewDTO
@@ -22,6 +24,24 @@ class MemoryOverviewReader(Protocol):
     async def list_memories(self, query: ListMemoriesQuery) -> MemoryListDTO: ...
 
 
+class ActivityOverviewReader(Protocol):
+    async def list_timeline(
+        self,
+        *,
+        conversation_id: str | None = None,
+        session_id: str | None = None,
+        success: bool | None = None,
+        channel: str | None = None,
+        provider: str | None = None,
+        tool_name: str | None = None,
+        workflow_type: str | None = None,
+        recorded_after: datetime | None = None,
+        recorded_before: datetime | None = None,
+        cursor: str | None = None,
+        limit: int = 50,
+    ) -> AuditEventPageDTO: ...
+
+
 class OverviewApplicationService:
     def __init__(
         self,
@@ -29,10 +49,12 @@ class OverviewApplicationService:
         reminder_service: ReminderOverviewReader,
         task_service: TaskOverviewReader,
         memory_service: MemoryOverviewReader,
+        audit_service: ActivityOverviewReader,
     ) -> None:
         self.reminder_service = reminder_service
         self.task_service = task_service
         self.memory_service = memory_service
+        self.audit_service = audit_service
 
     async def get_overview(self, query: GetOverviewQuery) -> OverviewDTO:
         reminder_list = await self.reminder_service.list_reminders(
@@ -59,10 +81,16 @@ class OverviewApplicationService:
                 limit=query.memory_limit,
             )
         )
+        activity_page = await self.audit_service.list_timeline(
+            conversation_id=query.conversation_id,
+            session_id=query.session_id,
+            limit=query.recent_activity_limit,
+        )
         return OverviewDTO(
             conversation_id=query.conversation_id,
             session_id=query.session_id,
             pending_reminders=reminder_list.items,
             pending_tasks=task_list.items,
             active_memories=memory_list.items,
+            recent_activity=activity_page.items,
         )

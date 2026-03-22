@@ -2,6 +2,7 @@ from datetime import UTC, datetime
 
 import pytest
 
+from app.application.audit.dto import AuditEventDTO
 from app.application.conversations.commands import HandleInboundConversationMessageCommand
 from app.application.conversations.intent_handler import (
     ConversationIntent,
@@ -262,6 +263,21 @@ class FakeOverviewService:
                     conversation_id=query.conversation_id,
                     session_id=query.session_id,
                     archived_at=None,
+                )
+            ],
+            recent_activity=[
+                AuditEventDTO(
+                    kind="message",
+                    event_id="evt-1",
+                    recorded_at="2026-03-22T10:00:00+00:00",
+                    conversation_id=query.conversation_id,
+                    session_id=query.session_id,
+                    trace_id=None,
+                    chain_id=None,
+                    request_id=None,
+                    success=True,
+                    summary="inbound:feishu:text",
+                    payload={"text": "你好"},
                 )
             ],
         )

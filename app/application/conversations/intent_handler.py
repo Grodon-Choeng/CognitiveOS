@@ -726,6 +726,11 @@ def _format_overview_text(overview: OverviewDTO) -> str:
     else:
         lines.append("活跃记忆：无")
 
+    if overview.recent_activity:
+        lines.append("最近活动：")
+        for event in overview.recent_activity:
+            lines.append(f"- [{event.kind}] {event.summary}")
+
     return "\n".join(lines)
 
 
