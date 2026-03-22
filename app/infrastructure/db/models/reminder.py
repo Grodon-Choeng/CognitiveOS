@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import DateTime, String, func
+from sqlalchemy import DateTime, Index, String, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.infrastructure.db.base import Base
@@ -8,6 +8,37 @@ from app.infrastructure.db.base import Base
 
 class ReminderModel(Base):
     __tablename__ = "reminders"
+    __table_args__ = (
+        Index("ix_reminders_conversation_id", "conversation_id"),
+        Index(
+            "ix_reminders_dispatch_channel_recipient",
+            "dispatch_channel",
+            "dispatch_recipient_id",
+        ),
+        Index("ix_reminders_dispatch_message_id", "dispatch_message_id"),
+        Index(
+            "ix_reminders_pending_conversation_lookup",
+            "status",
+            "conversation_id",
+            "created_at",
+        ),
+        Index(
+            "ix_reminders_pending_dispatch_lookup",
+            "status",
+            "dispatch_channel",
+            "dispatch_recipient_id",
+            "created_at",
+        ),
+        Index(
+            "ix_reminders_pending_dispatch_chat_lookup",
+            "status",
+            "dispatch_channel",
+            "dispatch_recipient_id",
+            "dispatch_chat_id",
+            "dispatch_thread_id",
+            "created_at",
+        ),
+    )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     text: Mapped[str] = mapped_column(String(500))

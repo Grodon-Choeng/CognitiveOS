@@ -5,6 +5,7 @@ from sqlalchemy import Table
 from app.infrastructure.db.models.conversation_binding import ConversationBindingModel
 from app.infrastructure.db.models.message_event import MessageEventLogModel
 from app.infrastructure.db.models.model_invocation import ModelInvocationLogModel
+from app.infrastructure.db.models.reminder import ReminderModel
 from app.infrastructure.db.models.tool_invocation import ToolInvocationLogModel
 from app.infrastructure.db.models.workflow_event import WorkflowEventLogModel
 
@@ -35,3 +36,12 @@ def test_audit_models_declare_hot_path_indexes() -> None:
     assert "ix_model_invocation_logs_conversation_id" in model_index_names
     assert "ix_model_invocation_logs_provider" in model_index_names
     assert "ix_tool_invocation_logs_conversation_id" in tool_index_names
+
+
+def test_reminder_model_declares_lookup_indexes() -> None:
+    reminder_table = cast(Table, ReminderModel.__table__)
+    reminder_index_names = {str(index.name) for index in reminder_table.indexes}
+
+    assert "ix_reminders_pending_conversation_lookup" in reminder_index_names
+    assert "ix_reminders_pending_dispatch_lookup" in reminder_index_names
+    assert "ix_reminders_pending_dispatch_chat_lookup" in reminder_index_names
