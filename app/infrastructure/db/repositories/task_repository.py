@@ -27,6 +27,7 @@ class SQLAlchemyTaskRepository(TaskRepository):
         conversation_id: str | None = None,
         session_id: str | None = None,
         status: str | None = None,
+        query: str | None = None,
         limit: int = 20,
     ) -> list[Task]:
         statement = select(TaskModel).order_by(TaskModel.created_at.desc()).limit(limit)
@@ -36,6 +37,8 @@ class SQLAlchemyTaskRepository(TaskRepository):
             statement = statement.where(TaskModel.session_id == session_id)
         if status is not None:
             statement = statement.where(TaskModel.status == status)
+        if query is not None:
+            statement = statement.where(TaskModel.title.ilike(f"%{query}%"))
 
         models = (await self.session.execute(statement)).scalars().all()
         return [self._to_domain(model) for model in models]

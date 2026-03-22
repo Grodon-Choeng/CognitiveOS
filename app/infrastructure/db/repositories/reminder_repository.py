@@ -30,6 +30,7 @@ class SQLAlchemyReminderRepository(ReminderRepository):
         conversation_id: str | None = None,
         session_id: str | None = None,
         status: str | None = None,
+        query: str | None = None,
         limit: int = 20,
     ) -> list[Reminder]:
         statement = select(ReminderModel).order_by(ReminderModel.created_at.desc()).limit(limit)
@@ -39,6 +40,8 @@ class SQLAlchemyReminderRepository(ReminderRepository):
             statement = statement.where(ReminderModel.session_id == session_id)
         if status is not None:
             statement = statement.where(ReminderModel.status == status)
+        if query is not None:
+            statement = statement.where(ReminderModel.text.ilike(f"%{query}%"))
 
         models = (await self.session.execute(statement)).scalars().all()
         return [self._to_domain(model) for model in models]

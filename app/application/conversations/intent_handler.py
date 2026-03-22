@@ -263,6 +263,7 @@ class IntentConversationHandler:
                         conversation_id=conversation_id,
                         session_id=session_id,
                         status=decision.status,
+                        query=decision.content,
                         limit=5,
                     )
                 )
@@ -272,7 +273,11 @@ class IntentConversationHandler:
                     session_id=session_id,
                     handled_by="task",
                     reason=f"task_listed_via_{decision.source}",
-                    response_text=_format_task_list_text(task_list, decision.status),
+                    response_text=_format_task_list_text(
+                        task_list,
+                        decision.status,
+                        decision.content,
+                    ),
                 )
             if decision.intent == ConversationIntent.TASK_COMPLETE:
                 if decision.content:
@@ -353,6 +358,7 @@ class IntentConversationHandler:
                         conversation_id=conversation_id,
                         session_id=session_id,
                         status=decision.status,
+                        query=decision.content,
                         limit=5,
                     )
                 )
@@ -362,7 +368,11 @@ class IntentConversationHandler:
                     session_id=session_id,
                     handled_by="reminder",
                     reason=f"reminder_listed_via_{decision.source}",
-                    response_text=_format_reminder_list_text(reminder_list, decision.status),
+                    response_text=_format_reminder_list_text(
+                        reminder_list,
+                        decision.status,
+                        decision.content,
+                    ),
                 )
             if decision.intent == ConversationIntent.MEMORY_WRITE and decision.content is not None:
                 await self.memory_service.create_memory(
@@ -557,6 +567,17 @@ def _classify_with_rules(
             source="rules",
         )
 
+    task_search_query = _extract_task_search_query(command)
+    if task_search_query is not None:
+        return ConversationIntentDecision(
+            intent=ConversationIntent.TASK_LIST,
+            content=task_search_query,
+            status=None,
+            remind_at=None,
+            timezone=None,
+            source="rules",
+        )
+
     matched, content = _extract_action_content(
         command,
         prefixes=("取消任务", "取消待办", "cancel task"),
@@ -643,6 +664,17 @@ def _classify_with_rules(
             source="rules",
         )
 
+    reminder_search_query = _extract_reminder_search_query(command)
+    if reminder_search_query is not None:
+        return ConversationIntentDecision(
+            intent=ConversationIntent.REMINDER_LIST,
+            content=reminder_search_query,
+            status=None,
+            remind_at=None,
+            timezone=None,
+            source="rules",
+        )
+
     if _is_overview_request(command):
         return ConversationIntentDecision(
             intent=ConversationIntent.OVERVIEW_SHOW,
@@ -687,10 +719,12 @@ def _build_intent_system_prompt() -> str:
         "并提取提醒正文、带时区的 ISO8601 提醒时间，以及 IANA 时区字符串；"
         "如果文本是在要求取消当前会话最近一个提醒，返回 reminder_cancel；"
         "如果文本是在要求查看当前会话里的提醒列表，返回 reminder_list；"
+        "如果文本是在要求按关键词查找提醒，也返回 reminder_list，并把关键词写到 content；"
         "如果文本是在表达待办事项，返回 task_create；"
         "如果文本是在要求完成当前会话里最近一个待办，返回 task_complete；"
         "如果文本是在要求取消当前会话里最近一个待办，返回 task_cancel；"
         "如果文本是在要求查看当前会话里的待办列表，返回 task_list；"
+        "如果文本是在要求按关键词查找待办，也返回 task_list，并把关键词写到 content；"
         "如果文本是在要求系统记住某件事实或偏好，返回 memory_write；"
         "如果文本是在要求归档当前会话里最近一条活跃记忆，返回 memory_archive；"
         "如果文本是在要求查看当前会话里的记忆列表，返回 memory_list；"
@@ -945,8 +979,12 @@ def _format_overview_context_hint(overview: OverviewDTO) -> str:
     return "\n".join(lines) if lines else "当前会话暂无上下文。"
 
 
-def _format_task_list_text(task_list: TaskListDTO, status: str | None) -> str:
-    title = _build_status_title("任务", status)
+def _format_task_list_text(
+    task_list: TaskListDTO,
+    status: str | None,
+    query: str | None,
+) -> str:
+    title = _build_filtered_title("任务", status, query)
     if not task_list.items:
         return f"当前没有{title}。"
     lines = [f"当前{title}："]
@@ -955,8 +993,12 @@ def _format_task_list_text(task_list: TaskListDTO, status: str | None) -> str:
     return "\n".join(lines)
 
 
-def _format_reminder_list_text(reminder_list: ReminderListDTO, status: str | None) -> str:
-    title = _build_status_title("提醒", status)
+def _format_reminder_list_text(
+    reminder_list: ReminderListDTO,
+    status: str | None,
+    query: str | None,
+) -> str:
+    title = _build_filtered_title("提醒", status, query)
     if not reminder_list.items:
         return f"当前没有{title}。"
     lines = [f"当前{title}："]
@@ -1035,6 +1077,18 @@ def _extract_memory_search_query(
     return content
 
 
+def _extract_task_search_query(
+    command: HandleInboundConversationMessageCommand,
+) -> str | None:
+    matched, content = _extract_action_content(
+        command,
+        prefixes=("搜索任务", "查找任务", "search task", "find task"),
+    )
+    if not matched:
+        return None
+    return content
+
+
 def _extract_reminder_list_status(command: HandleInboundConversationMessageCommand) -> str | None:
     if command.message_type != "text" or command.text is None:
         return None
@@ -1050,6 +1104,18 @@ def _extract_reminder_list_status(command: HandleInboundConversationMessageComma
     return mapping.get(normalized)
 
 
+def _extract_reminder_search_query(
+    command: HandleInboundConversationMessageCommand,
+) -> str | None:
+    matched, content = _extract_action_content(
+        command,
+        prefixes=("搜索提醒", "查找提醒", "search reminder", "find reminder"),
+    )
+    if not matched:
+        return None
+    return content
+
+
 def _build_status_title(noun: str, status: str | None) -> str:
     if status == "pending":
         return f"待办{noun}"
@@ -1062,6 +1128,13 @@ def _build_status_title(noun: str, status: str | None) -> str:
     if status == "active":
         return f"活跃{noun}"
     return noun
+
+
+def _build_filtered_title(noun: str, status: str | None, query: str | None) -> str:
+    title = _build_status_title(noun, status)
+    if query is None:
+        return title
+    return f"匹配“{query}”的{title}"
 
 
 def _handled_by_for_intent(intent: ConversationIntent) -> str | None:

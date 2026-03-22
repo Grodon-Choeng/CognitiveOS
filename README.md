@@ -132,12 +132,15 @@ tests/
 - conversation intent 当前改为 `LLM 优先、规则兜底`：若配置了 `COGNITIVE_OS_OPENAI_API_KEY` 与 `COGNITIVE_OS_CONVERSATION_INTENT_MODEL`，会优先走 `llm_gateway` 做 reminder/task/memory 意图识别；未配置或模型失败时再退回显式规则。
 - 当前 reminder create / list / get / reply / cancel 路由已接入 application service，可用于最小 reminder 生命周期闭环验证。
 - 已支持 `GET /api/v1/reminders` 查看提醒列表、`GET /api/v1/reminders/{reminder_id}` 查询状态，以及 `POST /api/v1/reminders/{reminder_id}/cancel` 主动取消 pending reminder。
+- `GET /api/v1/reminders` 现在也支持 `query` 关键词过滤，便于按内容搜索当前会话里的提醒。
 - 已支持 `POST /api/v1/memories` 写入记忆、`GET /api/v1/memories` 查询记忆列表、`GET /api/v1/memories/{memory_id}` 点查记忆，以及 `POST /api/v1/memories/{memory_id}/archive` 归档记忆。
 - 已支持 `POST /api/v1/tasks` 创建任务、`GET /api/v1/tasks` 查询任务列表、`GET /api/v1/tasks/{task_id}` 点查任务，以及 `POST /api/v1/tasks/{task_id}/complete` / `POST /api/v1/tasks/{task_id}/cancel` 完成或取消任务。
+- `GET /api/v1/tasks` 现在也支持 `query` 关键词过滤，便于按标题搜索当前会话里的任务。
 - 已支持 `GET /api/v1/overview` 聚合查看当前会话的 pending reminders、pending tasks、active memories，以及 recent activity。
 - conversation 对话入口现在也支持 `查看概览` / `今天有什么` 之类的概览动作，并会自动回一条聚合结果消息。
 - conversation 对话入口还支持 `查看最近活动`，会返回当前会话最近的统一审计时间线片段。
 - conversation 查询现在也支持按状态查看，例如：`查看已完成任务`、`查看已取消提醒`、`查看已归档记忆`。
+- conversation 查询现在还支持 `搜索任务 xxx`、`搜索提醒 xxx` 这类关键词检索。
 - memory 列表查询现在还支持 `query` 关键词过滤；conversation 里也支持 `搜索记忆 xxx` 这种读取方式。
 - 当 conversation 无法识别输入时，也会自动返回一条引导提示，而不是静默无响应。
 - conversation 对话入口现在还支持最小动作类命令：`完成任务` / `取消任务` 会作用于当前会话最近一条 pending task，`归档记忆` 会归档当前会话最近一条 active memory，`取消提醒` 会取消当前会话最近一条 pending reminder。

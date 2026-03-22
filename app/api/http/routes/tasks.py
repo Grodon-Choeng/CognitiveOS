@@ -51,6 +51,7 @@ async def list_tasks(
     conversation_id: str | None = None,
     session_id: str | None = None,
     status: TaskStatusFilter | None = None,
+    query: str | None = None,
     limit: Annotated[int, Query(ge=1, le=100)] = 20,
 ) -> TaskListResponse:
     result = await service.list_tasks(
@@ -58,6 +59,7 @@ async def list_tasks(
             conversation_id=conversation_id,
             session_id=session_id,
             status=status,
+            query=query,
             limit=limit,
         )
     )

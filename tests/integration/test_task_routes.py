@@ -7,7 +7,10 @@ from app.api.http.deps.services import get_task_service
 from app.application.tasks.commands import CancelTaskCommand, CompleteTaskCommand, CreateTaskCommand
 from app.application.tasks.dto import TaskDTO, TaskListDTO
 from app.application.tasks.errors import TaskNotFoundError
+from app.application.tasks.queries import ListTasksQuery
 from app.main import app
+
+captured_task_list_queries: list[ListTasksQuery] = []
 
 
 @dataclass
@@ -37,8 +40,8 @@ class FakeTaskService:
             completed_at=None,
         )
 
-    async def list_tasks(self, query: object) -> TaskListDTO:
-        _ = query
+    async def list_tasks(self, query: ListTasksQuery) -> TaskListDTO:
+        captured_task_list_queries.append(query)
         return TaskListDTO(
             items=[
                 TaskDTO(
@@ -96,16 +99,21 @@ def test_create_task_route_returns_structured_response() -> None:
 
 
 def test_list_tasks_route_returns_structured_response() -> None:
+    captured_task_list_queries.clear()
     app.dependency_overrides[get_task_service] = override_task_service
 
     try:
         with TestClient(app) as client:
-            response = client.get("/api/v1/tasks", params={"conversation_id": "conversation-1"})
+            response = client.get(
+                "/api/v1/tasks",
+                params={"conversation_id": "conversation-1", "query": "纪要"},
+            )
     finally:
         app.dependency_overrides.clear()
 
     assert response.status_code == 200
     assert len(response.json()["items"]) == 1
+    assert captured_task_list_queries[-1].query == "纪要"
 
 
 def test_get_task_route_returns_structured_response() -> None:

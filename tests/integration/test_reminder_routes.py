@@ -11,9 +11,11 @@ from app.application.reminders.commands import (
 )
 from app.application.reminders.dto import ReminderDTO, ReminderListDTO, ReminderReplyDTO
 from app.application.reminders.errors import ReminderWorkflowCancelError, ReminderWorkflowStartError
+from app.application.reminders.queries import ListRemindersQuery
 from app.main import app
 
 captured_create_commands: list[CreateReminderCommand] = []
+captured_reminder_list_queries: list[ListRemindersQuery] = []
 
 
 @dataclass
@@ -44,8 +46,8 @@ class FakeReminderService:
             workflow_id="reminder:00000000-0000-0000-0000-000000000001",
         )
 
-    async def list_reminders(self, query: object) -> ReminderListDTO:
-        _ = query
+    async def list_reminders(self, query: ListRemindersQuery) -> ReminderListDTO:
+        captured_reminder_list_queries.append(query)
         return ReminderListDTO(
             items=[
                 ReminderDTO(
@@ -169,13 +171,19 @@ def test_get_reminder_route_returns_structured_response() -> None:
 
 
 def test_list_reminders_route_returns_structured_response() -> None:
+    captured_reminder_list_queries.clear()
     app.dependency_overrides[get_reminder_service] = override_reminder_service
 
     try:
         with TestClient(app) as client:
             response = client.get(
                 "/api/v1/reminders",
-                params={"conversation_id": "conversation-1", "status": "pending", "limit": "10"},
+                params={
+                    "conversation_id": "conversation-1",
+                    "status": "pending",
+                    "query": "打卡",
+                    "limit": "10",
+                },
             )
     finally:
         app.dependency_overrides.clear()
@@ -183,6 +191,7 @@ def test_list_reminders_route_returns_structured_response() -> None:
     assert response.status_code == 200
     assert len(response.json()["items"]) == 2
     assert response.json()["items"][0]["reminder_id"] == "00000000-0000-0000-0000-000000000001"
+    assert captured_reminder_list_queries[-1].query == "打卡"
 
 
 def test_create_reminder_route_passes_dispatch_chat_and_thread_fields() -> None:

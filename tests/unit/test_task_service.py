@@ -33,6 +33,7 @@ class FakeTaskRepository(TaskRepository):
         conversation_id: str | None = None,
         session_id: str | None = None,
         status: str | None = None,
+        query: str | None = None,
         limit: int = 20,
     ) -> list[Task]:
         tasks = list(self.items.values())
@@ -43,6 +44,8 @@ class FakeTaskRepository(TaskRepository):
             tasks = [task for task in tasks if task.session_id == session_id]
         if status is not None:
             tasks = [task for task in tasks if task.status.value == status]
+        if query is not None:
+            tasks = [task for task in tasks if query.casefold() in task.title.casefold()]
         return tasks[:limit]
 
     async def update(self, task: Task) -> None:
@@ -172,6 +175,25 @@ async def test_list_tasks_returns_filtered_items() -> None:
     result = await service.list_tasks(ListTasksQuery(conversation_id="conversation-1", limit=10))
 
     assert [item.task_id for item in result.items] == [first.task_id]
+
+
+@pytest.mark.asyncio
+async def test_list_tasks_supports_query_filter() -> None:
+    repository = FakeTaskRepository()
+    service = TaskApplicationService(
+        unit_of_work_factory=create_fake_unit_of_work_factory(repository),
+        conversation_context_resolver=FakeConversationContextResolver(),
+    )
+    target = await service.create_task(
+        CreateTaskCommand(title="整理周会纪要", conversation_id="conversation-1")
+    )
+    await service.create_task(CreateTaskCommand(title="提交日报", conversation_id="conversation-1"))
+
+    result = await service.list_tasks(
+        ListTasksQuery(conversation_id="conversation-1", query="纪要", limit=10)
+    )
+
+    assert [item.task_id for item in result.items] == [target.task_id]
 
 
 @pytest.mark.asyncio

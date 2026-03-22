@@ -11,13 +11,16 @@ from app.application.conversations.intent_handler import (
 )
 from app.application.memory.commands import CreateMemoryCommand
 from app.application.memory.dto import MemoryDTO, MemoryListDTO
+from app.application.memory.queries import ListMemoriesQuery
 from app.application.overview.dto import OverviewDTO
 from app.application.overview.queries import GetOverviewQuery
 from app.application.reminders.commands import CreateReminderCommand
 from app.application.reminders.dto import ReminderDTO, ReminderListDTO
+from app.application.reminders.queries import ListRemindersQuery
 from app.application.tasks.commands import CreateTaskCommand
 from app.application.tasks.dto import TaskDTO, TaskListDTO
 from app.application.tasks.errors import TaskNotFoundError
+from app.application.tasks.queries import ListTasksQuery
 from app.infrastructure.llm.models import GenerateRequest, GenerateResult
 
 
@@ -46,7 +49,7 @@ class FakeTaskService:
         self.created_titles: list[str] = []
         self.completed_latest_calls: list[tuple[str, str]] = []
         self.canceled_latest_calls: list[tuple[str, str]] = []
-        self.list_queries: list[object] = []
+        self.list_queries: list[ListTasksQuery] = []
         self.complete_latest_error: Exception | None = None
 
     async def create_task(self, command: CreateTaskCommand) -> TaskDTO:
@@ -134,7 +137,7 @@ class FakeTaskService:
             completed_at=None,
         )
 
-    async def list_tasks(self, query: object) -> TaskListDTO:
+    async def list_tasks(self, query: ListTasksQuery) -> TaskListDTO:
         self.list_queries.append(query)
         return TaskListDTO(
             items=[
@@ -155,7 +158,7 @@ class FakeMemoryService:
     def __init__(self) -> None:
         self.created_contents: list[str] = []
         self.archived_latest_calls: list[tuple[str, str]] = []
-        self.list_queries: list[object] = []
+        self.list_queries: list[ListMemoriesQuery] = []
 
     async def create_memory(self, command: CreateMemoryCommand) -> MemoryDTO:
         content = command.content
@@ -205,7 +208,7 @@ class FakeMemoryService:
             archived_at=datetime(2026, 3, 22, 10, 0, tzinfo=UTC),
         )
 
-    async def list_memories(self, query: object) -> MemoryListDTO:
+    async def list_memories(self, query: ListMemoriesQuery) -> MemoryListDTO:
         self.list_queries.append(query)
         return MemoryListDTO(
             items=[
@@ -226,7 +229,7 @@ class FakeReminderService:
     def __init__(self) -> None:
         self.created_requests: list[tuple[str, datetime, str]] = []
         self.canceled_latest_calls: list[tuple[str, str]] = []
-        self.list_queries: list[object] = []
+        self.list_queries: list[ListRemindersQuery] = []
 
     async def create_reminder(self, command: CreateReminderCommand) -> ReminderDTO:
         self.created_requests.append((command.text, command.remind_at, command.timezone))
@@ -278,7 +281,7 @@ class FakeReminderService:
             workflow_id="reminder:r-31",
         )
 
-    async def list_reminders(self, query: object) -> ReminderListDTO:
+    async def list_reminders(self, query: ListRemindersQuery) -> ReminderListDTO:
         self.list_queries.append(query)
         return ReminderListDTO(
             items=[
@@ -504,6 +507,77 @@ async def test_intent_handler_dispatches_to_task_list() -> None:
     assert result.reason == "task_listed_via_llm"
     assert "当前任务：" in (result.response_text or "")
     assert task_service.list_queries
+
+
+@pytest.mark.asyncio
+async def test_intent_classifier_supports_task_search_by_rule() -> None:
+    classifier = LLMFirstConversationIntentClassifier(
+        llm_gateway=FailingLLMGateway(),
+        model="gpt-test",
+        api_key_suffix="90abcdef",
+    )
+
+    result = await classifier.classify(
+        HandleInboundConversationMessageCommand(
+            channel="web",
+            message_type="text",
+            user_identity="user-1",
+            external_message_id=None,
+            root_message_id=None,
+            parent_message_id=None,
+            chat_id=None,
+            thread_id=None,
+            text="搜索任务 纪要",
+            raw_payload={"text": "搜索任务 纪要"},
+        ),
+        conversation_id="conversation-1",
+        session_id="session-1",
+    )
+
+    assert result.intent == ConversationIntent.TASK_LIST
+    assert result.content == "纪要"
+    assert result.status is None
+
+
+@pytest.mark.asyncio
+async def test_intent_handler_dispatches_to_task_search_result() -> None:
+    task_service = FakeTaskService()
+    memory_service = FakeMemoryService()
+    reminder_service = FakeReminderService()
+    overview_service = FakeOverviewService()
+    handler = IntentConversationHandler(
+        classifier=LLMFirstConversationIntentClassifier(
+            llm_gateway=FakeLLMGateway('{"intent":"task_list","content":"纪要"}'),
+            model="gpt-test",
+            api_key_suffix="90abcdef",
+        ),
+        task_service=task_service,
+        memory_service=memory_service,
+        reminder_service=reminder_service,
+        overview_service=overview_service,
+    )
+
+    result = await handler.handle(
+        HandleInboundConversationMessageCommand(
+            channel="web",
+            message_type="text",
+            user_identity="user-1",
+            external_message_id=None,
+            root_message_id=None,
+            parent_message_id=None,
+            chat_id=None,
+            thread_id=None,
+            text="搜索任务 纪要",
+            raw_payload={"text": "搜索任务 纪要"},
+        ),
+        conversation_id="conversation-1",
+        session_id="session-1",
+    )
+
+    assert result is not None
+    assert result.handled_by == "task"
+    assert task_service.list_queries[-1].query == "纪要"
+    assert "匹配“纪要”的任务" in (result.response_text or "")
 
 
 @pytest.mark.asyncio
@@ -1128,6 +1202,77 @@ async def test_intent_handler_dispatches_to_reminder_list() -> None:
     assert result.reason == "reminder_listed_via_llm"
     assert "当前提醒：" in (result.response_text or "")
     assert reminder_service.list_queries
+
+
+@pytest.mark.asyncio
+async def test_intent_classifier_supports_reminder_search_by_rule() -> None:
+    classifier = LLMFirstConversationIntentClassifier(
+        llm_gateway=FailingLLMGateway(),
+        model="gpt-test",
+        api_key_suffix="90abcdef",
+    )
+
+    result = await classifier.classify(
+        HandleInboundConversationMessageCommand(
+            channel="web",
+            message_type="text",
+            user_identity="user-1",
+            external_message_id=None,
+            root_message_id=None,
+            parent_message_id=None,
+            chat_id=None,
+            thread_id=None,
+            text="搜索提醒 打卡",
+            raw_payload={"text": "搜索提醒 打卡"},
+        ),
+        conversation_id="conversation-1",
+        session_id="session-1",
+    )
+
+    assert result.intent == ConversationIntent.REMINDER_LIST
+    assert result.content == "打卡"
+    assert result.status is None
+
+
+@pytest.mark.asyncio
+async def test_intent_handler_dispatches_to_reminder_search_result() -> None:
+    task_service = FakeTaskService()
+    memory_service = FakeMemoryService()
+    reminder_service = FakeReminderService()
+    overview_service = FakeOverviewService()
+    handler = IntentConversationHandler(
+        classifier=LLMFirstConversationIntentClassifier(
+            llm_gateway=FakeLLMGateway('{"intent":"reminder_list","content":"打卡"}'),
+            model="gpt-test",
+            api_key_suffix="90abcdef",
+        ),
+        task_service=task_service,
+        memory_service=memory_service,
+        reminder_service=reminder_service,
+        overview_service=overview_service,
+    )
+
+    result = await handler.handle(
+        HandleInboundConversationMessageCommand(
+            channel="web",
+            message_type="text",
+            user_identity="user-1",
+            external_message_id=None,
+            root_message_id=None,
+            parent_message_id=None,
+            chat_id=None,
+            thread_id=None,
+            text="搜索提醒 打卡",
+            raw_payload={"text": "搜索提醒 打卡"},
+        ),
+        conversation_id="conversation-1",
+        session_id="session-1",
+    )
+
+    assert result is not None
+    assert result.handled_by == "reminder"
+    assert reminder_service.list_queries[-1].query == "打卡"
+    assert "匹配“打卡”的提醒" in (result.response_text or "")
 
 
 @pytest.mark.asyncio

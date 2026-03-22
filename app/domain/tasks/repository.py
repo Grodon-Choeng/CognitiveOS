@@ -15,6 +15,7 @@ class TaskRepository(Protocol):
         conversation_id: str | None = None,
         session_id: str | None = None,
         status: str | None = None,
+        query: str | None = None,
         limit: int = 20,
     ) -> list[Task]: ...
 

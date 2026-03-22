@@ -58,6 +58,7 @@ class TaskApplicationService:
                 conversation_id=query.conversation_id,
                 session_id=query.session_id,
                 status=query.status,
+                query=query.query,
                 limit=query.limit,
             )
 

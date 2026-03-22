@@ -49,6 +49,7 @@ class FakeReminderRepository(ReminderRepository):
         conversation_id: str | None = None,
         session_id: str | None = None,
         status: str | None = None,
+        query: str | None = None,
         limit: int = 20,
     ) -> list[Reminder]:
         reminders = list(self.items.values())
@@ -61,6 +62,10 @@ class FakeReminderRepository(ReminderRepository):
             reminders = [reminder for reminder in reminders if reminder.session_id == session_id]
         if status is not None:
             reminders = [reminder for reminder in reminders if reminder.status.value == status]
+        if query is not None:
+            reminders = [
+                reminder for reminder in reminders if query.casefold() in reminder.text.casefold()
+            ]
         return reminders[:limit]
 
     async def get_by_dispatch_message_id(self, dispatch_message_id: str) -> Reminder | None:
@@ -248,6 +253,43 @@ async def test_create_reminder_persists_and_starts_workflow() -> None:
     assert saved.dispatch_recipient_id == "user-1"
     assert workflow_gateway.started[0].dispatch_target.channel == "console"
     assert workflow_gateway.started[0].dispatch_target.recipient_id == "user-1"
+
+
+@pytest.mark.asyncio
+async def test_list_reminders_supports_query_filter() -> None:
+    repository = FakeReminderRepository()
+    workflow_gateway = FakeReminderWorkflowGateway()
+    service = ReminderApplicationService(
+        unit_of_work_factory=create_fake_unit_of_work_factory(repository),
+        workflow_gateway=workflow_gateway,
+        conversation_context_resolver=FakeConversationContextResolver(),
+    )
+    target = await service.create_reminder(
+        CreateReminderCommand(
+            text="晚上提醒我复盘纪要",
+            remind_at=datetime(2026, 3, 20, 18, 0, tzinfo=UTC),
+            timezone="Asia/Shanghai",
+            conversation_id="conversation-1",
+            dispatch_channel="console",
+            dispatch_recipient_id="user-1",
+        )
+    )
+    await service.create_reminder(
+        CreateReminderCommand(
+            text="明天提醒我打卡",
+            remind_at=datetime(2026, 3, 21, 9, 0, tzinfo=UTC),
+            timezone="Asia/Shanghai",
+            conversation_id="conversation-1",
+            dispatch_channel="console",
+            dispatch_recipient_id="user-1",
+        )
+    )
+
+    result = await service.list_reminders(
+        ListRemindersQuery(conversation_id="conversation-1", query="纪要", limit=10)
+    )
+
+    assert [item.reminder_id for item in result.items] == [target.reminder_id]
 
 
 @pytest.mark.asyncio
