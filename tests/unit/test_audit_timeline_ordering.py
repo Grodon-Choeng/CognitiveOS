@@ -1,8 +1,7 @@
 from datetime import UTC, datetime
 
-from app.application.audit.dto import AuditEventDTO
 from app.application.audit.service import (
-    _build_timeline_sort_key,
+    _resolve_audit_kind_order,
     decode_audit_cursor,
     encode_audit_cursor,
 )
@@ -19,35 +18,7 @@ def test_timeline_cursor_roundtrip_keeps_kind() -> None:
     assert decoded.kind == "tool"
 
 
-def test_timeline_sort_key_is_stable_for_same_timestamp() -> None:
-    same_time = "2026-03-22T12:00:00+00:00"
-    items = [
-        AuditEventDTO(
-            kind="message",
-            event_id="z",
-            recorded_at=same_time,
-            conversation_id=None,
-            session_id=None,
-            trace_id=None,
-            chain_id=None,
-            request_id=None,
-            success=True,
-            summary="message",
-        ),
-        AuditEventDTO(
-            kind="workflow",
-            event_id="a",
-            recorded_at=same_time,
-            conversation_id=None,
-            session_id=None,
-            trace_id=None,
-            chain_id=None,
-            request_id=None,
-            success=True,
-            summary="workflow",
-        ),
-    ]
-
-    ordered = sorted(items, key=_build_timeline_sort_key, reverse=True)
-
-    assert [item.kind for item in ordered] == ["workflow", "message"]
+def test_timeline_kind_order_is_explicit_and_stable() -> None:
+    assert _resolve_audit_kind_order("workflow") > _resolve_audit_kind_order("tool")
+    assert _resolve_audit_kind_order("tool") > _resolve_audit_kind_order("model")
+    assert _resolve_audit_kind_order("model") > _resolve_audit_kind_order("message")

@@ -4,7 +4,7 @@ from collections.abc import Callable, Sequence
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import and_, desc, literal, or_, select
+from sqlalchemy import Integer, String, and_, desc, func, literal, or_, select, union_all
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.application.audit.dto import AuditCursorDTO, AuditEventDTO, AuditEventPageDTO
@@ -13,6 +13,13 @@ from app.infrastructure.db.models.message_event import MessageEventLogModel
 from app.infrastructure.db.models.model_invocation import ModelInvocationLogModel
 from app.infrastructure.db.models.tool_invocation import ToolInvocationLogModel
 from app.infrastructure.db.models.workflow_event import WorkflowEventLogModel
+
+AUDIT_KIND_ORDER = {
+    "message": 1,
+    "model": 2,
+    "tool": 3,
+    "workflow": 4,
+}
 
 
 class AuditQueryService:
@@ -97,82 +104,32 @@ class AuditQueryService:
         cursor: str | None = None,
         limit: int = 50,
     ) -> AuditEventPageDTO:
-        message_page = await self._query_message_events(
-            conversation_id=conversation_id,
-            session_id=session_id,
-            success=success,
-            channel=channel,
-            recorded_after=recorded_after,
-            recorded_before=recorded_before,
-            cursor=cursor,
-            limit=limit,
-            timeline_kind="message",
-        )
-        model_page = await self._query_model_events(
-            conversation_id=conversation_id,
-            session_id=session_id,
-            success=success,
-            provider=provider,
-            recorded_after=recorded_after,
-            recorded_before=recorded_before,
-            cursor=cursor,
-            limit=limit,
-            timeline_kind="model",
-        )
-        tool_page = await self._query_tool_events(
-            conversation_id=conversation_id,
-            session_id=session_id,
-            success=success,
-            tool_name=tool_name,
-            recorded_after=recorded_after,
-            recorded_before=recorded_before,
-            cursor=cursor,
-            limit=limit,
-            timeline_kind="tool",
-        )
-        workflow_page = await self._query_workflow_events(
-            conversation_id=conversation_id,
-            session_id=session_id,
-            success=success,
-            workflow_type=workflow_type,
-            recorded_after=recorded_after,
-            recorded_before=recorded_before,
-            cursor=cursor,
-            limit=limit,
-            timeline_kind="workflow",
-        )
+        async with self.session_factory() as session:
+            statement = _build_timeline_statement(
+                conversation_id=conversation_id,
+                session_id=session_id,
+                success=success,
+                channel=channel,
+                provider=provider,
+                tool_name=tool_name,
+                workflow_type=workflow_type,
+                recorded_after=recorded_after,
+                recorded_before=recorded_before,
+                cursor=cursor,
+            )
+            rows = (await session.execute(statement.limit(limit + 1))).mappings().all()
 
-        merged_items = sorted(
-            [
-                *message_page.items,
-                *model_page.items,
-                *tool_page.items,
-                *workflow_page.items,
-            ],
-            key=_build_timeline_sort_key,
-            reverse=True,
-        )
-        page_items = merged_items[:limit]
-        has_more = (
-            len(merged_items) > limit
-            or message_page.next_cursor is not None
-            or model_page.next_cursor is not None
-            or tool_page.next_cursor is not None
-            or workflow_page.next_cursor is not None
-        )
-
-        if not has_more or not page_items:
-            return AuditEventPageDTO(items=page_items, next_cursor=None)
-
-        last_item = page_items[-1]
-        return AuditEventPageDTO(
-            items=page_items,
-            next_cursor=encode_audit_cursor(
-                recorded_at=datetime.fromisoformat(last_item.recorded_at),
-                event_id=last_item.event_id,
-                kind=last_item.kind,
-            ),
-        )
+        page_rows = rows[:limit]
+        items = [_build_audit_event_dto_from_timeline_row(row) for row in page_rows]
+        next_cursor = None
+        if len(rows) > limit and page_rows:
+            last_row = page_rows[-1]
+            next_cursor = encode_audit_cursor(
+                recorded_at=last_row["recorded_at"],
+                event_id=last_row["event_id"],
+                kind=last_row["kind"],
+            )
+        return AuditEventPageDTO(items=items, next_cursor=next_cursor)
 
     async def _query_message_events(
         self,
@@ -185,7 +142,6 @@ class AuditQueryService:
         recorded_before: datetime | None,
         cursor: str | None,
         limit: int,
-        timeline_kind: str | None = None,
     ) -> AuditEventPageDTO:
         async with self.session_factory() as session:
             statement = select(MessageEventLogModel).order_by(
@@ -205,7 +161,6 @@ class AuditQueryService:
                 recorded_after=recorded_after,
                 recorded_before=recorded_before,
                 cursor=cursor,
-                timeline_kind=timeline_kind,
             )
             if channel:
                 statement = statement.where(MessageEventLogModel.channel == channel)
@@ -259,7 +214,6 @@ class AuditQueryService:
         recorded_before: datetime | None,
         cursor: str | None,
         limit: int,
-        timeline_kind: str | None = None,
     ) -> AuditEventPageDTO:
         async with self.session_factory() as session:
             statement = select(ModelInvocationLogModel).order_by(
@@ -279,7 +233,6 @@ class AuditQueryService:
                 recorded_after=recorded_after,
                 recorded_before=recorded_before,
                 cursor=cursor,
-                timeline_kind=timeline_kind,
             )
             if provider:
                 statement = statement.where(ModelInvocationLogModel.provider == provider)
@@ -327,7 +280,6 @@ class AuditQueryService:
         recorded_before: datetime | None,
         cursor: str | None,
         limit: int,
-        timeline_kind: str | None = None,
     ) -> AuditEventPageDTO:
         async with self.session_factory() as session:
             statement = select(ToolInvocationLogModel).order_by(
@@ -347,7 +299,6 @@ class AuditQueryService:
                 recorded_after=recorded_after,
                 recorded_before=recorded_before,
                 cursor=cursor,
-                timeline_kind=timeline_kind,
             )
             if tool_name:
                 statement = statement.where(ToolInvocationLogModel.tool_name == tool_name)
@@ -395,7 +346,6 @@ class AuditQueryService:
         recorded_before: datetime | None,
         cursor: str | None,
         limit: int,
-        timeline_kind: str | None = None,
     ) -> AuditEventPageDTO:
         async with self.session_factory() as session:
             statement = select(WorkflowEventLogModel).order_by(
@@ -415,7 +365,6 @@ class AuditQueryService:
                 recorded_after=recorded_after,
                 recorded_before=recorded_before,
                 cursor=cursor,
-                timeline_kind=timeline_kind,
             )
             if workflow_type:
                 statement = statement.where(WorkflowEventLogModel.workflow_type == workflow_type)
@@ -468,7 +417,6 @@ def _apply_common_filters(
     recorded_after: datetime | None,
     recorded_before: datetime | None,
     cursor: str | None,
-    timeline_kind: str | None = None,
 ) -> Any:
     if conversation_id:
         statement = statement.where(conversation_column == conversation_id)
@@ -483,32 +431,15 @@ def _apply_common_filters(
     if cursor:
         decoded = decode_audit_cursor(cursor)
         recorded_at = datetime.fromisoformat(decoded.recorded_at)
-        if decoded.kind is not None and timeline_kind is not None:
-            statement = statement.where(
-                or_(
-                    recorded_at_column < recorded_at,
-                    and_(
-                        recorded_at_column == recorded_at,
-                        or_(
-                            literal(timeline_kind) < decoded.kind,
-                            and_(
-                                literal(timeline_kind) == decoded.kind,
-                                event_id_column < decoded.event_id,
-                            ),
-                        ),
-                    ),
-                )
+        statement = statement.where(
+            or_(
+                recorded_at_column < recorded_at,
+                and_(
+                    recorded_at_column == recorded_at,
+                    event_id_column < decoded.event_id,
+                ),
             )
-        else:
-            statement = statement.where(
-                or_(
-                    recorded_at_column < recorded_at,
-                    and_(
-                        recorded_at_column == recorded_at,
-                        event_id_column < decoded.event_id,
-                    ),
-                )
-            )
+        )
     return statement
 
 
@@ -537,10 +468,14 @@ def decode_audit_cursor(cursor: str) -> AuditCursorDTO:
     if not isinstance(recorded_at, str) or not isinstance(event_id, str):
         raise AuditQueryValidationError("审计游标格式不合法。")
 
+    kind = payload.get("kind")
+    if kind is not None and not isinstance(kind, str):
+        raise AuditQueryValidationError("审计游标格式不合法。")
+
     return AuditCursorDTO(
         recorded_at=recorded_at,
         event_id=event_id,
-        kind=payload.get("kind"),
+        kind=kind,
     )
 
 
@@ -560,5 +495,292 @@ def _build_next_cursor(
     )
 
 
-def _build_timeline_sort_key(item: AuditEventDTO) -> tuple[str, str, str]:
-    return (item.recorded_at, item.kind, item.event_id)
+def _build_timeline_statement(
+    *,
+    conversation_id: str | None,
+    session_id: str | None,
+    success: bool | None,
+    channel: str | None,
+    provider: str | None,
+    tool_name: str | None,
+    workflow_type: str | None,
+    recorded_after: datetime | None,
+    recorded_before: datetime | None,
+    cursor: str | None,
+) -> Any:
+    timeline_source = union_all(
+        _build_message_timeline_select(),
+        _build_model_timeline_select(),
+        _build_tool_timeline_select(),
+        _build_workflow_timeline_select(),
+    ).subquery("audit_timeline")
+    statement = select(
+        timeline_source.c.kind,
+        timeline_source.c.kind_order,
+        timeline_source.c.event_id,
+        timeline_source.c.recorded_at,
+        timeline_source.c.conversation_id,
+        timeline_source.c.session_id,
+        timeline_source.c.trace_id,
+        timeline_source.c.chain_id,
+        timeline_source.c.request_id,
+        timeline_source.c.success,
+        timeline_source.c.summary,
+        timeline_source.c.payload,
+    ).order_by(
+        desc(timeline_source.c.recorded_at),
+        desc(timeline_source.c.kind_order),
+        desc(timeline_source.c.event_id),
+    )
+    return _apply_timeline_filters(
+        statement=statement,
+        timeline_source=timeline_source,
+        conversation_id=conversation_id,
+        session_id=session_id,
+        success=success,
+        channel=channel,
+        provider=provider,
+        tool_name=tool_name,
+        workflow_type=workflow_type,
+        recorded_after=recorded_after,
+        recorded_before=recorded_before,
+        cursor=cursor,
+    )
+
+
+def _apply_timeline_filters(
+    *,
+    statement: Any,
+    timeline_source: Any,
+    conversation_id: str | None,
+    session_id: str | None,
+    success: bool | None,
+    channel: str | None,
+    provider: str | None,
+    tool_name: str | None,
+    workflow_type: str | None,
+    recorded_after: datetime | None,
+    recorded_before: datetime | None,
+    cursor: str | None,
+) -> Any:
+    if conversation_id:
+        statement = statement.where(timeline_source.c.conversation_id == conversation_id)
+    if session_id:
+        statement = statement.where(timeline_source.c.session_id == session_id)
+    if success is not None:
+        statement = statement.where(timeline_source.c.success == success)
+    if channel:
+        statement = statement.where(timeline_source.c.channel == channel)
+    if provider:
+        statement = statement.where(timeline_source.c.provider == provider)
+    if tool_name:
+        statement = statement.where(timeline_source.c.tool_name == tool_name)
+    if workflow_type:
+        statement = statement.where(timeline_source.c.workflow_type == workflow_type)
+    if recorded_after:
+        statement = statement.where(timeline_source.c.recorded_at >= recorded_after)
+    if recorded_before:
+        statement = statement.where(timeline_source.c.recorded_at <= recorded_before)
+    if cursor:
+        decoded = decode_audit_cursor(cursor)
+        recorded_at = datetime.fromisoformat(decoded.recorded_at)
+        if decoded.kind is None:
+            statement = statement.where(
+                or_(
+                    timeline_source.c.recorded_at < recorded_at,
+                    and_(
+                        timeline_source.c.recorded_at == recorded_at,
+                        timeline_source.c.event_id < decoded.event_id,
+                    ),
+                )
+            )
+        else:
+            kind_order = _resolve_audit_kind_order(decoded.kind)
+            statement = statement.where(
+                or_(
+                    timeline_source.c.recorded_at < recorded_at,
+                    and_(
+                        timeline_source.c.recorded_at == recorded_at,
+                        or_(
+                            timeline_source.c.kind_order < kind_order,
+                            and_(
+                                timeline_source.c.kind_order == kind_order,
+                                timeline_source.c.event_id < decoded.event_id,
+                            ),
+                        ),
+                    ),
+                )
+            )
+    return statement
+
+
+def _build_message_timeline_select() -> Any:
+    return select(
+        literal("message", type_=String()).label("kind"),
+        literal(AUDIT_KIND_ORDER["message"], type_=Integer()).label("kind_order"),
+        MessageEventLogModel.event_id.label("event_id"),
+        MessageEventLogModel.recorded_at.label("recorded_at"),
+        MessageEventLogModel.conversation_id.label("conversation_id"),
+        MessageEventLogModel.session_id.label("session_id"),
+        MessageEventLogModel.trace_id.label("trace_id"),
+        MessageEventLogModel.chain_id.label("chain_id"),
+        MessageEventLogModel.request_id.label("request_id"),
+        MessageEventLogModel.success.label("success"),
+        func.concat(
+            MessageEventLogModel.direction,
+            ":",
+            MessageEventLogModel.channel,
+            ":",
+            MessageEventLogModel.message_type,
+        ).label("summary"),
+        func.jsonb_build_object(
+            "direction",
+            MessageEventLogModel.direction,
+            "channel",
+            MessageEventLogModel.channel,
+            "message_type",
+            MessageEventLogModel.message_type,
+            "adapter_name",
+            MessageEventLogModel.adapter_name,
+            "latency_ms",
+            MessageEventLogModel.latency_ms,
+            "text",
+            MessageEventLogModel.text,
+            "chat_id",
+            MessageEventLogModel.chat_id,
+            "thread_id",
+            MessageEventLogModel.thread_id,
+            "external_message_id",
+            MessageEventLogModel.external_message_id,
+            "metadata",
+            MessageEventLogModel.metadata_json,
+        ).label("payload"),
+        MessageEventLogModel.channel.label("channel"),
+        literal(None, type_=String()).label("provider"),
+        literal(None, type_=String()).label("tool_name"),
+        literal(None, type_=String()).label("workflow_type"),
+    )
+
+
+def _build_model_timeline_select() -> Any:
+    return select(
+        literal("model", type_=String()).label("kind"),
+        literal(AUDIT_KIND_ORDER["model"], type_=Integer()).label("kind_order"),
+        ModelInvocationLogModel.invocation_id.label("event_id"),
+        ModelInvocationLogModel.recorded_at.label("recorded_at"),
+        ModelInvocationLogModel.conversation_id.label("conversation_id"),
+        ModelInvocationLogModel.session_id.label("session_id"),
+        ModelInvocationLogModel.trace_id.label("trace_id"),
+        ModelInvocationLogModel.chain_id.label("chain_id"),
+        ModelInvocationLogModel.request_id.label("request_id"),
+        ModelInvocationLogModel.success.label("success"),
+        func.concat(
+            func.coalesce(ModelInvocationLogModel.provider, "unknown"),
+            ":",
+            func.coalesce(ModelInvocationLogModel.model, "unknown"),
+        ).label("summary"),
+        func.jsonb_build_object(
+            "operation",
+            ModelInvocationLogModel.operation,
+            "model_kind",
+            ModelInvocationLogModel.model_kind,
+            "latency_ms",
+            ModelInvocationLogModel.latency_ms,
+            "usage",
+            ModelInvocationLogModel.usage,
+        ).label("payload"),
+        literal(None, type_=String()).label("channel"),
+        ModelInvocationLogModel.provider.label("provider"),
+        literal(None, type_=String()).label("tool_name"),
+        literal(None, type_=String()).label("workflow_type"),
+    )
+
+
+def _build_tool_timeline_select() -> Any:
+    return select(
+        literal("tool", type_=String()).label("kind"),
+        literal(AUDIT_KIND_ORDER["tool"], type_=Integer()).label("kind_order"),
+        ToolInvocationLogModel.invocation_id.label("event_id"),
+        ToolInvocationLogModel.recorded_at.label("recorded_at"),
+        ToolInvocationLogModel.conversation_id.label("conversation_id"),
+        ToolInvocationLogModel.session_id.label("session_id"),
+        ToolInvocationLogModel.trace_id.label("trace_id"),
+        ToolInvocationLogModel.chain_id.label("chain_id"),
+        ToolInvocationLogModel.request_id.label("request_id"),
+        ToolInvocationLogModel.success.label("success"),
+        ToolInvocationLogModel.tool_name.label("summary"),
+        func.jsonb_build_object(
+            "tool_name",
+            ToolInvocationLogModel.tool_name,
+            "latency_ms",
+            ToolInvocationLogModel.latency_ms,
+            "timeout_seconds",
+            ToolInvocationLogModel.timeout_seconds,
+            "retry_limit",
+            ToolInvocationLogModel.retry_limit,
+        ).label("payload"),
+        literal(None, type_=String()).label("channel"),
+        literal(None, type_=String()).label("provider"),
+        ToolInvocationLogModel.tool_name.label("tool_name"),
+        literal(None, type_=String()).label("workflow_type"),
+    )
+
+
+def _build_workflow_timeline_select() -> Any:
+    return select(
+        literal("workflow", type_=String()).label("kind"),
+        literal(AUDIT_KIND_ORDER["workflow"], type_=Integer()).label("kind_order"),
+        WorkflowEventLogModel.event_id.label("event_id"),
+        WorkflowEventLogModel.recorded_at.label("recorded_at"),
+        WorkflowEventLogModel.conversation_id.label("conversation_id"),
+        WorkflowEventLogModel.session_id.label("session_id"),
+        WorkflowEventLogModel.trace_id.label("trace_id"),
+        WorkflowEventLogModel.chain_id.label("chain_id"),
+        WorkflowEventLogModel.request_id.label("request_id"),
+        WorkflowEventLogModel.success.label("success"),
+        func.concat(
+            WorkflowEventLogModel.workflow_type,
+            ":",
+            WorkflowEventLogModel.event_type,
+        ).label("summary"),
+        func.jsonb_build_object(
+            "workflow_id",
+            WorkflowEventLogModel.workflow_id,
+            "workflow_type",
+            WorkflowEventLogModel.workflow_type,
+            "event_type",
+            WorkflowEventLogModel.event_type,
+            "message",
+            WorkflowEventLogModel.message,
+            "payload",
+            WorkflowEventLogModel.payload,
+        ).label("payload"),
+        literal(None, type_=String()).label("channel"),
+        literal(None, type_=String()).label("provider"),
+        literal(None, type_=String()).label("tool_name"),
+        WorkflowEventLogModel.workflow_type.label("workflow_type"),
+    )
+
+
+def _build_audit_event_dto_from_timeline_row(row: Any) -> AuditEventDTO:
+    payload = row["payload"]
+    return AuditEventDTO(
+        kind=row["kind"],
+        event_id=row["event_id"],
+        recorded_at=row["recorded_at"].isoformat(),
+        conversation_id=row["conversation_id"],
+        session_id=row["session_id"],
+        trace_id=row["trace_id"],
+        chain_id=row["chain_id"],
+        request_id=row["request_id"],
+        success=row["success"],
+        summary=row["summary"],
+        payload=payload if isinstance(payload, dict) else {},
+    )
+
+
+def _resolve_audit_kind_order(kind: str) -> int:
+    try:
+        return AUDIT_KIND_ORDER[kind]
+    except KeyError as exc:
+        raise AuditQueryValidationError(f"不支持的审计类型：{kind}") from exc
