@@ -83,6 +83,26 @@ class MemoryApplicationService:
 
         return self._to_dto(memory)
 
+    async def archive_latest_memory(
+        self,
+        *,
+        conversation_id: str,
+        session_id: str,
+    ) -> MemoryDTO:
+        memory_list = await self.list_memories(
+            ListMemoriesQuery(
+                conversation_id=conversation_id,
+                session_id=session_id,
+                status=MemoryStatus.ACTIVE.value,
+                limit=1,
+            )
+        )
+        if not memory_list.items:
+            raise MemoryNotFoundError("当前会话没有可归档的记忆。")
+        return await self.archive_memory(
+            ArchiveMemoryCommand(memory_id=memory_list.items[0].memory_id)
+        )
+
     @staticmethod
     def _to_dto(memory: MemoryEntry) -> MemoryDTO:
         return MemoryDTO(

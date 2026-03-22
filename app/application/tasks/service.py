@@ -82,6 +82,24 @@ class TaskApplicationService:
 
         return self._to_dto(task)
 
+    async def complete_latest_task(
+        self,
+        *,
+        conversation_id: str,
+        session_id: str,
+    ) -> TaskDTO:
+        task_list = await self.list_tasks(
+            ListTasksQuery(
+                conversation_id=conversation_id,
+                session_id=session_id,
+                status=TaskStatus.PENDING.value,
+                limit=1,
+            )
+        )
+        if not task_list.items:
+            raise TaskNotFoundError("当前会话没有可完成的待办任务。")
+        return await self.complete_task(CompleteTaskCommand(task_id=task_list.items[0].task_id))
+
     async def cancel_task(self, command: CancelTaskCommand) -> TaskDTO:
         parsed_task_id = TaskId.from_string(command.task_id)
 

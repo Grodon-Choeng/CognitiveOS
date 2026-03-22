@@ -21,7 +21,9 @@ from app.infrastructure.llm.models import GenerateRequest
 class ConversationIntent(StrEnum):
     REMINDER_CREATE = "reminder_create"
     TASK_CREATE = "task_create"
+    TASK_COMPLETE = "task_complete"
     MEMORY_WRITE = "memory_write"
+    MEMORY_ARCHIVE = "memory_archive"
     UNKNOWN = "unknown"
 
 
@@ -37,9 +39,23 @@ class ConversationIntentDecision:
 class TaskCreator(Protocol):
     async def create_task(self, command: CreateTaskCommand) -> TaskDTO: ...
 
+    async def complete_latest_task(
+        self,
+        *,
+        conversation_id: str,
+        session_id: str,
+    ) -> TaskDTO: ...
+
 
 class MemoryCreator(Protocol):
     async def create_memory(self, command: CreateMemoryCommand) -> MemoryDTO: ...
+
+    async def archive_latest_memory(
+        self,
+        *,
+        conversation_id: str,
+        session_id: str,
+    ) -> MemoryDTO: ...
 
 
 class ReminderCreator(Protocol):
@@ -157,6 +173,18 @@ class IntentConversationHandler:
                 handled_by="task",
                 reason=f"task_created_via_{decision.source}",
             )
+        if decision.intent == ConversationIntent.TASK_COMPLETE:
+            await self.task_service.complete_latest_task(
+                conversation_id=conversation_id,
+                session_id=session_id,
+            )
+            return ConversationInboundResult(
+                handled=True,
+                conversation_id=conversation_id,
+                session_id=session_id,
+                handled_by="task",
+                reason=f"task_completed_via_{decision.source}",
+            )
         if (
             decision.intent == ConversationIntent.REMINDER_CREATE
             and decision.content is not None
@@ -206,6 +234,18 @@ class IntentConversationHandler:
                 handled_by="memory",
                 reason=f"memory_created_via_{decision.source}",
             )
+        if decision.intent == ConversationIntent.MEMORY_ARCHIVE:
+            await self.memory_service.archive_latest_memory(
+                conversation_id=conversation_id,
+                session_id=session_id,
+            )
+            return ConversationInboundResult(
+                handled=True,
+                conversation_id=conversation_id,
+                session_id=session_id,
+                handled_by="memory",
+                reason=f"memory_archived_via_{decision.source}",
+            )
         return None
 
 
@@ -226,11 +266,29 @@ def _classify_with_rules(
             source="rules",
         )
 
+    if _is_task_complete_request(command):
+        return ConversationIntentDecision(
+            intent=ConversationIntent.TASK_COMPLETE,
+            content=None,
+            remind_at=None,
+            timezone=None,
+            source="rules",
+        )
+
     memory_content = _extract_memory_content(command)
     if memory_content is not None:
         return ConversationIntentDecision(
             intent=ConversationIntent.MEMORY_WRITE,
             content=memory_content,
+            remind_at=None,
+            timezone=None,
+            source="rules",
+        )
+
+    if _is_memory_archive_request(command):
+        return ConversationIntentDecision(
+            intent=ConversationIntent.MEMORY_ARCHIVE,
+            content=None,
             remind_at=None,
             timezone=None,
             source="rules",
@@ -248,15 +306,18 @@ def _classify_with_rules(
 def _build_intent_system_prompt() -> str:
     return (
         "你是 CognitiveOS 的对话意图分类器。"
-        "你只负责判断当前文本是否应该创建 reminder、创建 task、写入 memory，或者都不是。"
+        "你只负责判断当前文本是否应该创建 reminder、创建 task、"
+        "完成 task、写入 memory、归档 memory，或者都不是。"
         "你必须返回 JSON，格式为"
-        '{"intent":"reminder_create|task_create|memory_write|unknown",'
+        '{"intent":"reminder_create|task_create|task_complete|memory_write|memory_archive|unknown",'
         '"content":"提取后的正文或 null",'
         '"remind_at":"ISO8601时间或 null","timezone":"时区或 null"}。'
         "如果文本是在表达未来要提醒的事项，返回 reminder_create，"
         "并提取提醒正文、带时区的 ISO8601 提醒时间，以及 IANA 时区字符串；"
         "如果文本是在表达待办事项，返回 task_create；"
+        "如果文本是在要求完成当前会话里最近一个待办，返回 task_complete；"
         "如果文本是在要求系统记住某件事实或偏好，返回 memory_write；"
+        "如果文本是在要求归档当前会话里最近一条活跃记忆，返回 memory_archive；"
         "否则返回 unknown。"
     )
 
@@ -299,7 +360,14 @@ def _parse_intent_response(content: str) -> ConversationIntentDecision | None:
             remind_at = datetime.fromisoformat(remind_at_value)
         except ValueError:
             return None
-    elif intent != ConversationIntent.UNKNOWN and normalized_content is None:
+    elif intent in {ConversationIntent.TASK_CREATE, ConversationIntent.MEMORY_WRITE}:
+        if normalized_content is None:
+            return None
+    elif intent not in {
+        ConversationIntent.UNKNOWN,
+        ConversationIntent.TASK_COMPLETE,
+        ConversationIntent.MEMORY_ARCHIVE,
+    }:
         return None
     return ConversationIntentDecision(
         intent=intent,
@@ -361,3 +429,17 @@ def _extract_reminder_request(
         )
 
     return None
+
+
+def _is_task_complete_request(command: HandleInboundConversationMessageCommand) -> bool:
+    if command.message_type != "text" or command.text is None:
+        return False
+    normalized = command.text.strip().casefold()
+    return normalized in {"完成任务", "完成待办", "done task", "complete task"}
+
+
+def _is_memory_archive_request(command: HandleInboundConversationMessageCommand) -> bool:
+    if command.message_type != "text" or command.text is None:
+        return False
+    normalized = command.text.strip().casefold()
+    return normalized in {"归档记忆", "archive memory", "归档这条记忆"}
