@@ -182,6 +182,29 @@ class ReminderApplicationService:
             CancelReminderCommand(reminder_id=reminder_list.items[0].reminder_id)
         )
 
+    async def cancel_matching_reminder(
+        self,
+        *,
+        conversation_id: str,
+        session_id: str,
+        text_hint: str,
+    ) -> ReminderDTO:
+        reminder_list = await self.list_reminders(
+            ListRemindersQuery(
+                conversation_id=conversation_id,
+                session_id=session_id,
+                status=ReminderStatus.PENDING.value,
+                limit=20,
+            )
+        )
+        normalized_hint = text_hint.casefold()
+        for reminder in reminder_list.items:
+            if normalized_hint in reminder.text.casefold():
+                return await self.cancel_reminder(
+                    CancelReminderCommand(reminder_id=reminder.reminder_id)
+                )
+        raise ReminderNotFoundError(f"当前会话没有匹配“{text_hint}”的提醒。")
+
     async def handle_inbound_message(
         self,
         command: HandleReminderInboundMessageCommand,

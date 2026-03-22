@@ -103,6 +103,27 @@ class MemoryApplicationService:
             ArchiveMemoryCommand(memory_id=memory_list.items[0].memory_id)
         )
 
+    async def archive_matching_memory(
+        self,
+        *,
+        conversation_id: str,
+        session_id: str,
+        content_hint: str,
+    ) -> MemoryDTO:
+        memory_list = await self.list_memories(
+            ListMemoriesQuery(
+                conversation_id=conversation_id,
+                session_id=session_id,
+                status=MemoryStatus.ACTIVE.value,
+                limit=20,
+            )
+        )
+        normalized_hint = content_hint.casefold()
+        for memory in memory_list.items:
+            if normalized_hint in memory.content.casefold():
+                return await self.archive_memory(ArchiveMemoryCommand(memory_id=memory.memory_id))
+        raise MemoryNotFoundError(f"当前会话没有匹配“{content_hint}”的记忆。")
+
     @staticmethod
     def _to_dto(memory: MemoryEntry) -> MemoryDTO:
         return MemoryDTO(

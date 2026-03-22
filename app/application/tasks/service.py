@@ -100,6 +100,27 @@ class TaskApplicationService:
             raise TaskNotFoundError("当前会话没有可完成的待办任务。")
         return await self.complete_task(CompleteTaskCommand(task_id=task_list.items[0].task_id))
 
+    async def complete_matching_task(
+        self,
+        *,
+        conversation_id: str,
+        session_id: str,
+        title_hint: str,
+    ) -> TaskDTO:
+        task_list = await self.list_tasks(
+            ListTasksQuery(
+                conversation_id=conversation_id,
+                session_id=session_id,
+                status=TaskStatus.PENDING.value,
+                limit=20,
+            )
+        )
+        normalized_hint = title_hint.casefold()
+        for task in task_list.items:
+            if normalized_hint in task.title.casefold():
+                return await self.complete_task(CompleteTaskCommand(task_id=task.task_id))
+        raise TaskNotFoundError(f"当前会话没有匹配“{title_hint}”的待办任务。")
+
     async def cancel_task(self, command: CancelTaskCommand) -> TaskDTO:
         parsed_task_id = TaskId.from_string(command.task_id)
 
@@ -135,6 +156,27 @@ class TaskApplicationService:
         if not task_list.items:
             raise TaskNotFoundError("当前会话没有可取消的待办任务。")
         return await self.cancel_task(CancelTaskCommand(task_id=task_list.items[0].task_id))
+
+    async def cancel_matching_task(
+        self,
+        *,
+        conversation_id: str,
+        session_id: str,
+        title_hint: str,
+    ) -> TaskDTO:
+        task_list = await self.list_tasks(
+            ListTasksQuery(
+                conversation_id=conversation_id,
+                session_id=session_id,
+                status=TaskStatus.PENDING.value,
+                limit=20,
+            )
+        )
+        normalized_hint = title_hint.casefold()
+        for task in task_list.items:
+            if normalized_hint in task.title.casefold():
+                return await self.cancel_task(CancelTaskCommand(task_id=task.task_id))
+        raise TaskNotFoundError(f"当前会话没有匹配“{title_hint}”的待办任务。")
 
     @staticmethod
     def _to_dto(task: Task) -> TaskDTO:

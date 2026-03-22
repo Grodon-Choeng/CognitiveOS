@@ -271,3 +271,35 @@ async def test_archive_latest_memory_uses_latest_active_memory() -> None:
     assert archived.memory_id == latest.memory_id
     assert repository.items[older.memory_id].status == MemoryStatus.ACTIVE
     assert repository.items[latest.memory_id].status == MemoryStatus.ARCHIVED
+
+
+@pytest.mark.asyncio
+async def test_archive_matching_memory_uses_content_hint() -> None:
+    repository = FakeMemoryRepository()
+    service = MemoryApplicationService(
+        unit_of_work_factory=create_fake_unit_of_work_factory(repository),
+        conversation_context_resolver=FakeConversationContextResolver(),
+    )
+    first = await service.create_memory(
+        CreateMemoryCommand(
+            content="喜欢早上九点提醒",
+            conversation_id="conversation-1",
+            session_id="session-1",
+        )
+    )
+    await service.create_memory(
+        CreateMemoryCommand(
+            content="偏好飞书通知",
+            conversation_id="conversation-1",
+            session_id="session-1",
+        )
+    )
+
+    archived = await service.archive_matching_memory(
+        conversation_id="conversation-1",
+        session_id="session-1",
+        content_hint="九点",
+    )
+
+    assert archived.memory_id == first.memory_id
+    assert repository.items[first.memory_id].status == MemoryStatus.ARCHIVED

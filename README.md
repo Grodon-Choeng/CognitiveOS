@@ -140,6 +140,7 @@ tests/
 - 当 conversation 无法识别输入时，也会自动返回一条引导提示，而不是静默无响应。
 - conversation 对话入口现在还支持最小动作类命令：`完成任务` / `取消任务` 会作用于当前会话最近一条 pending task，`归档记忆` 会归档当前会话最近一条 active memory，`取消提醒` 会取消当前会话最近一条 pending reminder。
 - 当这些动作当前没有可操作对象时，系统会直接返回用户可读反馈，而不是静默失败。
+- 这些动作现在也支持附带内容提示，例如：`完成任务 纪要`、`取消提醒 打卡`、`归档记忆 九点提醒`，系统会优先按提示命中对象。
 - 统一 conversation 入口当前还支持显式口令分流：`待办：...` / `todo: ...` 会创建 task，`记住：...` / `记一下：...` 会写入 memory；reminder 续执行仍优先于这些规则。
 - `POST /api/v1/reminders` 当前也支持显式传入 `dispatch_chat_id` 与 `dispatch_thread_id`，便于通过 HTTP 创建群聊 / 话题内 reminder。
 - reminder 与 conversation 入口中，`thread_id` 不能脱离对应的 `chat_id` 单独提供，避免写入不可解析的线程上下文。

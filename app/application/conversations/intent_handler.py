@@ -68,6 +68,22 @@ class TaskCreator(Protocol):
         session_id: str,
     ) -> TaskDTO: ...
 
+    async def complete_matching_task(
+        self,
+        *,
+        conversation_id: str,
+        session_id: str,
+        title_hint: str,
+    ) -> TaskDTO: ...
+
+    async def cancel_matching_task(
+        self,
+        *,
+        conversation_id: str,
+        session_id: str,
+        title_hint: str,
+    ) -> TaskDTO: ...
+
     async def list_tasks(self, query: ListTasksQuery) -> TaskListDTO: ...
 
 
@@ -81,6 +97,14 @@ class MemoryCreator(Protocol):
         session_id: str,
     ) -> MemoryDTO: ...
 
+    async def archive_matching_memory(
+        self,
+        *,
+        conversation_id: str,
+        session_id: str,
+        content_hint: str,
+    ) -> MemoryDTO: ...
+
     async def list_memories(self, query: ListMemoriesQuery) -> MemoryListDTO: ...
 
 
@@ -92,6 +116,14 @@ class ReminderCreator(Protocol):
         *,
         conversation_id: str,
         session_id: str,
+    ) -> ReminderDTO: ...
+
+    async def cancel_matching_reminder(
+        self,
+        *,
+        conversation_id: str,
+        session_id: str,
+        text_hint: str,
     ) -> ReminderDTO: ...
 
     async def list_reminders(self, query: ListRemindersQuery) -> ReminderListDTO: ...
@@ -241,10 +273,17 @@ class IntentConversationHandler:
                     response_text=_format_task_list_text(task_list),
                 )
             if decision.intent == ConversationIntent.TASK_COMPLETE:
-                await self.task_service.complete_latest_task(
-                    conversation_id=conversation_id,
-                    session_id=session_id,
-                )
+                if decision.content:
+                    await self.task_service.complete_matching_task(
+                        conversation_id=conversation_id,
+                        session_id=session_id,
+                        title_hint=decision.content,
+                    )
+                else:
+                    await self.task_service.complete_latest_task(
+                        conversation_id=conversation_id,
+                        session_id=session_id,
+                    )
                 return ConversationInboundResult(
                     handled=True,
                     conversation_id=conversation_id,
@@ -287,10 +326,17 @@ class IntentConversationHandler:
                     ),
                 )
             if decision.intent == ConversationIntent.REMINDER_CANCEL:
-                await self.reminder_service.cancel_latest_reminder(
-                    conversation_id=conversation_id,
-                    session_id=session_id,
-                )
+                if decision.content:
+                    await self.reminder_service.cancel_matching_reminder(
+                        conversation_id=conversation_id,
+                        session_id=session_id,
+                        text_hint=decision.content,
+                    )
+                else:
+                    await self.reminder_service.cancel_latest_reminder(
+                        conversation_id=conversation_id,
+                        session_id=session_id,
+                    )
                 return ConversationInboundResult(
                     handled=True,
                     conversation_id=conversation_id,
@@ -336,10 +382,17 @@ class IntentConversationHandler:
                     response_text=f"好的，我记住了：{decision.content}",
                 )
             if decision.intent == ConversationIntent.MEMORY_ARCHIVE:
-                await self.memory_service.archive_latest_memory(
-                    conversation_id=conversation_id,
-                    session_id=session_id,
-                )
+                if decision.content:
+                    await self.memory_service.archive_matching_memory(
+                        conversation_id=conversation_id,
+                        session_id=session_id,
+                        content_hint=decision.content,
+                    )
+                else:
+                    await self.memory_service.archive_latest_memory(
+                        conversation_id=conversation_id,
+                        session_id=session_id,
+                    )
                 return ConversationInboundResult(
                     handled=True,
                     conversation_id=conversation_id,
@@ -365,10 +418,17 @@ class IntentConversationHandler:
                     response_text=_format_memory_list_text(memory_list),
                 )
             if decision.intent == ConversationIntent.TASK_CANCEL:
-                await self.task_service.cancel_latest_task(
-                    conversation_id=conversation_id,
-                    session_id=session_id,
-                )
+                if decision.content:
+                    await self.task_service.cancel_matching_task(
+                        conversation_id=conversation_id,
+                        session_id=session_id,
+                        title_hint=decision.content,
+                    )
+                else:
+                    await self.task_service.cancel_latest_task(
+                        conversation_id=conversation_id,
+                        session_id=session_id,
+                    )
                 return ConversationInboundResult(
                     handled=True,
                     conversation_id=conversation_id,
@@ -466,10 +526,14 @@ def _classify_with_rules(
             source="rules",
         )
 
-    if _is_task_complete_request(command):
+    matched, content = _extract_action_content(
+        command,
+        prefixes=("完成任务", "完成待办", "done task", "complete task"),
+    )
+    if matched:
         return ConversationIntentDecision(
             intent=ConversationIntent.TASK_COMPLETE,
-            content=None,
+            content=content,
             remind_at=None,
             timezone=None,
             source="rules",
@@ -484,10 +548,14 @@ def _classify_with_rules(
             source="rules",
         )
 
-    if _is_task_cancel_request(command):
+    matched, content = _extract_action_content(
+        command,
+        prefixes=("取消任务", "取消待办", "cancel task"),
+    )
+    if matched:
         return ConversationIntentDecision(
             intent=ConversationIntent.TASK_CANCEL,
-            content=None,
+            content=content,
             remind_at=None,
             timezone=None,
             source="rules",
@@ -503,10 +571,14 @@ def _classify_with_rules(
             source="rules",
         )
 
-    if _is_memory_archive_request(command):
+    matched, content = _extract_action_content(
+        command,
+        prefixes=("归档记忆", "archive memory", "归档这条记忆"),
+    )
+    if matched:
         return ConversationIntentDecision(
             intent=ConversationIntent.MEMORY_ARCHIVE,
-            content=None,
+            content=content,
             remind_at=None,
             timezone=None,
             source="rules",
@@ -521,10 +593,14 @@ def _classify_with_rules(
             source="rules",
         )
 
-    if _is_reminder_cancel_request(command):
+    matched, content = _extract_action_content(
+        command,
+        prefixes=("取消提醒", "cancel reminder", "取消这个提醒"),
+    )
+    if matched:
         return ConversationIntentDecision(
             intent=ConversationIntent.REMINDER_CANCEL,
-            content=None,
+            content=content,
             remind_at=None,
             timezone=None,
             source="rules",
@@ -711,10 +787,11 @@ def _extract_reminder_request(
 
 
 def _is_task_complete_request(command: HandleInboundConversationMessageCommand) -> bool:
-    if command.message_type != "text" or command.text is None:
-        return False
-    normalized = command.text.strip().casefold()
-    return normalized in {"完成任务", "完成待办", "done task", "complete task"}
+    matched, _ = _extract_action_content(
+        command,
+        prefixes=("完成任务", "完成待办", "done task", "complete task"),
+    )
+    return matched
 
 
 def _is_task_list_request(command: HandleInboundConversationMessageCommand) -> bool:
@@ -725,17 +802,19 @@ def _is_task_list_request(command: HandleInboundConversationMessageCommand) -> b
 
 
 def _is_task_cancel_request(command: HandleInboundConversationMessageCommand) -> bool:
-    if command.message_type != "text" or command.text is None:
-        return False
-    normalized = command.text.strip().casefold()
-    return normalized in {"取消任务", "取消待办", "cancel task"}
+    matched, _ = _extract_action_content(
+        command,
+        prefixes=("取消任务", "取消待办", "cancel task"),
+    )
+    return matched
 
 
 def _is_memory_archive_request(command: HandleInboundConversationMessageCommand) -> bool:
-    if command.message_type != "text" or command.text is None:
-        return False
-    normalized = command.text.strip().casefold()
-    return normalized in {"归档记忆", "archive memory", "归档这条记忆"}
+    matched, _ = _extract_action_content(
+        command,
+        prefixes=("归档记忆", "archive memory", "归档这条记忆"),
+    )
+    return matched
 
 
 def _is_memory_list_request(command: HandleInboundConversationMessageCommand) -> bool:
@@ -746,10 +825,11 @@ def _is_memory_list_request(command: HandleInboundConversationMessageCommand) ->
 
 
 def _is_reminder_cancel_request(command: HandleInboundConversationMessageCommand) -> bool:
-    if command.message_type != "text" or command.text is None:
-        return False
-    normalized = command.text.strip().casefold()
-    return normalized in {"取消提醒", "cancel reminder", "取消这个提醒"}
+    matched, _ = _extract_action_content(
+        command,
+        prefixes=("取消提醒", "cancel reminder", "取消这个提醒"),
+    )
+    return matched
 
 
 def _is_reminder_list_request(command: HandleInboundConversationMessageCommand) -> bool:
@@ -860,6 +940,25 @@ def _format_memory_list_text(memory_list: MemoryListDTO) -> str:
     for memory in memory_list.items:
         lines.append(f"- [{memory.status}] {memory.content}")
     return "\n".join(lines)
+
+
+def _extract_action_content(
+    command: HandleInboundConversationMessageCommand,
+    *,
+    prefixes: tuple[str, ...],
+) -> tuple[bool, str | None]:
+    if command.message_type != "text" or command.text is None:
+        return False, None
+    normalized_text = command.text.strip()
+    lowered_text = normalized_text.casefold()
+    for prefix in prefixes:
+        lowered_prefix = prefix.casefold()
+        if lowered_text == lowered_prefix:
+            return True, None
+        if lowered_text.startswith(lowered_prefix):
+            content = normalized_text[len(prefix) :].lstrip("：: \n\t")
+            return True, content or None
+    return False, None
 
 
 def _handled_by_for_intent(intent: ConversationIntent) -> str | None:

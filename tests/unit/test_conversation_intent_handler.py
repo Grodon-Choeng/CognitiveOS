@@ -98,6 +98,42 @@ class FakeTaskService:
             completed_at=None,
         )
 
+    async def complete_matching_task(
+        self,
+        *,
+        conversation_id: str,
+        session_id: str,
+        title_hint: str,
+    ) -> TaskDTO:
+        self.completed_latest_calls.append((conversation_id, session_id))
+        return TaskDTO(
+            task_id="00000000-0000-0000-0000-000000000011",
+            title=title_hint,
+            created_at=datetime(2026, 3, 22, 9, 0, tzinfo=UTC),
+            status="completed",
+            conversation_id=conversation_id,
+            session_id=session_id,
+            completed_at=datetime(2026, 3, 22, 10, 0, tzinfo=UTC),
+        )
+
+    async def cancel_matching_task(
+        self,
+        *,
+        conversation_id: str,
+        session_id: str,
+        title_hint: str,
+    ) -> TaskDTO:
+        self.canceled_latest_calls.append((conversation_id, session_id))
+        return TaskDTO(
+            task_id="00000000-0000-0000-0000-000000000012",
+            title=title_hint,
+            created_at=datetime(2026, 3, 22, 9, 0, tzinfo=UTC),
+            status="canceled",
+            conversation_id=conversation_id,
+            session_id=session_id,
+            completed_at=None,
+        )
+
     async def list_tasks(self, query: object) -> TaskListDTO:
         self.list_queries.append(query)
         return TaskListDTO(
@@ -144,6 +180,24 @@ class FakeMemoryService:
         return MemoryDTO(
             memory_id="00000000-0000-0000-0000-000000000002",
             content="最近记忆",
+            created_at=datetime(2026, 3, 22, 9, 0, tzinfo=UTC),
+            status="archived",
+            conversation_id=conversation_id,
+            session_id=session_id,
+            archived_at=datetime(2026, 3, 22, 10, 0, tzinfo=UTC),
+        )
+
+    async def archive_matching_memory(
+        self,
+        *,
+        conversation_id: str,
+        session_id: str,
+        content_hint: str,
+    ) -> MemoryDTO:
+        self.archived_latest_calls.append((conversation_id, session_id))
+        return MemoryDTO(
+            memory_id="00000000-0000-0000-0000-000000000021",
+            content=content_hint,
             created_at=datetime(2026, 3, 22, 9, 0, tzinfo=UTC),
             status="archived",
             conversation_id=conversation_id,
@@ -203,6 +257,25 @@ class FakeReminderService:
             conversation_id=conversation_id,
             session_id=session_id,
             workflow_id="reminder:00000000-0000-0000-0000-000000000004",
+        )
+
+    async def cancel_matching_reminder(
+        self,
+        *,
+        conversation_id: str,
+        session_id: str,
+        text_hint: str,
+    ) -> ReminderDTO:
+        self.canceled_latest_calls.append((conversation_id, session_id))
+        return ReminderDTO(
+            reminder_id="00000000-0000-0000-0000-000000000031",
+            text=text_hint,
+            remind_at=datetime(2026, 3, 23, 9, 0, tzinfo=UTC),
+            timezone="Asia/Shanghai",
+            status="canceled",
+            conversation_id=conversation_id,
+            session_id=session_id,
+            workflow_id="reminder:r-31",
         )
 
     async def list_reminders(self, query: object) -> ReminderListDTO:
@@ -643,6 +716,46 @@ async def test_intent_handler_dispatches_to_complete_latest_task() -> None:
 
 
 @pytest.mark.asyncio
+async def test_intent_handler_dispatches_to_complete_matching_task() -> None:
+    task_service = FakeTaskService()
+    memory_service = FakeMemoryService()
+    reminder_service = FakeReminderService()
+    overview_service = FakeOverviewService()
+    handler = IntentConversationHandler(
+        classifier=LLMFirstConversationIntentClassifier(
+            llm_gateway=FakeLLMGateway('{"intent":"task_complete","content":"纪要"}'),
+            model="gpt-test",
+            api_key_suffix="90abcdef",
+        ),
+        task_service=task_service,
+        memory_service=memory_service,
+        reminder_service=reminder_service,
+        overview_service=overview_service,
+    )
+
+    result = await handler.handle(
+        HandleInboundConversationMessageCommand(
+            channel="web",
+            message_type="text",
+            user_identity="user-1",
+            external_message_id=None,
+            root_message_id=None,
+            parent_message_id=None,
+            chat_id=None,
+            thread_id=None,
+            text="完成任务 纪要",
+            raw_payload={"text": "完成任务 纪要"},
+        ),
+        conversation_id="conversation-1",
+        session_id="session-1",
+    )
+
+    assert result is not None
+    assert result.handled_by == "task"
+    assert result.reason == "task_completed_via_llm"
+
+
+@pytest.mark.asyncio
 async def test_intent_handler_dispatches_to_cancel_latest_task() -> None:
     task_service = FakeTaskService()
     memory_service = FakeMemoryService()
@@ -722,6 +835,46 @@ async def test_intent_handler_dispatches_to_archive_latest_memory() -> None:
     assert result.handled_by == "memory"
     assert result.reason == "memory_archived_via_llm"
     assert memory_service.archived_latest_calls == [("conversation-1", "session-1")]
+
+
+@pytest.mark.asyncio
+async def test_intent_handler_dispatches_to_archive_matching_memory() -> None:
+    task_service = FakeTaskService()
+    memory_service = FakeMemoryService()
+    reminder_service = FakeReminderService()
+    overview_service = FakeOverviewService()
+    handler = IntentConversationHandler(
+        classifier=LLMFirstConversationIntentClassifier(
+            llm_gateway=FakeLLMGateway('{"intent":"memory_archive","content":"九点提醒"}'),
+            model="gpt-test",
+            api_key_suffix="90abcdef",
+        ),
+        task_service=task_service,
+        memory_service=memory_service,
+        reminder_service=reminder_service,
+        overview_service=overview_service,
+    )
+
+    result = await handler.handle(
+        HandleInboundConversationMessageCommand(
+            channel="web",
+            message_type="text",
+            user_identity="user-1",
+            external_message_id=None,
+            root_message_id=None,
+            parent_message_id=None,
+            chat_id=None,
+            thread_id=None,
+            text="归档记忆 九点提醒",
+            raw_payload={"text": "归档记忆 九点提醒"},
+        ),
+        conversation_id="conversation-1",
+        session_id="session-1",
+    )
+
+    assert result is not None
+    assert result.handled_by == "memory"
+    assert result.reason == "memory_archived_via_llm"
 
 
 @pytest.mark.asyncio
@@ -805,6 +958,46 @@ async def test_intent_handler_dispatches_to_cancel_latest_reminder() -> None:
     assert result.handled_by == "reminder"
     assert result.reason == "reminder_canceled_via_llm"
     assert reminder_service.canceled_latest_calls == [("conversation-1", "session-1")]
+
+
+@pytest.mark.asyncio
+async def test_intent_handler_dispatches_to_cancel_matching_reminder() -> None:
+    task_service = FakeTaskService()
+    memory_service = FakeMemoryService()
+    reminder_service = FakeReminderService()
+    overview_service = FakeOverviewService()
+    handler = IntentConversationHandler(
+        classifier=LLMFirstConversationIntentClassifier(
+            llm_gateway=FakeLLMGateway('{"intent":"reminder_cancel","content":"打卡"}'),
+            model="gpt-test",
+            api_key_suffix="90abcdef",
+        ),
+        task_service=task_service,
+        memory_service=memory_service,
+        reminder_service=reminder_service,
+        overview_service=overview_service,
+    )
+
+    result = await handler.handle(
+        HandleInboundConversationMessageCommand(
+            channel="web",
+            message_type="text",
+            user_identity="user-1",
+            external_message_id=None,
+            root_message_id=None,
+            parent_message_id=None,
+            chat_id=None,
+            thread_id=None,
+            text="取消提醒 打卡",
+            raw_payload={"text": "取消提醒 打卡"},
+        ),
+        conversation_id="conversation-1",
+        session_id="session-1",
+    )
+
+    assert result is not None
+    assert result.handled_by == "reminder"
+    assert result.reason == "reminder_canceled_via_llm"
 
 
 @pytest.mark.asyncio
