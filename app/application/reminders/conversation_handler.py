@@ -38,4 +38,5 @@ class ReminderConversationHandler:
             session_id=session_id,
             handled_by=self.name if result.handled else None,
             reason=result.reason,
+            response_text="好的，已将这条提醒标记为完成。" if result.handled else None,
         )

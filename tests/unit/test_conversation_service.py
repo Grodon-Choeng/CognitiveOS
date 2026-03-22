@@ -87,6 +87,7 @@ class AcceptingHandler:
             conversation_id=conversation_id,
             session_id=session_id,
             handled_by=self.name,
+            response_text="好的，已处理。",
         )
 
 
@@ -122,6 +123,7 @@ async def test_conversation_service_routes_to_first_accepting_handler() -> None:
     assert isinstance(record, MessageEventRecord)
     assert record.metadata["handled"] is True
     assert record.metadata["handled_by"] == "accept"
+    assert record.metadata["response_text"] == "好的，已处理。"
     assert isinstance(record.latency_ms, float)
 
 

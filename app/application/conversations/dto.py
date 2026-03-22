@@ -8,3 +8,4 @@ class ConversationInboundResult:
     session_id: str
     handled_by: str | None = None
     reason: str | None = None
+    response_text: str | None = None

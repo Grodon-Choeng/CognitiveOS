@@ -23,6 +23,7 @@ class FakeConversationService:
             session_id="session-1",
             handled_by="reminder",
             reason=None,
+            response_text="好的，已处理。",
         )
 
 
@@ -54,6 +55,7 @@ def test_receive_conversation_message_route_returns_structured_response() -> Non
         "session_id": "session-1",
         "handled_by": "reminder",
         "reason": None,
+        "response_text": "好的，已处理。",
     }
 
 

@@ -299,7 +299,10 @@ class ApplicationContainer:
 
     @cached_property
     def inbound_event_recorder(self) -> ConversationInboundEventRecorder:
-        return ConversationInboundEventRecorder(self.build_conversation_service())
+        return ConversationInboundEventRecorder(
+            self.build_conversation_service(),
+            self.build_messaging_adapter(),
+        )
 
     @cached_property
     def feishu_webhook_handler(self) -> FeishuWebhookHandler:

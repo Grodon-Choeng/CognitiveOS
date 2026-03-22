@@ -1,16 +1,34 @@
 import logging
+from typing import Protocol
 
 from app.application.conversations.commands import HandleInboundConversationMessageCommand
-from app.application.conversations.service import ConversationApplicationService
+from app.application.conversations.dto import ConversationInboundResult
+from app.infrastructure.integrations.messaging.base import (
+    MessageTarget,
+    MessagingAdapter,
+    OutboundMessage,
+)
 from app.infrastructure.integrations.messaging.feishu_webhook import (
     FeishuInboundEventRecorder,
     InboundMessageEvent,
 )
 
 
+class ConversationInboundMessageHandler(Protocol):
+    async def handle_inbound_message(
+        self,
+        command: HandleInboundConversationMessageCommand,
+    ) -> ConversationInboundResult: ...
+
+
 class ConversationInboundEventRecorder(FeishuInboundEventRecorder):
-    def __init__(self, conversation_service: ConversationApplicationService) -> None:
+    def __init__(
+        self,
+        conversation_service: ConversationInboundMessageHandler,
+        messaging_adapter: MessagingAdapter,
+    ) -> None:
         self.conversation_service = conversation_service
+        self.messaging_adapter = messaging_adapter
         self.logger = logging.getLogger(__name__)
 
     async def record(self, event: InboundMessageEvent) -> None:
@@ -43,6 +61,21 @@ class ConversationInboundEventRecorder(FeishuInboundEventRecorder):
                 raw_payload=event.raw_body,
             )
         )
+        if result.handled and result.response_text:
+            await self.messaging_adapter.send_message(
+                MessageTarget(channel=event.channel, recipient_id=event.sender_open_id),
+                OutboundMessage(
+                    text=result.response_text,
+                    metadata={
+                        "conversation_id": result.conversation_id,
+                        "session_id": result.session_id,
+                        "chat_id": event.chat_id,
+                        "thread_id": event.thread_id,
+                        "parent_message_id": event.message_id,
+                        "root_message_id": event.root_message_id or event.message_id,
+                    },
+                ),
+            )
         self.logger.info(
             "飞书入站消息处理完成。",
             extra={
@@ -52,5 +85,6 @@ class ConversationInboundEventRecorder(FeishuInboundEventRecorder):
                 "session_id": result.session_id,
                 "handled_by": result.handled_by,
                 "reason": result.reason,
+                "response_text": result.response_text,
             },
         )

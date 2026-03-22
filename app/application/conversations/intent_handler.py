@@ -188,6 +188,7 @@ class IntentConversationHandler:
                 session_id=session_id,
                 handled_by="task",
                 reason=f"task_created_via_{decision.source}",
+                response_text=f"好的，已创建待办：{decision.content}",
             )
         if decision.intent == ConversationIntent.TASK_COMPLETE:
             await self.task_service.complete_latest_task(
@@ -200,6 +201,7 @@ class IntentConversationHandler:
                 session_id=session_id,
                 handled_by="task",
                 reason=f"task_completed_via_{decision.source}",
+                response_text="好的，已完成最近一条待办。",
             )
         if (
             decision.intent == ConversationIntent.REMINDER_CREATE
@@ -230,6 +232,9 @@ class IntentConversationHandler:
                 session_id=session_id,
                 handled_by="reminder",
                 reason=f"reminder_created_via_{decision.source}",
+                response_text=(
+                    f"好的，我会在 {decision.remind_at.isoformat()} 提醒你：{decision.content}"
+                ),
             )
         if decision.intent == ConversationIntent.REMINDER_CANCEL:
             await self.reminder_service.cancel_latest_reminder(
@@ -242,6 +247,7 @@ class IntentConversationHandler:
                 session_id=session_id,
                 handled_by="reminder",
                 reason=f"reminder_canceled_via_{decision.source}",
+                response_text="好的，已取消最近一条提醒。",
             )
         if decision.intent == ConversationIntent.MEMORY_WRITE and decision.content is not None:
             await self.memory_service.create_memory(
@@ -261,6 +267,7 @@ class IntentConversationHandler:
                 session_id=session_id,
                 handled_by="memory",
                 reason=f"memory_created_via_{decision.source}",
+                response_text=f"好的，我记住了：{decision.content}",
             )
         if decision.intent == ConversationIntent.MEMORY_ARCHIVE:
             await self.memory_service.archive_latest_memory(
@@ -273,6 +280,7 @@ class IntentConversationHandler:
                 session_id=session_id,
                 handled_by="memory",
                 reason=f"memory_archived_via_{decision.source}",
+                response_text="好的，已归档最近一条记忆。",
             )
         if decision.intent == ConversationIntent.TASK_CANCEL:
             await self.task_service.cancel_latest_task(
@@ -285,6 +293,7 @@ class IntentConversationHandler:
                 session_id=session_id,
                 handled_by="task",
                 reason=f"task_canceled_via_{decision.source}",
+                response_text="好的，已取消最近一条待办。",
             )
         return None
 
