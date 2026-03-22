@@ -24,9 +24,10 @@ from app.infrastructure.llm.models import GenerateRequest, GenerateResult
 class FakeLLMGateway:
     def __init__(self, content: str) -> None:
         self.content = content
+        self.last_request: GenerateRequest | None = None
 
     async def generate(self, request: GenerateRequest) -> GenerateResult:
-        _ = request
+        self.last_request = request
         return GenerateResult(
             content=self.content,
             model="gpt-test",
@@ -346,13 +347,14 @@ async def test_intent_classifier_falls_back_to_rules_when_llm_fails() -> None:
 
 @pytest.mark.asyncio
 async def test_intent_handler_dispatches_to_task_service() -> None:
+    llm_gateway = FakeLLMGateway('{"intent":"task_create","content":"整理会议纪要"}')
     task_service = FakeTaskService()
     memory_service = FakeMemoryService()
     reminder_service = FakeReminderService()
     overview_service = FakeOverviewService()
     handler = IntentConversationHandler(
         classifier=LLMFirstConversationIntentClassifier(
-            llm_gateway=FakeLLMGateway('{"intent":"task_create","content":"整理会议纪要"}'),
+            llm_gateway=llm_gateway,
             model="gpt-test",
             api_key_suffix="90abcdef",
         ),
@@ -384,7 +386,9 @@ async def test_intent_handler_dispatches_to_task_service() -> None:
     assert task_service.created_titles == ["整理会议纪要"]
     assert memory_service.created_contents == []
     assert reminder_service.created_requests == []
-    assert overview_service.queries == []
+    assert len(overview_service.queries) == 1
+    assert llm_gateway.last_request is not None
+    assert "当前会话上下文：" in llm_gateway.last_request.prompt
 
 
 @pytest.mark.asyncio
@@ -926,7 +930,7 @@ async def test_intent_handler_dispatches_to_recent_activity_view() -> None:
     assert result.handled_by == "overview"
     assert result.reason == "activity_shown_via_llm"
     assert "最近活动：" in (result.response_text or "")
-    query = overview_service.queries[0]
+    query = overview_service.queries[-1]
     assert query.reminder_limit == 0
     assert query.task_limit == 0
     assert query.memory_limit == 0

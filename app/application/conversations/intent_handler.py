@@ -119,11 +119,13 @@ class LLMFirstConversationIntentClassifier:
         *,
         conversation_id: str,
         session_id: str,
+        context_text: str | None = None,
     ) -> ConversationIntentDecision:
         llm_decision = await self._classify_with_llm(
             command=command,
             conversation_id=conversation_id,
             session_id=session_id,
+            context_text=context_text,
         )
         if llm_decision is not None and llm_decision.intent != ConversationIntent.UNKNOWN:
             return llm_decision
@@ -140,6 +142,7 @@ class LLMFirstConversationIntentClassifier:
         command: HandleInboundConversationMessageCommand,
         conversation_id: str,
         session_id: str,
+        context_text: str | None,
     ) -> ConversationIntentDecision | None:
         if self.llm_gateway is None or self.model is None:
             return None
@@ -149,7 +152,7 @@ class LLMFirstConversationIntentClassifier:
         try:
             result = await self.llm_gateway.generate(
                 GenerateRequest(
-                    prompt=_build_intent_prompt(command.text),
+                    prompt=_build_intent_prompt(command.text, context_text),
                     system_prompt=_build_intent_system_prompt(),
                     provider="openai",
                     model=self.model,
@@ -190,10 +193,15 @@ class IntentConversationHandler:
         conversation_id: str,
         session_id: str,
     ) -> ConversationInboundResult | None:
+        context_text = await self._build_context_text(
+            conversation_id=conversation_id,
+            session_id=session_id,
+        )
         decision = await self.classifier.classify(
             command,
             conversation_id=conversation_id,
             session_id=session_id,
+            context_text=context_text,
         )
         try:
             if decision.intent == ConversationIntent.TASK_CREATE and decision.content is not None:
@@ -417,6 +425,29 @@ class IntentConversationHandler:
                 response_text=str(exc),
             )
 
+    async def _build_context_text(
+        self,
+        *,
+        conversation_id: str,
+        session_id: str,
+    ) -> str | None:
+        if self.classifier.llm_gateway is None or self.classifier.model is None:
+            return None
+        try:
+            overview = await self.overview_service.get_overview(
+                GetOverviewQuery(
+                    conversation_id=conversation_id,
+                    session_id=session_id,
+                    reminder_limit=3,
+                    task_limit=3,
+                    memory_limit=3,
+                    recent_activity_limit=3,
+                )
+            )
+        except Exception:
+            return None
+        return _format_overview_context_hint(overview)
+
 
 def _classify_with_rules(
     command: HandleInboundConversationMessageCommand,
@@ -561,7 +592,9 @@ def _build_intent_system_prompt() -> str:
     )
 
 
-def _build_intent_prompt(text: str) -> str:
+def _build_intent_prompt(text: str, context_text: str | None) -> str:
+    if context_text:
+        return f"当前会话上下文：\n{context_text}\n\n用户输入：{text}"
     return f"用户输入：{text}"
 
 
@@ -779,6 +812,27 @@ def _format_recent_activity_text(overview: OverviewDTO) -> str:
     for event in overview.recent_activity:
         lines.append(f"- [{event.kind}] {event.summary}")
     return "\n".join(lines)
+
+
+def _format_overview_context_hint(overview: OverviewDTO) -> str:
+    lines = []
+    if overview.pending_reminders:
+        lines.append("pending_reminders:")
+        for reminder in overview.pending_reminders:
+            lines.append(f"- {reminder.text}")
+    if overview.pending_tasks:
+        lines.append("pending_tasks:")
+        for task in overview.pending_tasks:
+            lines.append(f"- {task.title}")
+    if overview.active_memories:
+        lines.append("active_memories:")
+        for memory in overview.active_memories:
+            lines.append(f"- {memory.content}")
+    if overview.recent_activity:
+        lines.append("recent_activity:")
+        for event in overview.recent_activity:
+            lines.append(f"- [{event.kind}] {event.summary}")
+    return "\n".join(lines) if lines else "当前会话暂无上下文。"
 
 
 def _format_task_list_text(task_list: TaskListDTO) -> str:
