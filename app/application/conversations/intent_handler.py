@@ -9,15 +9,18 @@ from app.application.conversations.dto import ConversationInboundResult
 from app.application.memory.commands import CreateMemoryCommand
 from app.application.memory.conversation_handler import _extract_memory_content
 from app.application.memory.dto import MemoryDTO, MemoryListDTO
+from app.application.memory.errors import MemoryApplicationError
 from app.application.memory.queries import ListMemoriesQuery
 from app.application.overview.dto import OverviewDTO
 from app.application.overview.queries import GetOverviewQuery
 from app.application.reminders.commands import CreateReminderCommand
 from app.application.reminders.dto import ReminderDTO, ReminderListDTO
+from app.application.reminders.errors import ReminderApplicationError
 from app.application.reminders.queries import ListRemindersQuery
 from app.application.tasks.commands import CreateTaskCommand
 from app.application.tasks.conversation_handler import _extract_task_title
 from app.application.tasks.dto import TaskDTO, TaskListDTO
+from app.application.tasks.errors import TaskApplicationError
 from app.application.tasks.queries import ListTasksQuery
 from app.infrastructure.llm.gateway import LLMGateway
 from app.infrastructure.llm.models import GenerateRequest
@@ -191,195 +194,208 @@ class IntentConversationHandler:
             conversation_id=conversation_id,
             session_id=session_id,
         )
-        if decision.intent == ConversationIntent.TASK_CREATE and decision.content is not None:
-            await self.task_service.create_task(
-                CreateTaskCommand(
-                    title=decision.content,
+        try:
+            if decision.intent == ConversationIntent.TASK_CREATE and decision.content is not None:
+                await self.task_service.create_task(
+                    CreateTaskCommand(
+                        title=decision.content,
+                        conversation_id=conversation_id,
+                        session_id=session_id,
+                        source_channel=command.channel,
+                        source_user_id=command.user_identity,
+                        source_chat_id=command.chat_id,
+                        source_thread_id=command.thread_id,
+                    )
+                )
+                return ConversationInboundResult(
+                    handled=True,
                     conversation_id=conversation_id,
                     session_id=session_id,
-                    source_channel=command.channel,
-                    source_user_id=command.user_identity,
-                    source_chat_id=command.chat_id,
-                    source_thread_id=command.thread_id,
+                    handled_by="task",
+                    reason=f"task_created_via_{decision.source}",
+                    response_text=f"好的，已创建待办：{decision.content}",
                 )
-            )
-            return ConversationInboundResult(
-                handled=True,
-                conversation_id=conversation_id,
-                session_id=session_id,
-                handled_by="task",
-                reason=f"task_created_via_{decision.source}",
-                response_text=f"好的，已创建待办：{decision.content}",
-            )
-        if decision.intent == ConversationIntent.TASK_LIST:
-            task_list = await self.task_service.list_tasks(
-                ListTasksQuery(
+            if decision.intent == ConversationIntent.TASK_LIST:
+                task_list = await self.task_service.list_tasks(
+                    ListTasksQuery(
+                        conversation_id=conversation_id,
+                        session_id=session_id,
+                        limit=5,
+                    )
+                )
+                return ConversationInboundResult(
+                    handled=True,
                     conversation_id=conversation_id,
                     session_id=session_id,
-                    limit=5,
+                    handled_by="task",
+                    reason=f"task_listed_via_{decision.source}",
+                    response_text=_format_task_list_text(task_list),
                 )
-            )
-            return ConversationInboundResult(
-                handled=True,
-                conversation_id=conversation_id,
-                session_id=session_id,
-                handled_by="task",
-                reason=f"task_listed_via_{decision.source}",
-                response_text=_format_task_list_text(task_list),
-            )
-        if decision.intent == ConversationIntent.TASK_COMPLETE:
-            await self.task_service.complete_latest_task(
-                conversation_id=conversation_id,
-                session_id=session_id,
-            )
-            return ConversationInboundResult(
-                handled=True,
-                conversation_id=conversation_id,
-                session_id=session_id,
-                handled_by="task",
-                reason=f"task_completed_via_{decision.source}",
-                response_text="好的，已完成最近一条待办。",
-            )
-        if (
-            decision.intent == ConversationIntent.REMINDER_CREATE
-            and decision.content is not None
-            and decision.remind_at is not None
-            and decision.timezone is not None
-        ):
-            await self.reminder_service.create_reminder(
-                CreateReminderCommand(
-                    text=decision.content,
-                    remind_at=decision.remind_at,
-                    timezone=decision.timezone,
-                    conversation_id=conversation_id,
-                    session_id=session_id,
-                    source_channel=command.channel,
-                    source_user_id=command.user_identity,
-                    source_chat_id=command.chat_id,
-                    source_thread_id=command.thread_id,
-                    dispatch_channel=command.channel,
-                    dispatch_recipient_id=command.user_identity,
-                    dispatch_chat_id=command.chat_id,
-                    dispatch_thread_id=command.thread_id,
-                )
-            )
-            return ConversationInboundResult(
-                handled=True,
-                conversation_id=conversation_id,
-                session_id=session_id,
-                handled_by="reminder",
-                reason=f"reminder_created_via_{decision.source}",
-                response_text=(
-                    f"好的，我会在 {decision.remind_at.isoformat()} 提醒你：{decision.content}"
-                ),
-            )
-        if decision.intent == ConversationIntent.REMINDER_CANCEL:
-            await self.reminder_service.cancel_latest_reminder(
-                conversation_id=conversation_id,
-                session_id=session_id,
-            )
-            return ConversationInboundResult(
-                handled=True,
-                conversation_id=conversation_id,
-                session_id=session_id,
-                handled_by="reminder",
-                reason=f"reminder_canceled_via_{decision.source}",
-                response_text="好的，已取消最近一条提醒。",
-            )
-        if decision.intent == ConversationIntent.REMINDER_LIST:
-            reminder_list = await self.reminder_service.list_reminders(
-                ListRemindersQuery(
-                    conversation_id=conversation_id,
-                    session_id=session_id,
-                    limit=5,
-                )
-            )
-            return ConversationInboundResult(
-                handled=True,
-                conversation_id=conversation_id,
-                session_id=session_id,
-                handled_by="reminder",
-                reason=f"reminder_listed_via_{decision.source}",
-                response_text=_format_reminder_list_text(reminder_list),
-            )
-        if decision.intent == ConversationIntent.MEMORY_WRITE and decision.content is not None:
-            await self.memory_service.create_memory(
-                CreateMemoryCommand(
-                    content=decision.content,
-                    conversation_id=conversation_id,
-                    session_id=session_id,
-                    source_channel=command.channel,
-                    source_user_id=command.user_identity,
-                    source_chat_id=command.chat_id,
-                    source_thread_id=command.thread_id,
-                )
-            )
-            return ConversationInboundResult(
-                handled=True,
-                conversation_id=conversation_id,
-                session_id=session_id,
-                handled_by="memory",
-                reason=f"memory_created_via_{decision.source}",
-                response_text=f"好的，我记住了：{decision.content}",
-            )
-        if decision.intent == ConversationIntent.MEMORY_ARCHIVE:
-            await self.memory_service.archive_latest_memory(
-                conversation_id=conversation_id,
-                session_id=session_id,
-            )
-            return ConversationInboundResult(
-                handled=True,
-                conversation_id=conversation_id,
-                session_id=session_id,
-                handled_by="memory",
-                reason=f"memory_archived_via_{decision.source}",
-                response_text="好的，已归档最近一条记忆。",
-            )
-        if decision.intent == ConversationIntent.MEMORY_LIST:
-            memory_list = await self.memory_service.list_memories(
-                ListMemoriesQuery(
-                    conversation_id=conversation_id,
-                    session_id=session_id,
-                    limit=5,
-                )
-            )
-            return ConversationInboundResult(
-                handled=True,
-                conversation_id=conversation_id,
-                session_id=session_id,
-                handled_by="memory",
-                reason=f"memory_listed_via_{decision.source}",
-                response_text=_format_memory_list_text(memory_list),
-            )
-        if decision.intent == ConversationIntent.TASK_CANCEL:
-            await self.task_service.cancel_latest_task(
-                conversation_id=conversation_id,
-                session_id=session_id,
-            )
-            return ConversationInboundResult(
-                handled=True,
-                conversation_id=conversation_id,
-                session_id=session_id,
-                handled_by="task",
-                reason=f"task_canceled_via_{decision.source}",
-                response_text="好的，已取消最近一条待办。",
-            )
-        if decision.intent == ConversationIntent.OVERVIEW_SHOW:
-            overview = await self.overview_service.get_overview(
-                GetOverviewQuery(
+            if decision.intent == ConversationIntent.TASK_COMPLETE:
+                await self.task_service.complete_latest_task(
                     conversation_id=conversation_id,
                     session_id=session_id,
                 )
-            )
+                return ConversationInboundResult(
+                    handled=True,
+                    conversation_id=conversation_id,
+                    session_id=session_id,
+                    handled_by="task",
+                    reason=f"task_completed_via_{decision.source}",
+                    response_text="好的，已完成最近一条待办。",
+                )
+            if (
+                decision.intent == ConversationIntent.REMINDER_CREATE
+                and decision.content is not None
+                and decision.remind_at is not None
+                and decision.timezone is not None
+            ):
+                await self.reminder_service.create_reminder(
+                    CreateReminderCommand(
+                        text=decision.content,
+                        remind_at=decision.remind_at,
+                        timezone=decision.timezone,
+                        conversation_id=conversation_id,
+                        session_id=session_id,
+                        source_channel=command.channel,
+                        source_user_id=command.user_identity,
+                        source_chat_id=command.chat_id,
+                        source_thread_id=command.thread_id,
+                        dispatch_channel=command.channel,
+                        dispatch_recipient_id=command.user_identity,
+                        dispatch_chat_id=command.chat_id,
+                        dispatch_thread_id=command.thread_id,
+                    )
+                )
+                return ConversationInboundResult(
+                    handled=True,
+                    conversation_id=conversation_id,
+                    session_id=session_id,
+                    handled_by="reminder",
+                    reason=f"reminder_created_via_{decision.source}",
+                    response_text=(
+                        f"好的，我会在 {decision.remind_at.isoformat()} 提醒你：{decision.content}"
+                    ),
+                )
+            if decision.intent == ConversationIntent.REMINDER_CANCEL:
+                await self.reminder_service.cancel_latest_reminder(
+                    conversation_id=conversation_id,
+                    session_id=session_id,
+                )
+                return ConversationInboundResult(
+                    handled=True,
+                    conversation_id=conversation_id,
+                    session_id=session_id,
+                    handled_by="reminder",
+                    reason=f"reminder_canceled_via_{decision.source}",
+                    response_text="好的，已取消最近一条提醒。",
+                )
+            if decision.intent == ConversationIntent.REMINDER_LIST:
+                reminder_list = await self.reminder_service.list_reminders(
+                    ListRemindersQuery(
+                        conversation_id=conversation_id,
+                        session_id=session_id,
+                        limit=5,
+                    )
+                )
+                return ConversationInboundResult(
+                    handled=True,
+                    conversation_id=conversation_id,
+                    session_id=session_id,
+                    handled_by="reminder",
+                    reason=f"reminder_listed_via_{decision.source}",
+                    response_text=_format_reminder_list_text(reminder_list),
+                )
+            if decision.intent == ConversationIntent.MEMORY_WRITE and decision.content is not None:
+                await self.memory_service.create_memory(
+                    CreateMemoryCommand(
+                        content=decision.content,
+                        conversation_id=conversation_id,
+                        session_id=session_id,
+                        source_channel=command.channel,
+                        source_user_id=command.user_identity,
+                        source_chat_id=command.chat_id,
+                        source_thread_id=command.thread_id,
+                    )
+                )
+                return ConversationInboundResult(
+                    handled=True,
+                    conversation_id=conversation_id,
+                    session_id=session_id,
+                    handled_by="memory",
+                    reason=f"memory_created_via_{decision.source}",
+                    response_text=f"好的，我记住了：{decision.content}",
+                )
+            if decision.intent == ConversationIntent.MEMORY_ARCHIVE:
+                await self.memory_service.archive_latest_memory(
+                    conversation_id=conversation_id,
+                    session_id=session_id,
+                )
+                return ConversationInboundResult(
+                    handled=True,
+                    conversation_id=conversation_id,
+                    session_id=session_id,
+                    handled_by="memory",
+                    reason=f"memory_archived_via_{decision.source}",
+                    response_text="好的，已归档最近一条记忆。",
+                )
+            if decision.intent == ConversationIntent.MEMORY_LIST:
+                memory_list = await self.memory_service.list_memories(
+                    ListMemoriesQuery(
+                        conversation_id=conversation_id,
+                        session_id=session_id,
+                        limit=5,
+                    )
+                )
+                return ConversationInboundResult(
+                    handled=True,
+                    conversation_id=conversation_id,
+                    session_id=session_id,
+                    handled_by="memory",
+                    reason=f"memory_listed_via_{decision.source}",
+                    response_text=_format_memory_list_text(memory_list),
+                )
+            if decision.intent == ConversationIntent.TASK_CANCEL:
+                await self.task_service.cancel_latest_task(
+                    conversation_id=conversation_id,
+                    session_id=session_id,
+                )
+                return ConversationInboundResult(
+                    handled=True,
+                    conversation_id=conversation_id,
+                    session_id=session_id,
+                    handled_by="task",
+                    reason=f"task_canceled_via_{decision.source}",
+                    response_text="好的，已取消最近一条待办。",
+                )
+            if decision.intent == ConversationIntent.OVERVIEW_SHOW:
+                overview = await self.overview_service.get_overview(
+                    GetOverviewQuery(
+                        conversation_id=conversation_id,
+                        session_id=session_id,
+                    )
+                )
+                return ConversationInboundResult(
+                    handled=True,
+                    conversation_id=conversation_id,
+                    session_id=session_id,
+                    handled_by="overview",
+                    reason=f"overview_shown_via_{decision.source}",
+                    response_text=_format_overview_text(overview),
+                )
+            return None
+        except (TaskApplicationError, MemoryApplicationError, ReminderApplicationError) as exc:
+            handled_by = _handled_by_for_intent(decision.intent)
+            if handled_by is None:
+                raise
             return ConversationInboundResult(
                 handled=True,
                 conversation_id=conversation_id,
                 session_id=session_id,
-                handled_by="overview",
-                reason=f"overview_shown_via_{decision.source}",
-                response_text=_format_overview_text(overview),
+                handled_by=handled_by,
+                reason=f"{decision.intent.value}_feedback",
+                response_text=str(exc),
             )
-        return None
 
 
 def _classify_with_rules(
@@ -738,3 +754,28 @@ def _format_memory_list_text(memory_list: MemoryListDTO) -> str:
     for memory in memory_list.items:
         lines.append(f"- [{memory.status}] {memory.content}")
     return "\n".join(lines)
+
+
+def _handled_by_for_intent(intent: ConversationIntent) -> str | None:
+    if intent in {
+        ConversationIntent.REMINDER_CREATE,
+        ConversationIntent.REMINDER_CANCEL,
+        ConversationIntent.REMINDER_LIST,
+    }:
+        return "reminder"
+    if intent in {
+        ConversationIntent.TASK_CREATE,
+        ConversationIntent.TASK_CANCEL,
+        ConversationIntent.TASK_COMPLETE,
+        ConversationIntent.TASK_LIST,
+    }:
+        return "task"
+    if intent in {
+        ConversationIntent.MEMORY_WRITE,
+        ConversationIntent.MEMORY_ARCHIVE,
+        ConversationIntent.MEMORY_LIST,
+    }:
+        return "memory"
+    if intent == ConversationIntent.OVERVIEW_SHOW:
+        return "overview"
+    return None

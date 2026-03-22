@@ -16,6 +16,7 @@ from app.application.reminders.commands import CreateReminderCommand
 from app.application.reminders.dto import ReminderDTO, ReminderListDTO
 from app.application.tasks.commands import CreateTaskCommand
 from app.application.tasks.dto import TaskDTO, TaskListDTO
+from app.application.tasks.errors import TaskNotFoundError
 from app.infrastructure.llm.models import GenerateRequest, GenerateResult
 
 
@@ -44,6 +45,7 @@ class FakeTaskService:
         self.completed_latest_calls: list[tuple[str, str]] = []
         self.canceled_latest_calls: list[tuple[str, str]] = []
         self.list_queries: list[object] = []
+        self.complete_latest_error: Exception | None = None
 
     async def create_task(self, command: CreateTaskCommand) -> TaskDTO:
         title = command.title
@@ -64,6 +66,8 @@ class FakeTaskService:
         conversation_id: str,
         session_id: str,
     ) -> TaskDTO:
+        if self.complete_latest_error is not None:
+            raise self.complete_latest_error
         self.completed_latest_calls.append((conversation_id, session_id))
         return TaskDTO(
             task_id="00000000-0000-0000-0000-000000000002",
@@ -865,3 +869,45 @@ async def test_intent_handler_dispatches_to_overview_service() -> None:
     assert result.reason == "overview_shown_via_llm"
     assert "当前概览：" in (result.response_text or "")
     assert overview_service.queries[0].conversation_id == "conversation-1"
+
+
+@pytest.mark.asyncio
+async def test_intent_handler_returns_feedback_when_latest_task_missing() -> None:
+    task_service = FakeTaskService()
+    task_service.complete_latest_error = TaskNotFoundError("当前会话没有可完成的待办任务。")
+    memory_service = FakeMemoryService()
+    reminder_service = FakeReminderService()
+    overview_service = FakeOverviewService()
+    handler = IntentConversationHandler(
+        classifier=LLMFirstConversationIntentClassifier(
+            llm_gateway=FakeLLMGateway('{"intent":"task_complete","content":null}'),
+            model="gpt-test",
+            api_key_suffix="90abcdef",
+        ),
+        task_service=task_service,
+        memory_service=memory_service,
+        reminder_service=reminder_service,
+        overview_service=overview_service,
+    )
+
+    result = await handler.handle(
+        HandleInboundConversationMessageCommand(
+            channel="web",
+            message_type="text",
+            user_identity="user-1",
+            external_message_id=None,
+            root_message_id=None,
+            parent_message_id=None,
+            chat_id=None,
+            thread_id=None,
+            text="完成任务",
+            raw_payload={"text": "完成任务"},
+        ),
+        conversation_id="conversation-1",
+        session_id="session-1",
+    )
+
+    assert result is not None
+    assert result.handled_by == "task"
+    assert result.reason == "task_complete_feedback"
+    assert result.response_text == "当前会话没有可完成的待办任务。"
