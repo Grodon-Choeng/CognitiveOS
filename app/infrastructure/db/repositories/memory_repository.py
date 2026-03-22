@@ -27,6 +27,7 @@ class SQLAlchemyMemoryRepository(MemoryRepository):
         conversation_id: str | None = None,
         session_id: str | None = None,
         status: str | None = None,
+        query: str | None = None,
         limit: int = 20,
     ) -> list[MemoryEntry]:
         statement = select(MemoryModel).order_by(MemoryModel.created_at.desc()).limit(limit)
@@ -36,6 +37,8 @@ class SQLAlchemyMemoryRepository(MemoryRepository):
             statement = statement.where(MemoryModel.session_id == session_id)
         if status is not None:
             statement = statement.where(MemoryModel.status == status)
+        if query is not None:
+            statement = statement.where(MemoryModel.content.ilike(f"%{query}%"))
 
         models = (await self.session.execute(statement)).scalars().all()
         return [self._to_domain(model) for model in models]

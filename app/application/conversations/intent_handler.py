@@ -410,6 +410,7 @@ class IntentConversationHandler:
                         conversation_id=conversation_id,
                         session_id=session_id,
                         status=decision.status,
+                        query=decision.content,
                         limit=5,
                     )
                 )
@@ -581,6 +582,17 @@ def _classify_with_rules(
             source="rules",
         )
 
+    memory_search_query = _extract_memory_search_query(command)
+    if memory_search_query is not None:
+        return ConversationIntentDecision(
+            intent=ConversationIntent.MEMORY_LIST,
+            content=memory_search_query,
+            status="active",
+            remind_at=None,
+            timezone=None,
+            source="rules",
+        )
+
     matched, content = _extract_action_content(
         command,
         prefixes=("归档记忆", "archive memory", "归档这条记忆"),
@@ -682,6 +694,7 @@ def _build_intent_system_prompt() -> str:
         "如果文本是在要求系统记住某件事实或偏好，返回 memory_write；"
         "如果文本是在要求归档当前会话里最近一条活跃记忆，返回 memory_archive；"
         "如果文本是在要求查看当前会话里的记忆列表，返回 memory_list；"
+        "如果文本是在要求按关键词查找记忆，也返回 memory_list，并把关键词写到 content；"
         "如果文本是在要求查看当前会话概览，返回 overview_show；"
         "如果文本是在要求查看当前会话最近活动，返回 activity_show；"
         "否则返回 unknown。"
@@ -1008,6 +1021,18 @@ def _extract_memory_list_status(command: HandleInboundConversationMessageCommand
         "show memories": "active",
     }
     return mapping.get(normalized)
+
+
+def _extract_memory_search_query(
+    command: HandleInboundConversationMessageCommand,
+) -> str | None:
+    matched, content = _extract_action_content(
+        command,
+        prefixes=("搜索记忆", "查找记忆", "search memory", "find memory"),
+    )
+    if not matched:
+        return None
+    return content
 
 
 def _extract_reminder_list_status(command: HandleInboundConversationMessageCommand) -> str | None:

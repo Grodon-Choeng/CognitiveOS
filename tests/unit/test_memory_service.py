@@ -33,6 +33,7 @@ class FakeMemoryRepository(MemoryRepository):
         conversation_id: str | None = None,
         session_id: str | None = None,
         status: str | None = None,
+        query: str | None = None,
         limit: int = 20,
     ) -> list[MemoryEntry]:
         memories = list(self.items.values())
@@ -43,6 +44,10 @@ class FakeMemoryRepository(MemoryRepository):
             memories = [memory for memory in memories if memory.session_id == session_id]
         if status is not None:
             memories = [memory for memory in memories if memory.status.value == status]
+        if query is not None:
+            memories = [
+                memory for memory in memories if query.casefold() in memory.content.casefold()
+            ]
         return memories[:limit]
 
     async def update(self, memory: MemoryEntry) -> None:
@@ -239,6 +244,21 @@ async def test_list_memories_defaults_to_active_only() -> None:
     result = await service.list_memories(ListMemoriesQuery(limit=10))
 
     assert [item.memory_id for item in result.items] == [active.memory_id]
+
+
+@pytest.mark.asyncio
+async def test_list_memories_supports_content_query() -> None:
+    repository = FakeMemoryRepository()
+    service = MemoryApplicationService(
+        unit_of_work_factory=create_fake_unit_of_work_factory(repository),
+        conversation_context_resolver=FakeConversationContextResolver(),
+    )
+    target = await service.create_memory(CreateMemoryCommand(content="用户喜欢早上九点提醒"))
+    await service.create_memory(CreateMemoryCommand(content="用户只想用飞书"))
+
+    result = await service.list_memories(ListMemoriesQuery(query="九点", limit=10))
+
+    assert [item.memory_id for item in result.items] == [target.memory_id]
 
 
 @pytest.mark.asyncio

@@ -949,6 +949,36 @@ async def test_intent_handler_dispatches_to_memory_list() -> None:
 
 
 @pytest.mark.asyncio
+async def test_intent_classifier_supports_memory_search_by_rule() -> None:
+    classifier = LLMFirstConversationIntentClassifier(
+        llm_gateway=FailingLLMGateway(),
+        model="gpt-test",
+        api_key_suffix="90abcdef",
+    )
+
+    result = await classifier.classify(
+        HandleInboundConversationMessageCommand(
+            channel="web",
+            message_type="text",
+            user_identity="user-1",
+            external_message_id=None,
+            root_message_id=None,
+            parent_message_id=None,
+            chat_id=None,
+            thread_id=None,
+            text="搜索记忆 九点提醒",
+            raw_payload={"text": "搜索记忆 九点提醒"},
+        ),
+        conversation_id="conversation-1",
+        session_id="session-1",
+    )
+
+    assert result.intent == ConversationIntent.MEMORY_LIST
+    assert result.content == "九点提醒"
+    assert result.status == "active"
+
+
+@pytest.mark.asyncio
 async def test_intent_handler_dispatches_to_archived_memory_list_by_rule() -> None:
     classifier = LLMFirstConversationIntentClassifier(
         llm_gateway=FailingLLMGateway(),

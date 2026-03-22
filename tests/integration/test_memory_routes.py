@@ -100,6 +100,21 @@ def test_list_memories_route_returns_structured_response() -> None:
     assert response.json()["items"][0]["status"] == "active"
 
 
+def test_list_memories_route_accepts_query_filter() -> None:
+    app.dependency_overrides[get_memory_service] = override_memory_service
+
+    try:
+        with TestClient(app) as client:
+            response = client.get(
+                "/api/v1/memories",
+                params={"conversation_id": "conversation-1", "query": "早上"},
+            )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+
+
 def test_get_memory_route_returns_structured_response() -> None:
     app.dependency_overrides[get_memory_service] = override_memory_service
 

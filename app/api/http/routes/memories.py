@@ -52,6 +52,7 @@ async def list_memories(
     conversation_id: str | None = None,
     session_id: str | None = None,
     status: MemoryStatusFilter | None = None,
+    query: str | None = None,
     limit: Annotated[int, Query(ge=1, le=100)] = 20,
 ) -> MemoryListResponse:
     result = await service.list_memories(
@@ -59,6 +60,7 @@ async def list_memories(
             conversation_id=conversation_id,
             session_id=session_id,
             status=status,
+            query=query,
             limit=limit,
         )
     )
