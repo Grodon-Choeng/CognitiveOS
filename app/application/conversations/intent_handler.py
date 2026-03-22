@@ -1,5 +1,6 @@
 import json
 from dataclasses import dataclass
+from datetime import datetime
 from enum import StrEnum
 from typing import Protocol
 
@@ -8,6 +9,8 @@ from app.application.conversations.dto import ConversationInboundResult
 from app.application.memory.commands import CreateMemoryCommand
 from app.application.memory.conversation_handler import _extract_memory_content
 from app.application.memory.dto import MemoryDTO
+from app.application.reminders.commands import CreateReminderCommand
+from app.application.reminders.dto import ReminderDTO
 from app.application.tasks.commands import CreateTaskCommand
 from app.application.tasks.conversation_handler import _extract_task_title
 from app.application.tasks.dto import TaskDTO
@@ -16,6 +19,7 @@ from app.infrastructure.llm.models import GenerateRequest
 
 
 class ConversationIntent(StrEnum):
+    REMINDER_CREATE = "reminder_create"
     TASK_CREATE = "task_create"
     MEMORY_WRITE = "memory_write"
     UNKNOWN = "unknown"
@@ -25,6 +29,8 @@ class ConversationIntent(StrEnum):
 class ConversationIntentDecision:
     intent: ConversationIntent
     content: str | None
+    remind_at: datetime | None
+    timezone: str | None
     source: str
 
 
@@ -34,6 +40,10 @@ class TaskCreator(Protocol):
 
 class MemoryCreator(Protocol):
     async def create_memory(self, command: CreateMemoryCommand) -> MemoryDTO: ...
+
+
+class ReminderCreator(Protocol):
+    async def create_reminder(self, command: CreateReminderCommand) -> ReminderDTO: ...
 
 
 class LLMFirstConversationIntentClassifier:
@@ -109,10 +119,12 @@ class IntentConversationHandler:
         classifier: LLMFirstConversationIntentClassifier,
         task_service: TaskCreator,
         memory_service: MemoryCreator,
+        reminder_service: ReminderCreator,
     ) -> None:
         self.classifier = classifier
         self.task_service = task_service
         self.memory_service = memory_service
+        self.reminder_service = reminder_service
 
     async def handle(
         self,
@@ -145,6 +157,36 @@ class IntentConversationHandler:
                 handled_by="task",
                 reason=f"task_created_via_{decision.source}",
             )
+        if (
+            decision.intent == ConversationIntent.REMINDER_CREATE
+            and decision.content is not None
+            and decision.remind_at is not None
+            and decision.timezone is not None
+        ):
+            await self.reminder_service.create_reminder(
+                CreateReminderCommand(
+                    text=decision.content,
+                    remind_at=decision.remind_at,
+                    timezone=decision.timezone,
+                    conversation_id=conversation_id,
+                    session_id=session_id,
+                    source_channel=command.channel,
+                    source_user_id=command.user_identity,
+                    source_chat_id=command.chat_id,
+                    source_thread_id=command.thread_id,
+                    dispatch_channel=command.channel,
+                    dispatch_recipient_id=command.user_identity,
+                    dispatch_chat_id=command.chat_id,
+                    dispatch_thread_id=command.thread_id,
+                )
+            )
+            return ConversationInboundResult(
+                handled=True,
+                conversation_id=conversation_id,
+                session_id=session_id,
+                handled_by="reminder",
+                reason=f"reminder_created_via_{decision.source}",
+            )
         if decision.intent == ConversationIntent.MEMORY_WRITE and decision.content is not None:
             await self.memory_service.create_memory(
                 CreateMemoryCommand(
@@ -170,11 +212,17 @@ class IntentConversationHandler:
 def _classify_with_rules(
     command: HandleInboundConversationMessageCommand,
 ) -> ConversationIntentDecision:
+    reminder_request = _extract_reminder_request(command)
+    if reminder_request is not None:
+        return reminder_request
+
     task_title = _extract_task_title(command)
     if task_title is not None:
         return ConversationIntentDecision(
             intent=ConversationIntent.TASK_CREATE,
             content=task_title,
+            remind_at=None,
+            timezone=None,
             source="rules",
         )
 
@@ -183,12 +231,16 @@ def _classify_with_rules(
         return ConversationIntentDecision(
             intent=ConversationIntent.MEMORY_WRITE,
             content=memory_content,
+            remind_at=None,
+            timezone=None,
             source="rules",
         )
 
     return ConversationIntentDecision(
         intent=ConversationIntent.UNKNOWN,
         content=None,
+        remind_at=None,
+        timezone=None,
         source="rules",
     )
 
@@ -196,9 +248,13 @@ def _classify_with_rules(
 def _build_intent_system_prompt() -> str:
     return (
         "你是 CognitiveOS 的对话意图分类器。"
-        "你只负责判断当前文本是否应该创建 task、写入 memory，或者都不是。"
+        "你只负责判断当前文本是否应该创建 reminder、创建 task、写入 memory，或者都不是。"
         "你必须返回 JSON，格式为"
-        '{"intent":"task_create|memory_write|unknown","content":"提取后的正文或 null"}。'
+        '{"intent":"reminder_create|task_create|memory_write|unknown",'
+        '"content":"提取后的正文或 null",'
+        '"remind_at":"ISO8601时间或 null","timezone":"时区或 null"}。'
+        "如果文本是在表达未来要提醒的事项，返回 reminder_create，"
+        "并提取提醒正文、带时区的 ISO8601 提醒时间，以及 IANA 时区字符串；"
         "如果文本是在表达待办事项，返回 task_create；"
         "如果文本是在要求系统记住某件事实或偏好，返回 memory_write；"
         "否则返回 unknown。"
@@ -219,6 +275,8 @@ def _parse_intent_response(content: str) -> ConversationIntentDecision | None:
 
     intent_value = parsed.get("intent")
     content_value = parsed.get("content")
+    remind_at_value = parsed.get("remind_at")
+    timezone_value = parsed.get("timezone")
     if not isinstance(intent_value, str):
         return None
 
@@ -230,11 +288,24 @@ def _parse_intent_response(content: str) -> ConversationIntentDecision | None:
     normalized_content = content_value if isinstance(content_value, str) else None
     if normalized_content is not None:
         normalized_content = normalized_content.strip() or None
-    if intent != ConversationIntent.UNKNOWN and normalized_content is None:
+    remind_at: datetime | None = None
+    timezone: str | None = timezone_value if isinstance(timezone_value, str) else None
+    if timezone is not None:
+        timezone = timezone.strip() or None
+    if intent == ConversationIntent.REMINDER_CREATE:
+        if normalized_content is None or not isinstance(remind_at_value, str) or timezone is None:
+            return None
+        try:
+            remind_at = datetime.fromisoformat(remind_at_value)
+        except ValueError:
+            return None
+    elif intent != ConversationIntent.UNKNOWN and normalized_content is None:
         return None
     return ConversationIntentDecision(
         intent=intent,
         content=normalized_content,
+        remind_at=remind_at,
+        timezone=timezone,
         source="llm",
     )
 
@@ -249,3 +320,44 @@ def _extract_json_block(content: str) -> str:
             lines = lines[:-1]
         return "\n".join(lines).strip()
     return normalized
+
+
+def _extract_reminder_request(
+    command: HandleInboundConversationMessageCommand,
+) -> ConversationIntentDecision | None:
+    if command.message_type != "text" or command.text is None:
+        return None
+
+    normalized_text = command.text.strip()
+    if not normalized_text:
+        return None
+
+    for prefix in ("提醒", "remind"):
+        if not normalized_text.casefold().startswith(prefix.casefold()):
+            continue
+        candidate = normalized_text[len(prefix) :].lstrip("：: \n\t")
+        if not candidate:
+            return None
+        parts = candidate.split(maxsplit=1)
+        if len(parts) != 2:
+            return None
+        remind_at_text, reminder_content = parts
+        try:
+            remind_at = datetime.fromisoformat(remind_at_text)
+        except ValueError:
+            return None
+        timezone = str(remind_at.tzinfo) if remind_at.tzinfo is not None else None
+        if timezone is None:
+            return None
+        reminder_content = reminder_content.strip()
+        if not reminder_content:
+            return None
+        return ConversationIntentDecision(
+            intent=ConversationIntent.REMINDER_CREATE,
+            content=reminder_content,
+            remind_at=remind_at,
+            timezone=timezone,
+            source="rules",
+        )
+
+    return None

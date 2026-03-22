@@ -242,6 +242,7 @@ class ApplicationContainer:
                 classifier=self.build_conversation_intent_classifier(),
                 task_service=self.build_task_service(),
                 memory_service=self.build_memory_service(),
+                reminder_service=self.build_reminder_service(),
             ),
         ]
 
