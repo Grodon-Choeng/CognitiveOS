@@ -133,6 +133,7 @@ tests/
 - 已支持 `GET /api/v1/reminders` 查看提醒列表、`GET /api/v1/reminders/{reminder_id}` 查询状态，以及 `POST /api/v1/reminders/{reminder_id}/cancel` 主动取消 pending reminder。
 - 已支持 `POST /api/v1/memories` 写入记忆、`GET /api/v1/memories` 查询记忆列表，以及 `GET /api/v1/memories/{memory_id}` 点查记忆。
 - 已支持 `POST /api/v1/tasks` 创建任务、`GET /api/v1/tasks` 查询任务列表、`GET /api/v1/tasks/{task_id}` 点查任务，以及 `POST /api/v1/tasks/{task_id}/complete` 完成任务。
+- 统一 conversation 入口当前还支持显式口令分流：`待办：...` / `todo: ...` 会创建 task，`记住：...` / `记一下：...` 会写入 memory；reminder 续执行仍优先于这些规则。
 - `POST /api/v1/reminders` 当前也支持显式传入 `dispatch_chat_id` 与 `dispatch_thread_id`，便于通过 HTTP 创建群聊 / 话题内 reminder。
 - reminder 与 conversation 入口中，`thread_id` 不能脱离对应的 `chat_id` 单独提供，避免写入不可解析的线程上下文。
 - `remind_at` 当前要求显式带时区；`text` 类型的 conversation 消息也必须提供非空 `text` 内容。

@@ -6,11 +6,13 @@ from app.application.audit.service import AuditQueryService
 from app.application.conversations.handlers import ConversationInboundHandler
 from app.application.conversations.ports import ConversationContextResolver
 from app.application.conversations.service import ConversationApplicationService
+from app.application.memory.conversation_handler import MemoryConversationHandler
 from app.application.memory.ports import MemoryUnitOfWorkFactory
 from app.application.memory.service import MemoryApplicationService
 from app.application.reminders.conversation_handler import ReminderConversationHandler
 from app.application.reminders.ports import ReminderUnitOfWorkFactory
 from app.application.reminders.service import ReminderApplicationService
+from app.application.tasks.conversation_handler import TaskConversationHandler
 from app.application.tasks.ports import TaskUnitOfWorkFactory
 from app.application.tasks.service import TaskApplicationService
 from app.bootstrap.inbound_events import ConversationInboundEventRecorder
@@ -212,7 +214,11 @@ class ApplicationContainer:
 
     @cached_property
     def conversation_handlers(self) -> list[ConversationInboundHandler]:
-        return [ReminderConversationHandler(self.build_reminder_service())]
+        return [
+            ReminderConversationHandler(self.build_reminder_service()),
+            TaskConversationHandler(self.build_task_service()),
+            MemoryConversationHandler(self.build_memory_service()),
+        ]
 
     def build_audit_service(self) -> AuditQueryService:
         return self.audit_service
