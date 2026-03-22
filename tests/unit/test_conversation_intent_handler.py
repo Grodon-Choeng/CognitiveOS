@@ -10,6 +10,8 @@ from app.application.conversations.intent_handler import (
 )
 from app.application.memory.commands import CreateMemoryCommand
 from app.application.memory.dto import MemoryDTO
+from app.application.overview.dto import OverviewDTO
+from app.application.overview.queries import GetOverviewQuery
 from app.application.reminders.commands import CreateReminderCommand
 from app.application.reminders.dto import ReminderDTO
 from app.application.tasks.commands import CreateTaskCommand
@@ -163,6 +165,52 @@ class FakeReminderService:
         )
 
 
+class FakeOverviewService:
+    def __init__(self) -> None:
+        self.queries: list[GetOverviewQuery] = []
+
+    async def get_overview(self, query: GetOverviewQuery) -> OverviewDTO:
+        self.queries.append(query)
+        return OverviewDTO(
+            conversation_id=query.conversation_id,
+            session_id=query.session_id,
+            pending_reminders=[
+                ReminderDTO(
+                    reminder_id="r-1",
+                    text="九点打卡",
+                    remind_at=datetime(2026, 3, 23, 9, 0, tzinfo=UTC),
+                    timezone="Asia/Shanghai",
+                    status="pending",
+                    conversation_id=query.conversation_id,
+                    session_id=query.session_id,
+                    workflow_id="reminder:r-1",
+                )
+            ],
+            pending_tasks=[
+                TaskDTO(
+                    task_id="t-1",
+                    title="整理纪要",
+                    created_at=datetime(2026, 3, 22, 9, 0, tzinfo=UTC),
+                    status="pending",
+                    conversation_id=query.conversation_id,
+                    session_id=query.session_id,
+                    completed_at=None,
+                )
+            ],
+            active_memories=[
+                MemoryDTO(
+                    memory_id="m-1",
+                    content="喜欢早上九点提醒",
+                    created_at=datetime(2026, 3, 22, 8, 0, tzinfo=UTC),
+                    status="active",
+                    conversation_id=query.conversation_id,
+                    session_id=query.session_id,
+                    archived_at=None,
+                )
+            ],
+        )
+
+
 @pytest.mark.asyncio
 async def test_intent_classifier_prefers_llm_result() -> None:
     classifier = LLMFirstConversationIntentClassifier(
@@ -229,6 +277,7 @@ async def test_intent_handler_dispatches_to_task_service() -> None:
     task_service = FakeTaskService()
     memory_service = FakeMemoryService()
     reminder_service = FakeReminderService()
+    overview_service = FakeOverviewService()
     handler = IntentConversationHandler(
         classifier=LLMFirstConversationIntentClassifier(
             llm_gateway=FakeLLMGateway('{"intent":"task_create","content":"整理会议纪要"}'),
@@ -238,6 +287,7 @@ async def test_intent_handler_dispatches_to_task_service() -> None:
         task_service=task_service,
         memory_service=memory_service,
         reminder_service=reminder_service,
+        overview_service=overview_service,
     )
 
     result = await handler.handle(
@@ -262,6 +312,7 @@ async def test_intent_handler_dispatches_to_task_service() -> None:
     assert task_service.created_titles == ["整理会议纪要"]
     assert memory_service.created_contents == []
     assert reminder_service.created_requests == []
+    assert overview_service.queries == []
 
 
 @pytest.mark.asyncio
@@ -333,6 +384,7 @@ async def test_intent_handler_dispatches_to_reminder_service() -> None:
     task_service = FakeTaskService()
     memory_service = FakeMemoryService()
     reminder_service = FakeReminderService()
+    overview_service = FakeOverviewService()
     handler = IntentConversationHandler(
         classifier=LLMFirstConversationIntentClassifier(
             llm_gateway=FakeLLMGateway(
@@ -344,6 +396,7 @@ async def test_intent_handler_dispatches_to_reminder_service() -> None:
         task_service=task_service,
         memory_service=memory_service,
         reminder_service=reminder_service,
+        overview_service=overview_service,
     )
 
     result = await handler.handle(
@@ -435,6 +488,7 @@ async def test_intent_handler_dispatches_to_complete_latest_task() -> None:
     task_service = FakeTaskService()
     memory_service = FakeMemoryService()
     reminder_service = FakeReminderService()
+    overview_service = FakeOverviewService()
     handler = IntentConversationHandler(
         classifier=LLMFirstConversationIntentClassifier(
             llm_gateway=FakeLLMGateway('{"intent":"task_complete","content":null}'),
@@ -444,6 +498,7 @@ async def test_intent_handler_dispatches_to_complete_latest_task() -> None:
         task_service=task_service,
         memory_service=memory_service,
         reminder_service=reminder_service,
+        overview_service=overview_service,
     )
 
     result = await handler.handle(
@@ -474,6 +529,7 @@ async def test_intent_handler_dispatches_to_cancel_latest_task() -> None:
     task_service = FakeTaskService()
     memory_service = FakeMemoryService()
     reminder_service = FakeReminderService()
+    overview_service = FakeOverviewService()
     handler = IntentConversationHandler(
         classifier=LLMFirstConversationIntentClassifier(
             llm_gateway=FakeLLMGateway('{"intent":"task_cancel","content":null}'),
@@ -483,6 +539,7 @@ async def test_intent_handler_dispatches_to_cancel_latest_task() -> None:
         task_service=task_service,
         memory_service=memory_service,
         reminder_service=reminder_service,
+        overview_service=overview_service,
     )
 
     result = await handler.handle(
@@ -513,6 +570,7 @@ async def test_intent_handler_dispatches_to_archive_latest_memory() -> None:
     task_service = FakeTaskService()
     memory_service = FakeMemoryService()
     reminder_service = FakeReminderService()
+    overview_service = FakeOverviewService()
     handler = IntentConversationHandler(
         classifier=LLMFirstConversationIntentClassifier(
             llm_gateway=FakeLLMGateway('{"intent":"memory_archive","content":null}'),
@@ -522,6 +580,7 @@ async def test_intent_handler_dispatches_to_archive_latest_memory() -> None:
         task_service=task_service,
         memory_service=memory_service,
         reminder_service=reminder_service,
+        overview_service=overview_service,
     )
 
     result = await handler.handle(
@@ -552,6 +611,7 @@ async def test_intent_handler_dispatches_to_cancel_latest_reminder() -> None:
     task_service = FakeTaskService()
     memory_service = FakeMemoryService()
     reminder_service = FakeReminderService()
+    overview_service = FakeOverviewService()
     handler = IntentConversationHandler(
         classifier=LLMFirstConversationIntentClassifier(
             llm_gateway=FakeLLMGateway('{"intent":"reminder_cancel","content":null}'),
@@ -561,6 +621,7 @@ async def test_intent_handler_dispatches_to_cancel_latest_reminder() -> None:
         task_service=task_service,
         memory_service=memory_service,
         reminder_service=reminder_service,
+        overview_service=overview_service,
     )
 
     result = await handler.handle(
@@ -584,3 +645,45 @@ async def test_intent_handler_dispatches_to_cancel_latest_reminder() -> None:
     assert result.handled_by == "reminder"
     assert result.reason == "reminder_canceled_via_llm"
     assert reminder_service.canceled_latest_calls == [("conversation-1", "session-1")]
+
+
+@pytest.mark.asyncio
+async def test_intent_handler_dispatches_to_overview_service() -> None:
+    task_service = FakeTaskService()
+    memory_service = FakeMemoryService()
+    reminder_service = FakeReminderService()
+    overview_service = FakeOverviewService()
+    handler = IntentConversationHandler(
+        classifier=LLMFirstConversationIntentClassifier(
+            llm_gateway=FakeLLMGateway('{"intent":"overview_show","content":null}'),
+            model="gpt-test",
+            api_key_suffix="90abcdef",
+        ),
+        task_service=task_service,
+        memory_service=memory_service,
+        reminder_service=reminder_service,
+        overview_service=overview_service,
+    )
+
+    result = await handler.handle(
+        HandleInboundConversationMessageCommand(
+            channel="web",
+            message_type="text",
+            user_identity="user-1",
+            external_message_id=None,
+            root_message_id=None,
+            parent_message_id=None,
+            chat_id=None,
+            thread_id=None,
+            text="查看概览",
+            raw_payload={"text": "查看概览"},
+        ),
+        conversation_id="conversation-1",
+        session_id="session-1",
+    )
+
+    assert result is not None
+    assert result.handled_by == "overview"
+    assert result.reason == "overview_shown_via_llm"
+    assert "当前概览：" in (result.response_text or "")
+    assert overview_service.queries[0].conversation_id == "conversation-1"

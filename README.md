@@ -135,6 +135,7 @@ tests/
 - 已支持 `POST /api/v1/memories` 写入记忆、`GET /api/v1/memories` 查询记忆列表、`GET /api/v1/memories/{memory_id}` 点查记忆，以及 `POST /api/v1/memories/{memory_id}/archive` 归档记忆。
 - 已支持 `POST /api/v1/tasks` 创建任务、`GET /api/v1/tasks` 查询任务列表、`GET /api/v1/tasks/{task_id}` 点查任务，以及 `POST /api/v1/tasks/{task_id}/complete` / `POST /api/v1/tasks/{task_id}/cancel` 完成或取消任务。
 - 已支持 `GET /api/v1/overview` 聚合查看当前会话的 pending reminders、pending tasks 和 active memories。
+- conversation 对话入口现在也支持 `查看概览` / `今天有什么` 之类的概览动作，并会自动回一条聚合结果消息。
 - conversation 对话入口现在还支持最小动作类命令：`完成任务` / `取消任务` 会作用于当前会话最近一条 pending task，`归档记忆` 会归档当前会话最近一条 active memory，`取消提醒` 会取消当前会话最近一条 pending reminder。
 - 统一 conversation 入口当前还支持显式口令分流：`待办：...` / `todo: ...` 会创建 task，`记住：...` / `记一下：...` 会写入 memory；reminder 续执行仍优先于这些规则。
 - `POST /api/v1/reminders` 当前也支持显式传入 `dispatch_chat_id` 与 `dispatch_thread_id`，便于通过 HTTP 创建群聊 / 话题内 reminder。

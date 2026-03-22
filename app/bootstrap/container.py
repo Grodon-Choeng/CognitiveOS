@@ -255,6 +255,7 @@ class ApplicationContainer:
                 task_service=self.build_task_service(),
                 memory_service=self.build_memory_service(),
                 reminder_service=self.build_reminder_service(),
+                overview_service=self.build_overview_service(),
             ),
         ]
 

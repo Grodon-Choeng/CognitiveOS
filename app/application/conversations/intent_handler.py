@@ -9,6 +9,8 @@ from app.application.conversations.dto import ConversationInboundResult
 from app.application.memory.commands import CreateMemoryCommand
 from app.application.memory.conversation_handler import _extract_memory_content
 from app.application.memory.dto import MemoryDTO
+from app.application.overview.dto import OverviewDTO
+from app.application.overview.queries import GetOverviewQuery
 from app.application.reminders.commands import CreateReminderCommand
 from app.application.reminders.dto import ReminderDTO
 from app.application.tasks.commands import CreateTaskCommand
@@ -26,6 +28,7 @@ class ConversationIntent(StrEnum):
     TASK_COMPLETE = "task_complete"
     MEMORY_WRITE = "memory_write"
     MEMORY_ARCHIVE = "memory_archive"
+    OVERVIEW_SHOW = "overview_show"
     UNKNOWN = "unknown"
 
 
@@ -76,6 +79,10 @@ class ReminderCreator(Protocol):
         conversation_id: str,
         session_id: str,
     ) -> ReminderDTO: ...
+
+
+class OverviewReader(Protocol):
+    async def get_overview(self, query: GetOverviewQuery) -> OverviewDTO: ...
 
 
 class LLMFirstConversationIntentClassifier:
@@ -152,11 +159,13 @@ class IntentConversationHandler:
         task_service: TaskCreator,
         memory_service: MemoryCreator,
         reminder_service: ReminderCreator,
+        overview_service: OverviewReader,
     ) -> None:
         self.classifier = classifier
         self.task_service = task_service
         self.memory_service = memory_service
         self.reminder_service = reminder_service
+        self.overview_service = overview_service
 
     async def handle(
         self,
@@ -295,6 +304,21 @@ class IntentConversationHandler:
                 reason=f"task_canceled_via_{decision.source}",
                 response_text="好的，已取消最近一条待办。",
             )
+        if decision.intent == ConversationIntent.OVERVIEW_SHOW:
+            overview = await self.overview_service.get_overview(
+                GetOverviewQuery(
+                    conversation_id=conversation_id,
+                    session_id=session_id,
+                )
+            )
+            return ConversationInboundResult(
+                handled=True,
+                conversation_id=conversation_id,
+                session_id=session_id,
+                handled_by="overview",
+                reason=f"overview_shown_via_{decision.source}",
+                response_text=_format_overview_text(overview),
+            )
         return None
 
 
@@ -361,6 +385,15 @@ def _classify_with_rules(
             source="rules",
         )
 
+    if _is_overview_request(command):
+        return ConversationIntentDecision(
+            intent=ConversationIntent.OVERVIEW_SHOW,
+            content=None,
+            remind_at=None,
+            timezone=None,
+            source="rules",
+        )
+
     return ConversationIntentDecision(
         intent=ConversationIntent.UNKNOWN,
         content=None,
@@ -376,7 +409,7 @@ def _build_intent_system_prompt() -> str:
         "你只负责判断当前文本是否应该创建 reminder、取消 reminder、创建 task、"
         "完成 task、取消 task、写入 memory、归档 memory，或者都不是。"
         "你必须返回 JSON，格式为"
-        '{"intent":"reminder_create|reminder_cancel|task_create|task_complete|task_cancel|memory_write|memory_archive|unknown",'
+        '{"intent":"reminder_create|reminder_cancel|task_create|task_complete|task_cancel|memory_write|memory_archive|overview_show|unknown",'
         '"content":"提取后的正文或 null",'
         '"remind_at":"ISO8601时间或 null","timezone":"时区或 null"}。'
         "如果文本是在表达未来要提醒的事项，返回 reminder_create，"
@@ -387,6 +420,7 @@ def _build_intent_system_prompt() -> str:
         "如果文本是在要求取消当前会话里最近一个待办，返回 task_cancel；"
         "如果文本是在要求系统记住某件事实或偏好，返回 memory_write；"
         "如果文本是在要求归档当前会话里最近一条活跃记忆，返回 memory_archive；"
+        "如果文本是在要求查看当前会话概览，返回 overview_show；"
         "否则返回 unknown。"
     )
 
@@ -438,6 +472,7 @@ def _parse_intent_response(content: str) -> ConversationIntentDecision | None:
         ConversationIntent.TASK_COMPLETE,
         ConversationIntent.TASK_CANCEL,
         ConversationIntent.MEMORY_ARCHIVE,
+        ConversationIntent.OVERVIEW_SHOW,
     }:
         return None
     return ConversationIntentDecision(
@@ -528,3 +563,37 @@ def _is_reminder_cancel_request(command: HandleInboundConversationMessageCommand
         return False
     normalized = command.text.strip().casefold()
     return normalized in {"取消提醒", "cancel reminder", "取消这个提醒"}
+
+
+def _is_overview_request(command: HandleInboundConversationMessageCommand) -> bool:
+    if command.message_type != "text" or command.text is None:
+        return False
+    normalized = command.text.strip().casefold()
+    return normalized in {"查看概览", "看看概览", "今天有什么", "show overview", "overview"}
+
+
+def _format_overview_text(overview: OverviewDTO) -> str:
+    lines = ["当前概览："]
+
+    if overview.pending_reminders:
+        lines.append("待办提醒：")
+        for reminder in overview.pending_reminders:
+            lines.append(f"- {reminder.text} @ {reminder.remind_at.isoformat()}")
+    else:
+        lines.append("待办提醒：无")
+
+    if overview.pending_tasks:
+        lines.append("待办任务：")
+        for task in overview.pending_tasks:
+            lines.append(f"- {task.title}")
+    else:
+        lines.append("待办任务：无")
+
+    if overview.active_memories:
+        lines.append("活跃记忆：")
+        for memory in overview.active_memories:
+            lines.append(f"- {memory.content}")
+    else:
+        lines.append("活跃记忆：无")
+
+    return "\n".join(lines)
