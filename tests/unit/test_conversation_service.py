@@ -153,10 +153,14 @@ async def test_conversation_service_returns_no_handler_when_nobody_handles() -> 
 
     assert result.handled is False
     assert result.reason == "no_handler_accepted"
+    assert "我暂时没理解这条消息" in (result.response_text or "")
     record = recorder.records[0]
     assert isinstance(record, MessageEventRecord)
     assert record.metadata["handled"] is False
     assert record.metadata["reason"] == "no_handler_accepted"
+    response_text = record.metadata["response_text"]
+    assert isinstance(response_text, str)
+    assert "我暂时没理解这条消息" in response_text
 
 
 class ErrorHandler:

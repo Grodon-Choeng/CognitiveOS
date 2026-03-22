@@ -61,7 +61,7 @@ class ConversationInboundEventRecorder(FeishuInboundEventRecorder):
                 raw_payload=event.raw_body,
             )
         )
-        if result.handled and result.response_text:
+        if result.response_text:
             await self.messaging_adapter.send_message(
                 MessageTarget(channel=event.channel, recipient_id=event.sender_open_id),
                 OutboundMessage(

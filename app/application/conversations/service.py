@@ -93,6 +93,10 @@ class ConversationApplicationService:
             session_id=session_id,
             handled_by=None,
             reason="no_handler_accepted",
+            response_text=(
+                "我暂时没理解这条消息。你可以试试："
+                "提醒、待办、记住、查看概览、查看待办、查看提醒、查看记忆。"
+            ),
         )
 
 

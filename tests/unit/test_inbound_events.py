@@ -97,3 +97,25 @@ async def test_inbound_event_recorder_skips_response_when_no_response_text() -> 
     await recorder.record(build_event())
 
     assert messaging_adapter.sent_messages == []
+
+
+@pytest.mark.asyncio
+async def test_inbound_event_recorder_sends_guidance_when_not_handled_but_has_response() -> None:
+    messaging_adapter = FakeMessagingAdapter()
+    recorder = ConversationInboundEventRecorder(
+        conversation_service=FakeConversationService(
+            ConversationInboundResult(
+                handled=False,
+                conversation_id="conversation-1",
+                session_id="session-1",
+                handled_by=None,
+                reason="no_handler_accepted",
+                response_text="我暂时没理解这条消息。",
+            )
+        ),
+        messaging_adapter=messaging_adapter,
+    )
+
+    await recorder.record(build_event())
+
+    assert messaging_adapter.sent_messages[0][1].text == "我暂时没理解这条消息。"
