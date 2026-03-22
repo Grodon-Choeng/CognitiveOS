@@ -14,8 +14,14 @@ from app.observability.workflow_events import WorkflowEventRecord
 
 
 class FakeWorkflowHandle:
+    def __init__(self) -> None:
+        self.cancel_called = False
+
     async def signal(self, signal_name: str, reply_text: str) -> None:
         _ = (signal_name, reply_text)
+
+    async def cancel(self) -> None:
+        self.cancel_called = True
 
 
 @dataclass
@@ -30,6 +36,7 @@ class FakeTemporalClient:
     def __init__(self) -> None:
         self.started_calls: list[StartedWorkflowCall] = []
         self.start_error: Exception | None = None
+        self.handles: dict[str, FakeWorkflowHandle] = {}
 
     async def start_workflow(
         self,
@@ -53,8 +60,7 @@ class FakeTemporalClient:
         )
 
     def get_workflow_handle(self, workflow_id: str) -> FakeWorkflowHandle:
-        _ = workflow_id
-        return FakeWorkflowHandle()
+        return self.handles.setdefault(workflow_id, FakeWorkflowHandle())
 
 
 class FakeWorkflowEventRecorder:
@@ -116,3 +122,17 @@ async def test_temporal_gateway_records_failure_when_start_workflow_fails() -> N
     assert recorder.records[0].event_type == "workflow_start_failed"
     assert recorder.records[0].success is False
     assert recorder.records[0].payload["error_type"] == "RuntimeError"
+
+
+@pytest.mark.asyncio
+async def test_temporal_gateway_requests_workflow_cancel_and_records_event() -> None:
+    recorder = FakeWorkflowEventRecorder()
+    client = FakeTemporalClient()
+    workflow_id = "reminder:00000000-0000-0000-0000-000000000001"
+    gateway = TemporalReminderWorkflowGateway(Settings(), recorder)
+    gateway._client = cast(Client, client)
+
+    await gateway.cancel_reminder(workflow_id)
+
+    assert client.handles[workflow_id].cancel_called is True
+    assert recorder.records[0].event_type == "workflow_cancel_requested"

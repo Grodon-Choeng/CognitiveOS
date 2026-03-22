@@ -12,3 +12,11 @@ class ReminderWorkflowNotStartedError(ReminderApplicationError):
 
 class ReminderWorkflowStartError(ReminderApplicationError):
     """提醒工作流启动失败。"""
+
+
+class ReminderWorkflowCancelError(ReminderApplicationError):
+    """提醒工作流取消失败。"""
+
+
+class ReminderStateConflictError(ReminderApplicationError):
+    """提醒当前状态不允许执行该操作。"""

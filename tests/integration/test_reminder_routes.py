@@ -4,9 +4,13 @@ from datetime import UTC, datetime
 from fastapi.testclient import TestClient
 
 from app.api.http.deps.services import get_reminder_service
-from app.application.reminders.commands import CreateReminderCommand, HandleReminderReplyCommand
+from app.application.reminders.commands import (
+    CancelReminderCommand,
+    CreateReminderCommand,
+    HandleReminderReplyCommand,
+)
 from app.application.reminders.dto import ReminderDTO, ReminderReplyDTO
-from app.application.reminders.errors import ReminderWorkflowStartError
+from app.application.reminders.errors import ReminderWorkflowCancelError, ReminderWorkflowStartError
 from app.main import app
 
 captured_create_commands: list[CreateReminderCommand] = []
@@ -27,6 +31,19 @@ class FakeReminderService:
             workflow_id="reminder:00000000-0000-0000-0000-000000000001",
         )
 
+    async def get_reminder(self, reminder_id: str) -> ReminderDTO:
+        _ = reminder_id
+        return ReminderDTO(
+            reminder_id="00000000-0000-0000-0000-000000000001",
+            text="明天上午九点提醒我打卡",
+            remind_at=datetime(2026, 3, 20, 9, 0, tzinfo=UTC),
+            timezone="Asia/Shanghai",
+            status="pending",
+            conversation_id="conversation-1",
+            session_id="session-1",
+            workflow_id="reminder:00000000-0000-0000-0000-000000000001",
+        )
+
     async def handle_reply(self, command: HandleReminderReplyCommand) -> ReminderReplyDTO:
         _ = command
         return ReminderReplyDTO(
@@ -34,6 +51,19 @@ class FakeReminderService:
             reply_text="我已经处理好了",
             accepted=True,
             status="completed",
+        )
+
+    async def cancel_reminder(self, command: CancelReminderCommand) -> ReminderDTO:
+        _ = command
+        return ReminderDTO(
+            reminder_id="00000000-0000-0000-0000-000000000001",
+            text="明天上午九点提醒我打卡",
+            remind_at=datetime(2026, 3, 20, 9, 0, tzinfo=UTC),
+            timezone="Asia/Shanghai",
+            status="canceled",
+            conversation_id="conversation-1",
+            session_id="session-1",
+            workflow_id="reminder:00000000-0000-0000-0000-000000000001",
         )
 
 
@@ -50,6 +80,14 @@ class FakeFailingReminderService:
     async def handle_reply(self, command: HandleReminderReplyCommand) -> ReminderReplyDTO:
         _ = command
         raise AssertionError("本测试不应调用 handle_reply")
+
+    async def get_reminder(self, reminder_id: str) -> ReminderDTO:
+        _ = reminder_id
+        raise AssertionError("本测试不应调用 get_reminder")
+
+    async def cancel_reminder(self, command: CancelReminderCommand) -> ReminderDTO:
+        _ = command
+        raise ReminderWorkflowCancelError("提醒工作流取消失败：RuntimeError: Temporal 不可用")
 
 
 def override_failing_reminder_service() -> FakeFailingReminderService:
@@ -84,6 +122,19 @@ def test_create_reminder_route_returns_structured_response() -> None:
         "session_id": "session-1",
         "workflow_id": "reminder:00000000-0000-0000-0000-000000000001",
     }
+
+
+def test_get_reminder_route_returns_structured_response() -> None:
+    app.dependency_overrides[get_reminder_service] = override_reminder_service
+
+    try:
+        with TestClient(app) as client:
+            response = client.get("/api/v1/reminders/00000000-0000-0000-0000-000000000001")
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "pending"
 
 
 def test_create_reminder_route_passes_dispatch_chat_and_thread_fields() -> None:
@@ -136,6 +187,19 @@ def test_reply_reminder_route_returns_structured_response() -> None:
     }
 
 
+def test_cancel_reminder_route_returns_structured_response() -> None:
+    app.dependency_overrides[get_reminder_service] = override_reminder_service
+
+    try:
+        with TestClient(app) as client:
+            response = client.post("/api/v1/reminders/00000000-0000-0000-0000-000000000001/cancel")
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "canceled"
+
+
 def test_create_reminder_route_returns_503_when_workflow_start_fails() -> None:
     app.dependency_overrides[get_reminder_service] = override_failing_reminder_service
 
@@ -155,6 +219,21 @@ def test_create_reminder_route_returns_503_when_workflow_start_fails() -> None:
     assert response.status_code == 503
     assert response.json() == {
         "detail": "提醒工作流启动失败：RuntimeError: Temporal 不可用",
+    }
+
+
+def test_cancel_reminder_route_returns_503_when_workflow_cancel_fails() -> None:
+    app.dependency_overrides[get_reminder_service] = override_failing_reminder_service
+
+    try:
+        with TestClient(app) as client:
+            response = client.post("/api/v1/reminders/00000000-0000-0000-0000-000000000001/cancel")
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 503
+    assert response.json() == {
+        "detail": "提醒工作流取消失败：RuntimeError: Temporal 不可用",
     }
 
 

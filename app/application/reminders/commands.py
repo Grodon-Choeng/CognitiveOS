@@ -26,6 +26,11 @@ class HandleReminderReplyCommand:
 
 
 @dataclass(slots=True, frozen=True)
+class CancelReminderCommand:
+    reminder_id: str
+
+
+@dataclass(slots=True, frozen=True)
 class HandleReminderInboundMessageCommand:
     conversation_id: str | None
     session_id: str | None

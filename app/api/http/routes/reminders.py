@@ -11,7 +11,11 @@ from app.api.http.schemas.reminder import (
     ReminderResponse,
     ReplyReminderRequest,
 )
-from app.application.reminders.commands import CreateReminderCommand, HandleReminderReplyCommand
+from app.application.reminders.commands import (
+    CancelReminderCommand,
+    CreateReminderCommand,
+    HandleReminderReplyCommand,
+)
 from app.application.reminders.service import ReminderApplicationService
 
 router = APIRouter(prefix="/reminders", tags=["reminders"])
@@ -50,6 +54,20 @@ async def create_reminder(
     return ReminderResponse(**asdict(result))
 
 
+@router.get(
+    "/{reminder_id}",
+    response_model=ReminderResponse,
+    responses={404: {"model": ErrorResponse}},
+    summary="查询提醒",
+)
+async def get_reminder(
+    reminder_id: str,
+    service: Annotated[ReminderApplicationService, Depends(get_reminder_service)],
+) -> ReminderResponse:
+    result = await service.get_reminder(reminder_id)
+    return ReminderResponse(**asdict(result))
+
+
 @router.post(
     "/{reminder_id}/reply",
     response_model=ReminderReplyResponse,
@@ -67,3 +85,21 @@ async def reply_to_reminder(
     )
     result = await service.handle_reply(command)
     return ReminderReplyResponse(**asdict(result))
+
+
+@router.post(
+    "/{reminder_id}/cancel",
+    response_model=ReminderResponse,
+    responses={
+        404: {"model": ErrorResponse},
+        409: {"model": ErrorResponse},
+        503: {"model": ErrorResponse},
+    },
+    summary="取消提醒",
+)
+async def cancel_reminder(
+    reminder_id: str,
+    service: Annotated[ReminderApplicationService, Depends(get_reminder_service)],
+) -> ReminderResponse:
+    result = await service.cancel_reminder(CancelReminderCommand(reminder_id=reminder_id))
+    return ReminderResponse(**asdict(result))

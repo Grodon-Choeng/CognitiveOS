@@ -112,6 +112,25 @@ class TemporalReminderWorkflowGateway(ReminderWorkflowGateway):
             )
         )
 
+    async def cancel_reminder(self, workflow_id: str) -> None:
+        client = await self._get_client()
+        handle = client.get_workflow_handle(workflow_id)
+        await handle.cancel()
+        await self.workflow_event_recorder.record(
+            WorkflowEventRecord.create(
+                workflow_id=workflow_id,
+                workflow_type=self.settings.temporal_reminder_workflow_name,
+                event_type="workflow_cancel_requested",
+                conversation_id=None,
+                session_id=None,
+                trace_id=None,
+                chain_id=None,
+                request_id=None,
+                message="已向工作流发送取消请求。",
+                payload={},
+            )
+        )
+
     async def _get_client(self) -> Client:
         if self._client is None:
             async with self._client_lock:

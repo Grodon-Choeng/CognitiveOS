@@ -1,5 +1,6 @@
 from app.application.conversations.ports import ConversationContextResolver
 from app.application.reminders.commands import (
+    CancelReminderCommand,
     CreateReminderCommand,
     HandleReminderInboundMessageCommand,
     HandleReminderReplyCommand,
@@ -11,6 +12,8 @@ from app.application.reminders.dto import (
 )
 from app.application.reminders.errors import (
     ReminderNotFoundError,
+    ReminderStateConflictError,
+    ReminderWorkflowCancelError,
     ReminderWorkflowNotStartedError,
     ReminderWorkflowStartError,
 )
@@ -87,6 +90,8 @@ class ReminderApplicationService:
             reminder = await unit_of_work.reminders.get(reminder_id)
             if reminder is None:
                 raise ReminderNotFoundError(f"提醒不存在：{command.reminder_id}")
+            if reminder.status != ReminderStatus.PENDING:
+                raise ReminderStateConflictError(f"提醒当前状态不允许回复：{reminder.status.value}")
 
             if reminder.workflow_id is None:
                 raise ReminderWorkflowNotStartedError(f"提醒尚未启动工作流：{command.reminder_id}")
@@ -106,6 +111,43 @@ class ReminderApplicationService:
             accepted=True,
             status=ReminderStatus.COMPLETED.value,
         )
+
+    async def get_reminder(self, reminder_id: str) -> ReminderDTO:
+        parsed_reminder_id = ReminderId.from_string(reminder_id)
+
+        async with self.unit_of_work_factory() as unit_of_work:
+            reminder = await unit_of_work.reminders.get(parsed_reminder_id)
+            if reminder is None:
+                raise ReminderNotFoundError(f"提醒不存在：{reminder_id}")
+
+        return self._to_dto(reminder)
+
+    async def cancel_reminder(self, command: CancelReminderCommand) -> ReminderDTO:
+        reminder_id = ReminderId.from_string(command.reminder_id)
+
+        async with self.unit_of_work_factory() as unit_of_work:
+            reminder = await unit_of_work.reminders.get(reminder_id)
+            if reminder is None:
+                raise ReminderNotFoundError(f"提醒不存在：{command.reminder_id}")
+
+            if reminder.status == ReminderStatus.CANCELED:
+                return self._to_dto(reminder)
+            if reminder.status != ReminderStatus.PENDING:
+                raise ReminderStateConflictError(f"提醒当前状态不允许取消：{reminder.status.value}")
+
+            if reminder.workflow_id is not None:
+                try:
+                    await self.workflow_gateway.cancel_reminder(reminder.workflow_id)
+                except Exception as workflow_error:
+                    raise ReminderWorkflowCancelError(
+                        f"提醒工作流取消失败：{type(workflow_error).__name__}: {workflow_error}"
+                    ) from workflow_error
+
+            reminder.status = ReminderStatus.CANCELED
+            await unit_of_work.reminders.update(reminder)
+            await unit_of_work.commit()
+
+        return self._to_dto(reminder)
 
     async def handle_inbound_message(
         self,

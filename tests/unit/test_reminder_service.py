@@ -10,18 +10,24 @@ from app.application.conversations.ports import (
     ResolvedConversationContext,
 )
 from app.application.reminders.commands import (
+    CancelReminderCommand,
     CreateReminderCommand,
     HandleReminderInboundMessageCommand,
     HandleReminderReplyCommand,
 )
-from app.application.reminders.errors import ReminderNotFoundError, ReminderWorkflowStartError
+from app.application.reminders.errors import (
+    ReminderNotFoundError,
+    ReminderStateConflictError,
+    ReminderWorkflowCancelError,
+    ReminderWorkflowStartError,
+)
 from app.application.reminders.ports import (
     ReminderDispatchTarget,
     ReminderUnitOfWork,
     ReminderWorkflowGateway,
 )
 from app.application.reminders.service import ReminderApplicationService
-from app.domain.reminders.entities import Reminder
+from app.domain.reminders.entities import Reminder, ReminderStatus
 from app.domain.reminders.repository import ReminderRepository
 from app.domain.reminders.value_objects import ReminderId
 
@@ -120,7 +126,9 @@ class FakeReminderWorkflowGateway(ReminderWorkflowGateway):
     def __init__(self) -> None:
         self.started: list[StartedWorkflow] = []
         self.recorded_replies: list[tuple[str, str]] = []
+        self.canceled_workflows: list[str] = []
         self.start_error: Exception | None = None
+        self.cancel_error: Exception | None = None
 
     async def start_reminder(
         self,
@@ -140,6 +148,11 @@ class FakeReminderWorkflowGateway(ReminderWorkflowGateway):
 
     async def record_user_reply(self, workflow_id: str, reply_text: str) -> None:
         self.recorded_replies.append((workflow_id, reply_text))
+
+    async def cancel_reminder(self, workflow_id: str) -> None:
+        if self.cancel_error is not None:
+            raise self.cancel_error
+        self.canceled_workflows.append(workflow_id)
 
 
 class FakeConversationContextResolver(ConversationContextResolver):
@@ -275,6 +288,157 @@ async def test_handle_reply_updates_reminder_and_signals_workflow() -> None:
     assert saved.last_user_reply == "我已经提交了"
     assert saved.status.value == "completed"
     assert workflow_gateway.recorded_replies == [(created.workflow_id or "", "我已经提交了")]
+
+
+@pytest.mark.asyncio
+async def test_handle_reply_rejects_non_pending_reminder() -> None:
+    repository = FakeReminderRepository()
+    workflow_gateway = FakeReminderWorkflowGateway()
+    service = ReminderApplicationService(
+        unit_of_work_factory=create_fake_unit_of_work_factory(repository),
+        workflow_gateway=workflow_gateway,
+        conversation_context_resolver=FakeConversationContextResolver(),
+    )
+
+    created = await service.create_reminder(
+        CreateReminderCommand(
+            text="提醒我提交日报",
+            remind_at=datetime(2026, 3, 20, 9, 0, tzinfo=UTC),
+            timezone="Asia/Shanghai",
+        )
+    )
+    repository.items[created.reminder_id].status = ReminderStatus.COMPLETED
+
+    with pytest.raises(ReminderStateConflictError):
+        await service.handle_reply(
+            HandleReminderReplyCommand(
+                reminder_id=created.reminder_id,
+                reply_text="我已经提交了",
+            )
+        )
+
+
+@pytest.mark.asyncio
+async def test_get_reminder_returns_existing_reminder() -> None:
+    repository = FakeReminderRepository()
+    workflow_gateway = FakeReminderWorkflowGateway()
+    service = ReminderApplicationService(
+        unit_of_work_factory=create_fake_unit_of_work_factory(repository),
+        workflow_gateway=workflow_gateway,
+        conversation_context_resolver=FakeConversationContextResolver(),
+    )
+
+    created = await service.create_reminder(
+        CreateReminderCommand(
+            text="提醒我提交日报",
+            remind_at=datetime(2026, 3, 20, 9, 0, tzinfo=UTC),
+            timezone="Asia/Shanghai",
+        )
+    )
+
+    fetched = await service.get_reminder(created.reminder_id)
+
+    assert fetched.reminder_id == created.reminder_id
+    assert fetched.status == "pending"
+
+
+@pytest.mark.asyncio
+async def test_cancel_reminder_updates_status_and_cancels_workflow() -> None:
+    repository = FakeReminderRepository()
+    workflow_gateway = FakeReminderWorkflowGateway()
+    service = ReminderApplicationService(
+        unit_of_work_factory=create_fake_unit_of_work_factory(repository),
+        workflow_gateway=workflow_gateway,
+        conversation_context_resolver=FakeConversationContextResolver(),
+    )
+
+    created = await service.create_reminder(
+        CreateReminderCommand(
+            text="提醒我提交日报",
+            remind_at=datetime(2026, 3, 20, 9, 0, tzinfo=UTC),
+            timezone="Asia/Shanghai",
+        )
+    )
+
+    canceled = await service.cancel_reminder(CancelReminderCommand(reminder_id=created.reminder_id))
+
+    saved = repository.items[created.reminder_id]
+    assert canceled.status == "canceled"
+    assert saved.status.value == "canceled"
+    assert workflow_gateway.canceled_workflows == [created.workflow_id or ""]
+
+
+@pytest.mark.asyncio
+async def test_cancel_reminder_is_idempotent_for_already_canceled_reminder() -> None:
+    repository = FakeReminderRepository()
+    workflow_gateway = FakeReminderWorkflowGateway()
+    service = ReminderApplicationService(
+        unit_of_work_factory=create_fake_unit_of_work_factory(repository),
+        workflow_gateway=workflow_gateway,
+        conversation_context_resolver=FakeConversationContextResolver(),
+    )
+
+    created = await service.create_reminder(
+        CreateReminderCommand(
+            text="提醒我提交日报",
+            remind_at=datetime(2026, 3, 20, 9, 0, tzinfo=UTC),
+            timezone="Asia/Shanghai",
+        )
+    )
+    repository.items[created.reminder_id].status = ReminderStatus.CANCELED
+
+    canceled = await service.cancel_reminder(CancelReminderCommand(reminder_id=created.reminder_id))
+
+    assert canceled.status == "canceled"
+    assert workflow_gateway.canceled_workflows == []
+
+
+@pytest.mark.asyncio
+async def test_cancel_reminder_rejects_non_pending_reminder() -> None:
+    repository = FakeReminderRepository()
+    workflow_gateway = FakeReminderWorkflowGateway()
+    service = ReminderApplicationService(
+        unit_of_work_factory=create_fake_unit_of_work_factory(repository),
+        workflow_gateway=workflow_gateway,
+        conversation_context_resolver=FakeConversationContextResolver(),
+    )
+
+    created = await service.create_reminder(
+        CreateReminderCommand(
+            text="提醒我提交日报",
+            remind_at=datetime(2026, 3, 20, 9, 0, tzinfo=UTC),
+            timezone="Asia/Shanghai",
+        )
+    )
+    repository.items[created.reminder_id].status = ReminderStatus.COMPLETED
+
+    with pytest.raises(ReminderStateConflictError):
+        await service.cancel_reminder(CancelReminderCommand(reminder_id=created.reminder_id))
+
+
+@pytest.mark.asyncio
+async def test_cancel_reminder_raises_when_workflow_cancel_fails() -> None:
+    repository = FakeReminderRepository()
+    workflow_gateway = FakeReminderWorkflowGateway()
+    workflow_gateway.cancel_error = RuntimeError("Temporal 不可用")
+    service = ReminderApplicationService(
+        unit_of_work_factory=create_fake_unit_of_work_factory(repository),
+        workflow_gateway=workflow_gateway,
+        conversation_context_resolver=FakeConversationContextResolver(),
+    )
+
+    created = await service.create_reminder(
+        CreateReminderCommand(
+            text="提醒我提交日报",
+            remind_at=datetime(2026, 3, 20, 9, 0, tzinfo=UTC),
+            timezone="Asia/Shanghai",
+        )
+    )
+
+    with pytest.raises(ReminderWorkflowCancelError):
+        await service.cancel_reminder(CancelReminderCommand(reminder_id=created.reminder_id))
+
+    assert repository.items[created.reminder_id].status.value == "pending"
 
 
 @pytest.mark.asyncio

@@ -4,6 +4,8 @@ from fastapi.responses import JSONResponse
 from app.application.audit.errors import AuditQueryValidationError
 from app.application.reminders.errors import (
     ReminderNotFoundError,
+    ReminderStateConflictError,
+    ReminderWorkflowCancelError,
     ReminderWorkflowNotStartedError,
     ReminderWorkflowStartError,
 )
@@ -57,5 +59,25 @@ def register_exception_handlers(app: FastAPI) -> None:
     ) -> JSONResponse:
         return JSONResponse(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            content={"detail": str(exc)},
+        )
+
+    @app.exception_handler(ReminderWorkflowCancelError)
+    async def reminder_workflow_cancel_handler(
+        _request: Request,
+        exc: ReminderWorkflowCancelError,
+    ) -> JSONResponse:
+        return JSONResponse(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            content={"detail": str(exc)},
+        )
+
+    @app.exception_handler(ReminderStateConflictError)
+    async def reminder_state_conflict_handler(
+        _request: Request,
+        exc: ReminderStateConflictError,
+    ) -> JSONResponse:
+        return JSONResponse(
+            status_code=status.HTTP_409_CONFLICT,
             content={"detail": str(exc)},
         )
