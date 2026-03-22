@@ -186,3 +186,17 @@ def test_create_reminder_route_rejects_source_thread_without_chat() -> None:
         )
 
     assert response.status_code == 422
+
+
+def test_create_reminder_route_rejects_naive_remind_at() -> None:
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/v1/reminders",
+            json={
+                "text": "时间缺少时区",
+                "remind_at": "2026-03-20T09:00:00",
+                "timezone": "Asia/Shanghai",
+            },
+        )
+
+    assert response.status_code == 422

@@ -84,3 +84,17 @@ def test_receive_conversation_message_route_rejects_thread_without_chat() -> Non
         )
 
     assert response.status_code == 422
+
+
+def test_receive_conversation_message_route_rejects_text_message_without_text() -> None:
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/v1/conversations/messages",
+            json={
+                "channel": "feishu",
+                "message_type": "text",
+                "user_identity": "ou_123",
+            },
+        )
+
+    assert response.status_code == 422

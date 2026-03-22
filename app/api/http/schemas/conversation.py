@@ -22,6 +22,8 @@ class ConversationMessageRequest(BaseModel):
     def validate_thread_fields(self) -> "ConversationMessageRequest":
         if self.thread_id is not None and self.chat_id is None:
             raise ValueError("thread_id 不能脱离 chat_id 单独提供。")
+        if self.message_type == "text" and (self.text is None or not self.text.strip()):
+            raise ValueError("text 类型消息必须提供 text 内容。")
         return self
 
 

@@ -20,6 +20,10 @@ class CreateReminderRequest(BaseModel):
 
     @model_validator(mode="after")
     def validate_thread_fields(self) -> "CreateReminderRequest":
+        if self.remind_at.tzinfo is None or self.remind_at.utcoffset() is None:
+            raise ValueError("remind_at 必须包含明确的时区信息。")
+        if not self.timezone.strip():
+            raise ValueError("timezone 不能为空。")
         _validate_chat_thread_pair(
             chat_id=self.source_chat_id,
             thread_id=self.source_thread_id,

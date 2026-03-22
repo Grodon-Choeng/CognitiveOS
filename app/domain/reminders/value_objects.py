@@ -20,3 +20,9 @@ class ReminderId:
 class ReminderSchedule:
     remind_at: datetime
     timezone: str
+
+    def __post_init__(self) -> None:
+        if self.remind_at.tzinfo is None or self.remind_at.utcoffset() is None:
+            raise ValueError("提醒时间必须包含明确的时区信息。")
+        if not self.timezone.strip():
+            raise ValueError("提醒时区不能为空。")
