@@ -10,6 +10,7 @@ from app.application.reminders.errors import (
     ReminderWorkflowNotStartedError,
     ReminderWorkflowStartError,
 )
+from app.application.tasks.errors import TaskNotFoundError, TaskStateConflictError
 
 
 def register_exception_handlers(app: FastAPI) -> None:
@@ -90,5 +91,25 @@ def register_exception_handlers(app: FastAPI) -> None:
     ) -> JSONResponse:
         return JSONResponse(
             status_code=status.HTTP_404_NOT_FOUND,
+            content={"detail": str(exc)},
+        )
+
+    @app.exception_handler(TaskNotFoundError)
+    async def task_not_found_handler(
+        _request: Request,
+        exc: TaskNotFoundError,
+    ) -> JSONResponse:
+        return JSONResponse(
+            status_code=status.HTTP_404_NOT_FOUND,
+            content={"detail": str(exc)},
+        )
+
+    @app.exception_handler(TaskStateConflictError)
+    async def task_state_conflict_handler(
+        _request: Request,
+        exc: TaskStateConflictError,
+    ) -> JSONResponse:
+        return JSONResponse(
+            status_code=status.HTTP_409_CONFLICT,
             content={"detail": str(exc)},
         )

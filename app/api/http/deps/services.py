@@ -2,6 +2,7 @@ from app.application.audit.service import AuditQueryService
 from app.application.conversations.service import ConversationApplicationService
 from app.application.memory.service import MemoryApplicationService
 from app.application.reminders.service import ReminderApplicationService
+from app.application.tasks.service import TaskApplicationService
 from app.bootstrap.container import get_container
 from app.infrastructure.integrations.messaging.feishu_webhook import FeishuWebhookHandler
 
@@ -20,6 +21,10 @@ def get_reminder_service() -> ReminderApplicationService:
 
 def get_memory_service() -> MemoryApplicationService:
     return get_container().build_memory_service()
+
+
+def get_task_service() -> TaskApplicationService:
+    return get_container().build_task_service()
 
 
 def get_feishu_webhook_handler() -> FeishuWebhookHandler:

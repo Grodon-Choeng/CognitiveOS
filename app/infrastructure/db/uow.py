@@ -4,8 +4,10 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.application.memory.ports import MemoryUnitOfWork
 from app.application.reminders.ports import ReminderUnitOfWork
+from app.application.tasks.ports import TaskUnitOfWork
 from app.infrastructure.db.repositories.memory_repository import SQLAlchemyMemoryRepository
 from app.infrastructure.db.repositories.reminder_repository import SQLAlchemyReminderRepository
+from app.infrastructure.db.repositories.task_repository import SQLAlchemyTaskRepository
 
 
 class SQLAlchemyReminderUnitOfWork(ReminderUnitOfWork):
@@ -40,6 +42,32 @@ class SQLAlchemyMemoryUnitOfWork(MemoryUnitOfWork):
         self.memories = SQLAlchemyMemoryRepository(self.session)
 
     async def __aenter__(self) -> "SQLAlchemyMemoryUnitOfWork":
+        return self
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None,
+    ) -> None:
+        _ = tb
+        if exc_type is not None:
+            await self.rollback()
+        await self.session.close()
+
+    async def commit(self) -> None:
+        await self.session.commit()
+
+    async def rollback(self) -> None:
+        await self.session.rollback()
+
+
+class SQLAlchemyTaskUnitOfWork(TaskUnitOfWork):
+    def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:
+        self.session = session_factory()
+        self.tasks = SQLAlchemyTaskRepository(self.session)
+
+    async def __aenter__(self) -> "SQLAlchemyTaskUnitOfWork":
         return self
 
     async def __aexit__(
