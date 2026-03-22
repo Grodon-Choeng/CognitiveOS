@@ -1,6 +1,7 @@
 import asyncio
 
 from app.bootstrap.container import get_container
+from app.bootstrap.runtime import cleanup_runtime_resources
 from app.config.settings import get_settings
 from app.infrastructure.temporal.client import create_temporal_client
 from app.infrastructure.temporal.workers import create_worker
@@ -21,7 +22,10 @@ async def run_temporal_worker() -> None:
         session_factory=container.session_factory,
         workflow_event_recorder=container.build_workflow_event_recorder(),
     )
-    await worker.run()
+    try:
+        await worker.run()
+    finally:
+        await cleanup_runtime_resources()
 
 
 def main() -> None:
