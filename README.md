@@ -136,6 +136,7 @@ tests/
 - 已支持 `POST /api/v1/tasks` 创建任务、`GET /api/v1/tasks` 查询任务列表、`GET /api/v1/tasks/{task_id}` 点查任务，以及 `POST /api/v1/tasks/{task_id}/complete` / `POST /api/v1/tasks/{task_id}/cancel` 完成或取消任务。
 - 已支持 `GET /api/v1/overview` 聚合查看当前会话的 pending reminders、pending tasks、active memories，以及 recent activity。
 - conversation 对话入口现在也支持 `查看概览` / `今天有什么` 之类的概览动作，并会自动回一条聚合结果消息。
+- conversation 对话入口还支持 `查看最近活动`，会返回当前会话最近的统一审计时间线片段。
 - 当 conversation 无法识别输入时，也会自动返回一条引导提示，而不是静默无响应。
 - conversation 对话入口现在还支持最小动作类命令：`完成任务` / `取消任务` 会作用于当前会话最近一条 pending task，`归档记忆` 会归档当前会话最近一条 active memory，`取消提醒` 会取消当前会话最近一条 pending reminder。
 - 当这些动作当前没有可操作对象时，系统会直接返回用户可读反馈，而不是静默失败。

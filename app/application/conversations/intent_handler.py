@@ -37,6 +37,7 @@ class ConversationIntent(StrEnum):
     MEMORY_WRITE = "memory_write"
     MEMORY_ARCHIVE = "memory_archive"
     MEMORY_LIST = "memory_list"
+    ACTIVITY_SHOW = "activity_show"
     OVERVIEW_SHOW = "overview_show"
     UNKNOWN = "unknown"
 
@@ -383,6 +384,25 @@ class IntentConversationHandler:
                     reason=f"overview_shown_via_{decision.source}",
                     response_text=_format_overview_text(overview),
                 )
+            if decision.intent == ConversationIntent.ACTIVITY_SHOW:
+                overview = await self.overview_service.get_overview(
+                    GetOverviewQuery(
+                        conversation_id=conversation_id,
+                        session_id=session_id,
+                        reminder_limit=0,
+                        task_limit=0,
+                        memory_limit=0,
+                        recent_activity_limit=5,
+                    )
+                )
+                return ConversationInboundResult(
+                    handled=True,
+                    conversation_id=conversation_id,
+                    session_id=session_id,
+                    handled_by="overview",
+                    reason=f"activity_shown_via_{decision.source}",
+                    response_text=_format_recent_activity_text(overview),
+                )
             return None
         except (TaskApplicationError, MemoryApplicationError, ReminderApplicationError) as exc:
             handled_by = _handled_by_for_intent(decision.intent)
@@ -497,6 +517,15 @@ def _classify_with_rules(
             source="rules",
         )
 
+    if _is_activity_request(command):
+        return ConversationIntentDecision(
+            intent=ConversationIntent.ACTIVITY_SHOW,
+            content=None,
+            remind_at=None,
+            timezone=None,
+            source="rules",
+        )
+
     return ConversationIntentDecision(
         intent=ConversationIntent.UNKNOWN,
         content=None,
@@ -512,7 +541,7 @@ def _build_intent_system_prompt() -> str:
         "你只负责判断当前文本是否应该创建 reminder、取消 reminder、创建 task、"
         "完成 task、取消 task、写入 memory、归档 memory，或者都不是。"
         "你必须返回 JSON，格式为"
-        '{"intent":"reminder_create|reminder_cancel|reminder_list|task_create|task_complete|task_cancel|task_list|memory_write|memory_archive|memory_list|overview_show|unknown",'
+        '{"intent":"reminder_create|reminder_cancel|reminder_list|task_create|task_complete|task_cancel|task_list|memory_write|memory_archive|memory_list|overview_show|activity_show|unknown",'
         '"content":"提取后的正文或 null",'
         '"remind_at":"ISO8601时间或 null","timezone":"时区或 null"}。'
         "如果文本是在表达未来要提醒的事项，返回 reminder_create，"
@@ -527,6 +556,7 @@ def _build_intent_system_prompt() -> str:
         "如果文本是在要求归档当前会话里最近一条活跃记忆，返回 memory_archive；"
         "如果文本是在要求查看当前会话里的记忆列表，返回 memory_list；"
         "如果文本是在要求查看当前会话概览，返回 overview_show；"
+        "如果文本是在要求查看当前会话最近活动，返回 activity_show；"
         "否则返回 unknown。"
     )
 
@@ -581,6 +611,7 @@ def _parse_intent_response(content: str) -> ConversationIntentDecision | None:
         ConversationIntent.TASK_LIST,
         ConversationIntent.MEMORY_ARCHIVE,
         ConversationIntent.MEMORY_LIST,
+        ConversationIntent.ACTIVITY_SHOW,
         ConversationIntent.OVERVIEW_SHOW,
     }:
         return None
@@ -702,6 +733,13 @@ def _is_overview_request(command: HandleInboundConversationMessageCommand) -> bo
     return normalized in {"查看概览", "看看概览", "今天有什么", "show overview", "overview"}
 
 
+def _is_activity_request(command: HandleInboundConversationMessageCommand) -> bool:
+    if command.message_type != "text" or command.text is None:
+        return False
+    normalized = command.text.strip().casefold()
+    return normalized in {"查看最近活动", "最近活动", "activity", "show activity"}
+
+
 def _format_overview_text(overview: OverviewDTO) -> str:
     lines = ["当前概览："]
 
@@ -731,6 +769,15 @@ def _format_overview_text(overview: OverviewDTO) -> str:
         for event in overview.recent_activity:
             lines.append(f"- [{event.kind}] {event.summary}")
 
+    return "\n".join(lines)
+
+
+def _format_recent_activity_text(overview: OverviewDTO) -> str:
+    if not overview.recent_activity:
+        return "当前没有最近活动。"
+    lines = ["最近活动："]
+    for event in overview.recent_activity:
+        lines.append(f"- [{event.kind}] {event.summary}")
     return "\n".join(lines)
 
 

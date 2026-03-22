@@ -888,6 +888,51 @@ async def test_intent_handler_dispatches_to_overview_service() -> None:
 
 
 @pytest.mark.asyncio
+async def test_intent_handler_dispatches_to_recent_activity_view() -> None:
+    task_service = FakeTaskService()
+    memory_service = FakeMemoryService()
+    reminder_service = FakeReminderService()
+    overview_service = FakeOverviewService()
+    handler = IntentConversationHandler(
+        classifier=LLMFirstConversationIntentClassifier(
+            llm_gateway=FakeLLMGateway('{"intent":"activity_show","content":null}'),
+            model="gpt-test",
+            api_key_suffix="90abcdef",
+        ),
+        task_service=task_service,
+        memory_service=memory_service,
+        reminder_service=reminder_service,
+        overview_service=overview_service,
+    )
+
+    result = await handler.handle(
+        HandleInboundConversationMessageCommand(
+            channel="web",
+            message_type="text",
+            user_identity="user-1",
+            external_message_id=None,
+            root_message_id=None,
+            parent_message_id=None,
+            chat_id=None,
+            thread_id=None,
+            text="查看最近活动",
+            raw_payload={"text": "查看最近活动"},
+        ),
+        conversation_id="conversation-1",
+        session_id="session-1",
+    )
+
+    assert result is not None
+    assert result.handled_by == "overview"
+    assert result.reason == "activity_shown_via_llm"
+    assert "最近活动：" in (result.response_text or "")
+    query = overview_service.queries[0]
+    assert query.reminder_limit == 0
+    assert query.task_limit == 0
+    assert query.memory_limit == 0
+
+
+@pytest.mark.asyncio
 async def test_intent_handler_returns_feedback_when_latest_task_missing() -> None:
     task_service = FakeTaskService()
     task_service.complete_latest_error = TaskNotFoundError("当前会话没有可完成的待办任务。")
