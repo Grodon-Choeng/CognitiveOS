@@ -221,6 +221,7 @@ workflows, activities, signals, queries, updates, timers, retries, durable execu
 - 常用本地开发命令应优先沉淀到 `Makefile`，避免在 README 和协作过程中散落多个不一致的命令版本。
 - 应用 settings 默认应支持从项目根目录 `.env` 读取本地配置；若变更读取方式，必须同步更新 `README.md` 与 `.env.example`。
 - 新增环境变量、启动方式或基础设施依赖时，必须同步更新 `README.md` 与本文件。
+- 当前若启用 conversation 的 LLM 优先意图识别，至少需要配置 `COGNITIVE_OS_OPENAI_API_KEY` 与 `COGNITIVE_OS_CONVERSATION_INTENT_MODEL`；未配置时必须自动退回规则兜底，而不是直接报错中断主流程。
 
 ---
 

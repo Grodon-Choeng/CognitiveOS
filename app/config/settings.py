@@ -34,7 +34,10 @@ class Settings(BaseSettings):
     temporal_namespace: str = "default"
     temporal_task_queue: str = "cognitiveos-reminders"
     temporal_reminder_workflow_name: str = "reminder-workflow"
+    openai_base_url: str = "https://api.openai.com/v1"
     openai_api_key: str | None = Field(default=None)
+    conversation_intent_model: str | None = None
+    conversation_intent_llm_timeout_seconds: float = 10.0
 
     model_config = SettingsConfigDict(
         env_prefix="COGNITIVE_OS_",

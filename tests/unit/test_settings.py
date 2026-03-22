@@ -8,3 +8,5 @@ def test_settings_defaults() -> None:
     assert settings.api_prefix == "/api/v1"
     assert settings.database_url.startswith("postgresql+asyncpg://")
     assert settings.temporal_task_queue == "cognitiveos-reminders"
+    assert settings.openai_base_url == "https://api.openai.com/v1"
+    assert settings.conversation_intent_model is None

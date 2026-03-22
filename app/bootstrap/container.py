@@ -4,15 +4,17 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.application.audit.service import AuditQueryService
 from app.application.conversations.handlers import ConversationInboundHandler
+from app.application.conversations.intent_handler import (
+    IntentConversationHandler,
+    LLMFirstConversationIntentClassifier,
+)
 from app.application.conversations.ports import ConversationContextResolver
 from app.application.conversations.service import ConversationApplicationService
-from app.application.memory.conversation_handler import MemoryConversationHandler
 from app.application.memory.ports import MemoryUnitOfWorkFactory
 from app.application.memory.service import MemoryApplicationService
 from app.application.reminders.conversation_handler import ReminderConversationHandler
 from app.application.reminders.ports import ReminderUnitOfWorkFactory
 from app.application.reminders.service import ReminderApplicationService
-from app.application.tasks.conversation_handler import TaskConversationHandler
 from app.application.tasks.ports import TaskUnitOfWorkFactory
 from app.application.tasks.service import TaskApplicationService
 from app.bootstrap.inbound_events import ConversationInboundEventRecorder
@@ -33,6 +35,8 @@ from app.infrastructure.integrations.messaging import (
     RecordingMessagingAdapter,
     RoutingMessagingAdapter,
 )
+from app.infrastructure.llm.gateway import LLMGateway, RecordingLLMGateway
+from app.infrastructure.llm.openai_gateway import OpenAIChatLLMGateway
 from app.infrastructure.temporal.gateway import TemporalReminderWorkflowGateway
 from app.observability.message_events import (
     DatabaseMessageEventRecorder,
@@ -43,6 +47,7 @@ from app.observability.model_invocations import (
     DatabaseModelInvocationRecorder,
     JsonlModelInvocationRecorder,
     MultiModelInvocationRecorder,
+    build_api_key_suffix,
 )
 from app.observability.tool_invocations import (
     DatabaseToolInvocationRecorder,
@@ -135,6 +140,23 @@ class ApplicationContainer:
             ]
         )
 
+    def build_llm_gateway(self) -> LLMGateway | None:
+        return self.llm_gateway
+
+    @cached_property
+    def llm_gateway(self) -> LLMGateway | None:
+        if not self.settings.openai_api_key or not self.settings.conversation_intent_model:
+            return None
+        return RecordingLLMGateway(
+            OpenAIChatLLMGateway(
+                api_key=self.settings.openai_api_key,
+                model=self.settings.conversation_intent_model,
+                base_url=self.settings.openai_base_url,
+                timeout_seconds=self.settings.conversation_intent_llm_timeout_seconds,
+            ),
+            self.build_model_invocation_recorder(),
+        )
+
     def build_message_event_recorder(self) -> MultiMessageEventRecorder:
         return self.message_event_recorder
 
@@ -216,9 +238,23 @@ class ApplicationContainer:
     def conversation_handlers(self) -> list[ConversationInboundHandler]:
         return [
             ReminderConversationHandler(self.build_reminder_service()),
-            TaskConversationHandler(self.build_task_service()),
-            MemoryConversationHandler(self.build_memory_service()),
+            IntentConversationHandler(
+                classifier=self.build_conversation_intent_classifier(),
+                task_service=self.build_task_service(),
+                memory_service=self.build_memory_service(),
+            ),
         ]
+
+    def build_conversation_intent_classifier(self) -> LLMFirstConversationIntentClassifier:
+        return self.conversation_intent_classifier
+
+    @cached_property
+    def conversation_intent_classifier(self) -> LLMFirstConversationIntentClassifier:
+        return LLMFirstConversationIntentClassifier(
+            llm_gateway=self.build_llm_gateway(),
+            model=self.settings.conversation_intent_model,
+            api_key_suffix=build_api_key_suffix(self.settings.openai_api_key),
+        )
 
     def build_audit_service(self) -> AuditQueryService:
         return self.audit_service

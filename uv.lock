@@ -190,6 +190,7 @@ dependencies = [
     { name = "asyncpg" },
     { name = "fastapi" },
     { name = "greenlet" },
+    { name = "httpx" },
     { name = "lark-oapi" },
     { name = "pydantic-settings" },
     { name = "sqlalchemy" },
@@ -199,7 +200,6 @@ dependencies = [
 
 [package.optional-dependencies]
 dev = [
-    { name = "httpx" },
     { name = "mypy" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
@@ -212,7 +212,7 @@ requires-dist = [
     { name = "asyncpg", specifier = ">=0.30.0,<1.0.0" },
     { name = "fastapi", specifier = ">=0.115.0,<1.0.0" },
     { name = "greenlet", specifier = ">=3.1.1,<4.0.0" },
-    { name = "httpx", marker = "extra == 'dev'", specifier = ">=0.28.0,<1.0.0" },
+    { name = "httpx", specifier = ">=0.28.0,<1.0.0" },
     { name = "lark-oapi", specifier = ">=1.4.18,<2.0.0" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.13.0,<2.0.0" },
     { name = "pydantic-settings", specifier = ">=2.6.0,<3.0.0" },

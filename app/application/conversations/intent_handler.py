@@ -1,0 +1,251 @@
+import json
+from dataclasses import dataclass
+from enum import StrEnum
+from typing import Protocol
+
+from app.application.conversations.commands import HandleInboundConversationMessageCommand
+from app.application.conversations.dto import ConversationInboundResult
+from app.application.memory.commands import CreateMemoryCommand
+from app.application.memory.conversation_handler import _extract_memory_content
+from app.application.memory.dto import MemoryDTO
+from app.application.tasks.commands import CreateTaskCommand
+from app.application.tasks.conversation_handler import _extract_task_title
+from app.application.tasks.dto import TaskDTO
+from app.infrastructure.llm.gateway import LLMGateway
+from app.infrastructure.llm.models import GenerateRequest
+
+
+class ConversationIntent(StrEnum):
+    TASK_CREATE = "task_create"
+    MEMORY_WRITE = "memory_write"
+    UNKNOWN = "unknown"
+
+
+@dataclass(slots=True, frozen=True)
+class ConversationIntentDecision:
+    intent: ConversationIntent
+    content: str | None
+    source: str
+
+
+class TaskCreator(Protocol):
+    async def create_task(self, command: CreateTaskCommand) -> TaskDTO: ...
+
+
+class MemoryCreator(Protocol):
+    async def create_memory(self, command: CreateMemoryCommand) -> MemoryDTO: ...
+
+
+class LLMFirstConversationIntentClassifier:
+    def __init__(
+        self,
+        *,
+        llm_gateway: LLMGateway | None,
+        model: str | None,
+        api_key_suffix: str | None,
+    ) -> None:
+        self.llm_gateway = llm_gateway
+        self.model = model
+        self.api_key_suffix = api_key_suffix
+
+    async def classify(
+        self,
+        command: HandleInboundConversationMessageCommand,
+        *,
+        conversation_id: str,
+        session_id: str,
+    ) -> ConversationIntentDecision:
+        llm_decision = await self._classify_with_llm(
+            command=command,
+            conversation_id=conversation_id,
+            session_id=session_id,
+        )
+        if llm_decision is not None and llm_decision.intent != ConversationIntent.UNKNOWN:
+            return llm_decision
+        rule_decision = _classify_with_rules(command)
+        if rule_decision.intent != ConversationIntent.UNKNOWN:
+            return rule_decision
+        if llm_decision is not None:
+            return llm_decision
+        return rule_decision
+
+    async def _classify_with_llm(
+        self,
+        *,
+        command: HandleInboundConversationMessageCommand,
+        conversation_id: str,
+        session_id: str,
+    ) -> ConversationIntentDecision | None:
+        if self.llm_gateway is None or self.model is None:
+            return None
+        if command.message_type != "text" or command.text is None:
+            return None
+
+        try:
+            result = await self.llm_gateway.generate(
+                GenerateRequest(
+                    prompt=_build_intent_prompt(command.text),
+                    system_prompt=_build_intent_system_prompt(),
+                    provider="openai",
+                    model=self.model,
+                    api_key_suffix=self.api_key_suffix,
+                    conversation_id=conversation_id,
+                    session_id=session_id,
+                    metadata={"component": "conversation_intent_classifier"},
+                )
+            )
+        except Exception:
+            return None
+
+        return _parse_intent_response(result.content)
+
+
+class IntentConversationHandler:
+    name = "intent"
+
+    def __init__(
+        self,
+        *,
+        classifier: LLMFirstConversationIntentClassifier,
+        task_service: TaskCreator,
+        memory_service: MemoryCreator,
+    ) -> None:
+        self.classifier = classifier
+        self.task_service = task_service
+        self.memory_service = memory_service
+
+    async def handle(
+        self,
+        command: HandleInboundConversationMessageCommand,
+        *,
+        conversation_id: str,
+        session_id: str,
+    ) -> ConversationInboundResult | None:
+        decision = await self.classifier.classify(
+            command,
+            conversation_id=conversation_id,
+            session_id=session_id,
+        )
+        if decision.intent == ConversationIntent.TASK_CREATE and decision.content is not None:
+            await self.task_service.create_task(
+                CreateTaskCommand(
+                    title=decision.content,
+                    conversation_id=conversation_id,
+                    session_id=session_id,
+                    source_channel=command.channel,
+                    source_user_id=command.user_identity,
+                    source_chat_id=command.chat_id,
+                    source_thread_id=command.thread_id,
+                )
+            )
+            return ConversationInboundResult(
+                handled=True,
+                conversation_id=conversation_id,
+                session_id=session_id,
+                handled_by="task",
+                reason=f"task_created_via_{decision.source}",
+            )
+        if decision.intent == ConversationIntent.MEMORY_WRITE and decision.content is not None:
+            await self.memory_service.create_memory(
+                CreateMemoryCommand(
+                    content=decision.content,
+                    conversation_id=conversation_id,
+                    session_id=session_id,
+                    source_channel=command.channel,
+                    source_user_id=command.user_identity,
+                    source_chat_id=command.chat_id,
+                    source_thread_id=command.thread_id,
+                )
+            )
+            return ConversationInboundResult(
+                handled=True,
+                conversation_id=conversation_id,
+                session_id=session_id,
+                handled_by="memory",
+                reason=f"memory_created_via_{decision.source}",
+            )
+        return None
+
+
+def _classify_with_rules(
+    command: HandleInboundConversationMessageCommand,
+) -> ConversationIntentDecision:
+    task_title = _extract_task_title(command)
+    if task_title is not None:
+        return ConversationIntentDecision(
+            intent=ConversationIntent.TASK_CREATE,
+            content=task_title,
+            source="rules",
+        )
+
+    memory_content = _extract_memory_content(command)
+    if memory_content is not None:
+        return ConversationIntentDecision(
+            intent=ConversationIntent.MEMORY_WRITE,
+            content=memory_content,
+            source="rules",
+        )
+
+    return ConversationIntentDecision(
+        intent=ConversationIntent.UNKNOWN,
+        content=None,
+        source="rules",
+    )
+
+
+def _build_intent_system_prompt() -> str:
+    return (
+        "你是 CognitiveOS 的对话意图分类器。"
+        "你只负责判断当前文本是否应该创建 task、写入 memory，或者都不是。"
+        "你必须返回 JSON，格式为"
+        '{"intent":"task_create|memory_write|unknown","content":"提取后的正文或 null"}。'
+        "如果文本是在表达待办事项，返回 task_create；"
+        "如果文本是在要求系统记住某件事实或偏好，返回 memory_write；"
+        "否则返回 unknown。"
+    )
+
+
+def _build_intent_prompt(text: str) -> str:
+    return f"用户输入：{text}"
+
+
+def _parse_intent_response(content: str) -> ConversationIntentDecision | None:
+    try:
+        parsed = json.loads(_extract_json_block(content))
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(parsed, dict):
+        return None
+
+    intent_value = parsed.get("intent")
+    content_value = parsed.get("content")
+    if not isinstance(intent_value, str):
+        return None
+
+    try:
+        intent = ConversationIntent(intent_value)
+    except ValueError:
+        return None
+
+    normalized_content = content_value if isinstance(content_value, str) else None
+    if normalized_content is not None:
+        normalized_content = normalized_content.strip() or None
+    if intent != ConversationIntent.UNKNOWN and normalized_content is None:
+        return None
+    return ConversationIntentDecision(
+        intent=intent,
+        content=normalized_content,
+        source="llm",
+    )
+
+
+def _extract_json_block(content: str) -> str:
+    normalized = content.strip()
+    if normalized.startswith("```"):
+        lines = normalized.splitlines()
+        if lines and lines[0].startswith("```"):
+            lines = lines[1:]
+        if lines and lines[-1].startswith("```"):
+            lines = lines[:-1]
+        return "\n".join(lines).strip()
+    return normalized
