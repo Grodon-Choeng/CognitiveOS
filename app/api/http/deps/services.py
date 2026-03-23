@@ -1,36 +1,52 @@
+from dishka.integrations.fastapi import FromDishka, inject
+
 from app.application.audit.service import AuditQueryService
 from app.application.conversations.service import ConversationApplicationService
 from app.application.memory.service import MemoryApplicationService
 from app.application.overview.service import OverviewApplicationService
 from app.application.reminders.service import ReminderApplicationService
 from app.application.tasks.service import TaskApplicationService
-from app.bootstrap.container import get_container
 from app.infrastructure.integrations.messaging.feishu_webhook import FeishuWebhookHandler
 
 
-def get_audit_service() -> AuditQueryService:
-    return get_container().build_audit_service()
+@inject
+def get_audit_service(service: FromDishka[AuditQueryService]) -> AuditQueryService:
+    return service
 
 
-def get_conversation_service() -> ConversationApplicationService:
-    return get_container().build_conversation_service()
+@inject
+def get_conversation_service(
+    service: FromDishka[ConversationApplicationService],
+) -> ConversationApplicationService:
+    return service
 
 
-def get_reminder_service() -> ReminderApplicationService:
-    return get_container().build_reminder_service()
+@inject
+def get_reminder_service(
+    service: FromDishka[ReminderApplicationService],
+) -> ReminderApplicationService:
+    return service
 
 
-def get_memory_service() -> MemoryApplicationService:
-    return get_container().build_memory_service()
+@inject
+def get_memory_service(service: FromDishka[MemoryApplicationService]) -> MemoryApplicationService:
+    return service
 
 
-def get_task_service() -> TaskApplicationService:
-    return get_container().build_task_service()
+@inject
+def get_task_service(service: FromDishka[TaskApplicationService]) -> TaskApplicationService:
+    return service
 
 
-def get_overview_service() -> OverviewApplicationService:
-    return get_container().build_overview_service()
+@inject
+def get_overview_service(
+    service: FromDishka[OverviewApplicationService],
+) -> OverviewApplicationService:
+    return service
 
 
-def get_feishu_webhook_handler() -> FeishuWebhookHandler:
-    return get_container().build_feishu_webhook_handler()
+@inject
+def get_feishu_webhook_handler(
+    handler: FromDishka[FeishuWebhookHandler],
+) -> FeishuWebhookHandler:
+    return handler

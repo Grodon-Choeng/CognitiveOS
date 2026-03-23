@@ -1,9 +1,8 @@
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from app.main import app
 
-
-def test_health_endpoint() -> None:
+def test_health_endpoint(app: FastAPI) -> None:
     with TestClient(app) as client:
         response = client.get("/health")
 

@@ -1,11 +1,11 @@
 from dataclasses import dataclass
 
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from app.api.http.deps.services import get_conversation_service
 from app.application.conversations.commands import HandleInboundConversationMessageCommand
 from app.application.conversations.dto import ConversationInboundResult
-from app.main import app
 
 
 @dataclass
@@ -31,7 +31,7 @@ def override_conversation_service() -> FakeConversationService:
     return FakeConversationService()
 
 
-def test_receive_conversation_message_route_returns_structured_response() -> None:
+def test_receive_conversation_message_route_returns_structured_response(app: FastAPI) -> None:
     app.dependency_overrides[get_conversation_service] = override_conversation_service
 
     try:
@@ -59,7 +59,7 @@ def test_receive_conversation_message_route_returns_structured_response() -> Non
     }
 
 
-def test_receive_conversation_message_route_rejects_invalid_payload() -> None:
+def test_receive_conversation_message_route_rejects_invalid_payload(app: FastAPI) -> None:
     with TestClient(app) as client:
         response = client.post(
             "/api/v1/conversations/messages",
@@ -72,7 +72,7 @@ def test_receive_conversation_message_route_rejects_invalid_payload() -> None:
     assert response.status_code == 422
 
 
-def test_receive_conversation_message_route_rejects_thread_without_chat() -> None:
+def test_receive_conversation_message_route_rejects_thread_without_chat(app: FastAPI) -> None:
     with TestClient(app) as client:
         response = client.post(
             "/api/v1/conversations/messages",
@@ -88,7 +88,9 @@ def test_receive_conversation_message_route_rejects_thread_without_chat() -> Non
     assert response.status_code == 422
 
 
-def test_receive_conversation_message_route_rejects_text_message_without_text() -> None:
+def test_receive_conversation_message_route_rejects_text_message_without_text(
+    app: FastAPI,
+) -> None:
     with TestClient(app) as client:
         response = client.post(
             "/api/v1/conversations/messages",

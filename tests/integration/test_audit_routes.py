@@ -1,11 +1,11 @@
 from dataclasses import dataclass
 from datetime import datetime
 
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from app.api.http.deps.services import get_audit_service
 from app.application.audit.dto import AuditEventDTO, AuditEventPageDTO
-from app.main import app
 
 
 @dataclass
@@ -98,7 +98,7 @@ def override_audit_service() -> FakeAuditService:
     return FakeAuditService()
 
 
-def test_audit_events_route_returns_structured_response() -> None:
+def test_audit_events_route_returns_structured_response(app: FastAPI) -> None:
     app.dependency_overrides[get_audit_service] = override_audit_service
 
     try:
@@ -128,7 +128,7 @@ def test_audit_events_route_returns_structured_response() -> None:
     }
 
 
-def test_audit_events_route_accepts_extended_filters() -> None:
+def test_audit_events_route_accepts_extended_filters(app: FastAPI) -> None:
     app.dependency_overrides[get_audit_service] = override_audit_service
 
     try:
@@ -150,7 +150,7 @@ def test_audit_events_route_accepts_extended_filters() -> None:
     assert response.status_code == 200
 
 
-def test_audit_timeline_route_returns_page_response() -> None:
+def test_audit_timeline_route_returns_page_response(app: FastAPI) -> None:
     app.dependency_overrides[get_audit_service] = override_audit_service
 
     try:
@@ -186,14 +186,14 @@ def test_audit_timeline_route_returns_page_response() -> None:
     }
 
 
-def test_audit_events_route_rejects_invalid_kind() -> None:
+def test_audit_events_route_rejects_invalid_kind(app: FastAPI) -> None:
     with TestClient(app) as client:
         response = client.get("/api/v1/audit/events", params={"kind": "invalid"})
 
     assert response.status_code == 422
 
 
-def test_audit_timeline_route_rejects_invalid_cursor() -> None:
+def test_audit_timeline_route_rejects_invalid_cursor(app: FastAPI) -> None:
     with TestClient(app) as client:
         response = client.get("/api/v1/audit/timeline", params={"cursor": "invalid"})
 

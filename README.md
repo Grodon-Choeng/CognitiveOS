@@ -9,6 +9,7 @@ CognitiveOS 是一个面向个人助理场景的 AI-native 模块化单体后端
 ## 当前技术基线
 
 - Web 层：`FastAPI`
+- 依赖注入 / 运行时装配：`Dishka`
 - Workflow 层：`Temporal`
 - 数据层：`PostgreSQL` + `SQLAlchemy 2.x` + `Alembic`
 - 模型访问：统一走 `llm_gateway`

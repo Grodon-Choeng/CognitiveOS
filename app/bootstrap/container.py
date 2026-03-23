@@ -1,14 +1,12 @@
-from functools import cached_property, lru_cache
-
-from sqlalchemy.ext.asyncio import async_sessionmaker
+from dishka import AsyncContainer, Provider, Scope, from_context, make_async_container, provide
+from dishka.integrations.fastapi import FastapiProvider
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.application.audit.service import AuditQueryService
-from app.application.conversations.handlers import ConversationInboundHandler
 from app.application.conversations.intent_handler import (
     IntentConversationHandler,
     LLMFirstConversationIntentClassifier,
 )
-from app.application.conversations.ports import ConversationContextResolver
 from app.application.conversations.service import ConversationApplicationService
 from app.application.memory.ports import MemoryUnitOfWorkFactory
 from app.application.memory.service import MemoryApplicationService
@@ -19,7 +17,7 @@ from app.application.reminders.service import ReminderApplicationService
 from app.application.tasks.ports import TaskUnitOfWorkFactory
 from app.application.tasks.service import TaskApplicationService
 from app.bootstrap.inbound_events import ConversationInboundEventRecorder
-from app.config.settings import Settings, get_settings
+from app.config.settings import Settings
 from app.infrastructure.conversations import SqlAlchemyConversationContextResolver
 from app.infrastructure.db.session import get_session_factory
 from app.infrastructure.db.uow import (
@@ -36,7 +34,7 @@ from app.infrastructure.integrations.messaging import (
     RecordingMessagingAdapter,
     RoutingMessagingAdapter,
 )
-from app.infrastructure.llm.gateway import LLMGateway, RecordingLLMGateway
+from app.infrastructure.llm.gateway import RecordingLLMGateway
 from app.infrastructure.llm.openai_gateway import OpenAIChatLLMGateway
 from app.infrastructure.temporal.gateway import TemporalReminderWorkflowGateway
 from app.observability.message_events import (
@@ -61,277 +59,337 @@ from app.observability.workflow_events import (
     MultiWorkflowEventRecorder,
 )
 
+AsyncSessionFactory = async_sessionmaker[AsyncSession]
 
-class ApplicationContainer:
-    def __init__(self, settings: Settings) -> None:
-        self.settings = settings
-        self.session_factory: async_sessionmaker = get_session_factory(settings)
 
-    @cached_property
-    def workflow_gateway(self) -> TemporalReminderWorkflowGateway:
-        return TemporalReminderWorkflowGateway(
-            settings=self.settings,
-            workflow_event_recorder=self.build_workflow_event_recorder(),
-        )
+class ContextProvider(Provider):
+    settings = from_context(Settings, scope=Scope.APP)
 
-    def build_reminder_service(self) -> ReminderApplicationService:
-        return self.reminder_service
 
-    @cached_property
-    def reminder_service(self) -> ReminderApplicationService:
-        return ReminderApplicationService(
-            unit_of_work_factory=self.build_reminder_unit_of_work_factory(),
-            workflow_gateway=self.workflow_gateway,
-            conversation_context_resolver=self.build_conversation_context_resolver(),
-        )
+class ApplicationProvider(Provider):
+    @provide(scope=Scope.APP)
+    def provide_session_factory(self, settings: Settings) -> AsyncSessionFactory:
+        return get_session_factory(settings)
 
-    def build_memory_service(self) -> MemoryApplicationService:
-        return self.memory_service
+    @provide(scope=Scope.APP)
+    def provide_reminder_uow_factory(
+        self,
+        session_factory: AsyncSessionFactory,
+    ) -> ReminderUnitOfWorkFactory:
+        return _build_reminder_uow_factory(session_factory)
 
-    @cached_property
-    def memory_service(self) -> MemoryApplicationService:
-        return MemoryApplicationService(
-            unit_of_work_factory=self.build_memory_unit_of_work_factory(),
-            conversation_context_resolver=self.build_conversation_context_resolver(),
-        )
+    @provide(scope=Scope.APP)
+    def provide_memory_uow_factory(
+        self,
+        session_factory: AsyncSessionFactory,
+    ) -> MemoryUnitOfWorkFactory:
+        return _build_memory_uow_factory(session_factory)
 
-    def build_task_service(self) -> TaskApplicationService:
-        return self.task_service
+    @provide(scope=Scope.APP)
+    def provide_task_uow_factory(
+        self,
+        session_factory: AsyncSessionFactory,
+    ) -> TaskUnitOfWorkFactory:
+        return _build_task_uow_factory(session_factory)
 
-    @cached_property
-    def task_service(self) -> TaskApplicationService:
-        return TaskApplicationService(
-            unit_of_work_factory=self.build_task_unit_of_work_factory(),
-            conversation_context_resolver=self.build_conversation_context_resolver(),
-        )
-
-    def build_overview_service(self) -> OverviewApplicationService:
-        return self.overview_service
-
-    @cached_property
-    def overview_service(self) -> OverviewApplicationService:
-        return OverviewApplicationService(
-            reminder_service=self.build_reminder_service(),
-            task_service=self.build_task_service(),
-            memory_service=self.build_memory_service(),
-            audit_service=self.build_audit_service(),
-        )
-
-    def build_reminder_unit_of_work_factory(self) -> ReminderUnitOfWorkFactory:
-        def create_unit_of_work() -> SQLAlchemyReminderUnitOfWork:
-            return SQLAlchemyReminderUnitOfWork(self.session_factory)
-
-        return create_unit_of_work
-
-    def build_memory_unit_of_work_factory(self) -> MemoryUnitOfWorkFactory:
-        def create_unit_of_work() -> SQLAlchemyMemoryUnitOfWork:
-            return SQLAlchemyMemoryUnitOfWork(self.session_factory)
-
-        return create_unit_of_work
-
-    def build_task_unit_of_work_factory(self) -> TaskUnitOfWorkFactory:
-        def create_unit_of_work() -> SQLAlchemyTaskUnitOfWork:
-            return SQLAlchemyTaskUnitOfWork(self.session_factory)
-
-        return create_unit_of_work
-
-    def build_model_invocation_recorder(self) -> MultiModelInvocationRecorder:
-        return self.model_invocation_recorder
-
-    @cached_property
-    def model_invocation_recorder(self) -> MultiModelInvocationRecorder:
+    @provide(scope=Scope.APP)
+    def provide_model_invocation_recorder(
+        self,
+        settings: Settings,
+        session_factory: AsyncSessionFactory,
+    ) -> MultiModelInvocationRecorder:
         return MultiModelInvocationRecorder(
             [
                 DatabaseModelInvocationRecorder(
-                    session_factory=self.session_factory,
-                    enabled=self.settings.model_invocation_db_enabled,
+                    session_factory=session_factory,
+                    enabled=settings.model_invocation_db_enabled,
                 ),
                 JsonlModelInvocationRecorder(
-                    path=self.settings.model_invocation_jsonl_path,
-                    enabled=self.settings.model_invocation_jsonl_enabled,
+                    path=settings.model_invocation_jsonl_path,
+                    enabled=settings.model_invocation_jsonl_enabled,
                 ),
             ]
         )
 
-    def build_llm_gateway(self) -> LLMGateway | None:
-        return self.llm_gateway
-
-    @cached_property
-    def llm_gateway(self) -> LLMGateway | None:
-        if not self.settings.openai_api_key or not self.settings.conversation_intent_model:
-            return None
-        return RecordingLLMGateway(
-            OpenAIChatLLMGateway(
-                api_key=self.settings.openai_api_key,
-                model=self.settings.conversation_intent_model,
-                base_url=self.settings.openai_base_url,
-                timeout_seconds=self.settings.conversation_intent_llm_timeout_seconds,
-            ),
-            self.build_model_invocation_recorder(),
-        )
-
-    def build_message_event_recorder(self) -> MultiMessageEventRecorder:
-        return self.message_event_recorder
-
-    @cached_property
-    def message_event_recorder(self) -> MultiMessageEventRecorder:
+    @provide(scope=Scope.APP)
+    def provide_message_event_recorder(
+        self,
+        settings: Settings,
+        session_factory: AsyncSessionFactory,
+    ) -> MultiMessageEventRecorder:
         return MultiMessageEventRecorder(
             [
                 DatabaseMessageEventRecorder(
-                    session_factory=self.session_factory,
-                    enabled=self.settings.message_event_db_enabled,
+                    session_factory=session_factory,
+                    enabled=settings.message_event_db_enabled,
                 ),
                 JsonlMessageEventRecorder(
-                    path=self.settings.message_event_jsonl_path,
-                    enabled=self.settings.message_event_jsonl_enabled,
+                    path=settings.message_event_jsonl_path,
+                    enabled=settings.message_event_jsonl_enabled,
                 ),
             ]
         )
 
-    def build_conversation_context_resolver(self) -> ConversationContextResolver:
-        return self.conversation_context_resolver
-
-    @cached_property
-    def conversation_context_resolver(self) -> ConversationContextResolver:
-        return SqlAlchemyConversationContextResolver(self.session_factory)
-
-    def build_tool_invocation_recorder(self) -> MultiToolInvocationRecorder:
-        return self.tool_invocation_recorder
-
-    @cached_property
-    def tool_invocation_recorder(self) -> MultiToolInvocationRecorder:
+    @provide(scope=Scope.APP)
+    def provide_tool_invocation_recorder(
+        self,
+        settings: Settings,
+        session_factory: AsyncSessionFactory,
+    ) -> MultiToolInvocationRecorder:
         return MultiToolInvocationRecorder(
             [
                 DatabaseToolInvocationRecorder(
-                    session_factory=self.session_factory,
-                    enabled=self.settings.tool_invocation_db_enabled,
+                    session_factory=session_factory,
+                    enabled=settings.tool_invocation_db_enabled,
                 ),
                 JsonlToolInvocationRecorder(
-                    path=self.settings.tool_invocation_jsonl_path,
-                    enabled=self.settings.tool_invocation_jsonl_enabled,
+                    path=settings.tool_invocation_jsonl_path,
+                    enabled=settings.tool_invocation_jsonl_enabled,
                 ),
             ]
         )
 
-    def build_messaging_adapter(self) -> MessagingAdapter:
-        return self.messaging_adapter
+    @provide(scope=Scope.APP)
+    def provide_workflow_event_recorder(
+        self,
+        settings: Settings,
+        session_factory: AsyncSessionFactory,
+    ) -> MultiWorkflowEventRecorder:
+        return MultiWorkflowEventRecorder(
+            [
+                DatabaseWorkflowEventRecorder(
+                    session_factory=session_factory,
+                    enabled=settings.workflow_event_db_enabled,
+                ),
+                JsonlWorkflowEventRecorder(
+                    path=settings.workflow_event_jsonl_path,
+                    enabled=settings.workflow_event_jsonl_enabled,
+                ),
+            ]
+        )
 
-    @cached_property
-    def messaging_adapter(self) -> MessagingAdapter:
+    @provide(scope=Scope.APP)
+    def provide_conversation_context_resolver(
+        self,
+        session_factory: AsyncSessionFactory,
+    ) -> SqlAlchemyConversationContextResolver:
+        return SqlAlchemyConversationContextResolver(session_factory)
+
+    @provide(scope=Scope.APP)
+    def provide_workflow_gateway(
+        self,
+        settings: Settings,
+        workflow_event_recorder: MultiWorkflowEventRecorder,
+    ) -> TemporalReminderWorkflowGateway:
+        return TemporalReminderWorkflowGateway(
+            settings=settings,
+            workflow_event_recorder=workflow_event_recorder,
+        )
+
+    @provide(scope=Scope.APP)
+    def provide_reminder_service(
+        self,
+        reminder_uow_factory: ReminderUnitOfWorkFactory,
+        workflow_gateway: TemporalReminderWorkflowGateway,
+        conversation_context_resolver: SqlAlchemyConversationContextResolver,
+    ) -> ReminderApplicationService:
+        return ReminderApplicationService(
+            unit_of_work_factory=reminder_uow_factory,
+            workflow_gateway=workflow_gateway,
+            conversation_context_resolver=conversation_context_resolver,
+        )
+
+    @provide(scope=Scope.APP)
+    def provide_memory_service(
+        self,
+        memory_uow_factory: MemoryUnitOfWorkFactory,
+        conversation_context_resolver: SqlAlchemyConversationContextResolver,
+    ) -> MemoryApplicationService:
+        return MemoryApplicationService(
+            unit_of_work_factory=memory_uow_factory,
+            conversation_context_resolver=conversation_context_resolver,
+        )
+
+    @provide(scope=Scope.APP)
+    def provide_task_service(
+        self,
+        task_uow_factory: TaskUnitOfWorkFactory,
+        conversation_context_resolver: SqlAlchemyConversationContextResolver,
+    ) -> TaskApplicationService:
+        return TaskApplicationService(
+            unit_of_work_factory=task_uow_factory,
+            conversation_context_resolver=conversation_context_resolver,
+        )
+
+    @provide(scope=Scope.APP)
+    def provide_audit_service(
+        self,
+        session_factory: AsyncSessionFactory,
+    ) -> AuditQueryService:
+        return AuditQueryService(session_factory)
+
+    @provide(scope=Scope.APP)
+    def provide_overview_service(
+        self,
+        reminder_service: ReminderApplicationService,
+        task_service: TaskApplicationService,
+        memory_service: MemoryApplicationService,
+        audit_service: AuditQueryService,
+    ) -> OverviewApplicationService:
+        return OverviewApplicationService(
+            reminder_service=reminder_service,
+            task_service=task_service,
+            memory_service=memory_service,
+            audit_service=audit_service,
+        )
+
+    @provide(scope=Scope.APP)
+    def provide_conversation_intent_classifier(
+        self,
+        settings: Settings,
+        model_invocation_recorder: MultiModelInvocationRecorder,
+    ) -> LLMFirstConversationIntentClassifier:
+        llm_gateway = None
+        if settings.openai_api_key and settings.conversation_intent_model:
+            llm_gateway = RecordingLLMGateway(
+                OpenAIChatLLMGateway(
+                    api_key=settings.openai_api_key,
+                    model=settings.conversation_intent_model,
+                    base_url=settings.openai_base_url,
+                    timeout_seconds=settings.conversation_intent_llm_timeout_seconds,
+                ),
+                model_invocation_recorder,
+            )
+        return LLMFirstConversationIntentClassifier(
+            llm_gateway=llm_gateway,
+            model=settings.conversation_intent_model,
+            api_key_suffix=build_api_key_suffix(settings.openai_api_key),
+        )
+
+    @provide(scope=Scope.APP)
+    def provide_conversation_service(
+        self,
+        conversation_context_resolver: SqlAlchemyConversationContextResolver,
+        message_event_recorder: MultiMessageEventRecorder,
+        reminder_service: ReminderApplicationService,
+        conversation_intent_classifier: LLMFirstConversationIntentClassifier,
+        task_service: TaskApplicationService,
+        memory_service: MemoryApplicationService,
+        overview_service: OverviewApplicationService,
+    ) -> ConversationApplicationService:
+        return ConversationApplicationService(
+            conversation_context_resolver=conversation_context_resolver,
+            message_event_recorder=message_event_recorder,
+            handlers=[
+                ReminderConversationHandler(reminder_service),
+                IntentConversationHandler(
+                    classifier=conversation_intent_classifier,
+                    task_service=task_service,
+                    memory_service=memory_service,
+                    reminder_service=reminder_service,
+                    overview_service=overview_service,
+                ),
+            ],
+        )
+
+    @provide(scope=Scope.APP)
+    def provide_messaging_adapter(
+        self,
+        settings: Settings,
+        message_event_recorder: MultiMessageEventRecorder,
+    ) -> MessagingAdapter:
         logging_adapter = LoggingMessagingAdapter()
         base_adapter: MessagingAdapter
-        if self.settings.feishu_app_id and self.settings.feishu_app_secret:
+        if settings.feishu_app_id and settings.feishu_app_secret:
             base_adapter = RoutingMessagingAdapter(
                 default_adapter=logging_adapter,
-                feishu_adapter=FeishuMessagingAdapter(settings=self.settings),
+                feishu_adapter=FeishuMessagingAdapter(settings=settings),
             )
         else:
             base_adapter = RoutingMessagingAdapter(default_adapter=logging_adapter)
 
         return RecordingMessagingAdapter(
             inner=base_adapter,
-            recorder=self.build_message_event_recorder(),
+            recorder=message_event_recorder,
         )
 
-    def build_conversation_service(self) -> ConversationApplicationService:
-        return self.conversation_service
-
-    @cached_property
-    def conversation_service(self) -> ConversationApplicationService:
-        return ConversationApplicationService(
-            conversation_context_resolver=self.build_conversation_context_resolver(),
-            message_event_recorder=self.build_message_event_recorder(),
-            handlers=self.build_conversation_handlers(),
-        )
-
-    def build_conversation_handlers(self) -> list[ConversationInboundHandler]:
-        return self.conversation_handlers
-
-    @cached_property
-    def conversation_handlers(self) -> list[ConversationInboundHandler]:
-        return [
-            ReminderConversationHandler(self.build_reminder_service()),
-            IntentConversationHandler(
-                classifier=self.build_conversation_intent_classifier(),
-                task_service=self.build_task_service(),
-                memory_service=self.build_memory_service(),
-                reminder_service=self.build_reminder_service(),
-                overview_service=self.build_overview_service(),
-            ),
-        ]
-
-    def build_conversation_intent_classifier(self) -> LLMFirstConversationIntentClassifier:
-        return self.conversation_intent_classifier
-
-    @cached_property
-    def conversation_intent_classifier(self) -> LLMFirstConversationIntentClassifier:
-        return LLMFirstConversationIntentClassifier(
-            llm_gateway=self.build_llm_gateway(),
-            model=self.settings.conversation_intent_model,
-            api_key_suffix=build_api_key_suffix(self.settings.openai_api_key),
-        )
-
-    def build_audit_service(self) -> AuditQueryService:
-        return self.audit_service
-
-    @cached_property
-    def audit_service(self) -> AuditQueryService:
-        return AuditQueryService(self.session_factory)
-
-    def build_workflow_event_recorder(self) -> MultiWorkflowEventRecorder:
-        return self.workflow_event_recorder
-
-    @cached_property
-    def workflow_event_recorder(self) -> MultiWorkflowEventRecorder:
-        return MultiWorkflowEventRecorder(
-            [
-                DatabaseWorkflowEventRecorder(
-                    session_factory=self.session_factory,
-                    enabled=self.settings.workflow_event_db_enabled,
-                ),
-                JsonlWorkflowEventRecorder(
-                    path=self.settings.workflow_event_jsonl_path,
-                    enabled=self.settings.workflow_event_jsonl_enabled,
-                ),
-            ]
-        )
-
-    def build_feishu_webhook_handler(self) -> FeishuWebhookHandler:
-        return self.feishu_webhook_handler
-
-    @cached_property
-    def inbound_event_recorder(self) -> ConversationInboundEventRecorder:
+    @provide(scope=Scope.APP)
+    def provide_inbound_event_recorder(
+        self,
+        conversation_service: ConversationApplicationService,
+        messaging_adapter: MessagingAdapter,
+    ) -> ConversationInboundEventRecorder:
         return ConversationInboundEventRecorder(
-            self.build_conversation_service(),
-            self.build_messaging_adapter(),
+            conversation_service=conversation_service,
+            messaging_adapter=messaging_adapter,
         )
 
-    @cached_property
-    def feishu_webhook_handler(self) -> FeishuWebhookHandler:
+    @provide(scope=Scope.APP)
+    def provide_feishu_webhook_handler(
+        self,
+        settings: Settings,
+        inbound_event_recorder: ConversationInboundEventRecorder,
+    ) -> FeishuWebhookHandler:
         return FeishuWebhookHandler(
-            settings=self.settings,
-            inbound_event_recorder=self.inbound_event_recorder,
+            settings=settings,
+            inbound_event_recorder=inbound_event_recorder,
         )
 
-    def build_feishu_long_connection_listener(self) -> FeishuLongConnectionListener:
-        return self.feishu_long_connection_listener
-
-    @cached_property
-    def feishu_long_connection_listener(self) -> FeishuLongConnectionListener:
+    @provide(scope=Scope.APP)
+    def provide_feishu_long_connection_listener(
+        self,
+        settings: Settings,
+        inbound_event_recorder: ConversationInboundEventRecorder,
+    ) -> FeishuLongConnectionListener:
         return FeishuLongConnectionListener(
-            settings=self.settings,
+            settings=settings,
             webhook_handler=FeishuWebhookHandler(
-                settings=self.settings,
-                inbound_event_recorder=self.inbound_event_recorder,
+                settings=settings,
+                inbound_event_recorder=inbound_event_recorder,
                 record_on_dispatch=True,
             ),
         )
 
 
-@lru_cache
-def get_container() -> ApplicationContainer:
-    return ApplicationContainer(settings=get_settings())
+def create_runtime_container(settings: Settings) -> AsyncContainer:
+    return make_async_container(
+        ContextProvider(),
+        ApplicationProvider(),
+        context={Settings: settings},
+    )
 
 
-def reset_container() -> None:
-    get_container.cache_clear()
+def create_http_container(settings: Settings) -> AsyncContainer:
+    return make_async_container(
+        ContextProvider(),
+        ApplicationProvider(),
+        FastapiProvider(),
+        context={Settings: settings},
+    )
+
+
+def _build_reminder_uow_factory(
+    session_factory: AsyncSessionFactory,
+) -> ReminderUnitOfWorkFactory:
+    def create_unit_of_work() -> SQLAlchemyReminderUnitOfWork:
+        return SQLAlchemyReminderUnitOfWork(session_factory)
+
+    return create_unit_of_work
+
+
+def _build_memory_uow_factory(
+    session_factory: AsyncSessionFactory,
+) -> MemoryUnitOfWorkFactory:
+    def create_unit_of_work() -> SQLAlchemyMemoryUnitOfWork:
+        return SQLAlchemyMemoryUnitOfWork(session_factory)
+
+    return create_unit_of_work
+
+
+def _build_task_uow_factory(
+    session_factory: AsyncSessionFactory,
+) -> TaskUnitOfWorkFactory:
+    def create_unit_of_work() -> SQLAlchemyTaskUnitOfWork:
+        return SQLAlchemyTaskUnitOfWork(session_factory)
+
+    return create_unit_of_work

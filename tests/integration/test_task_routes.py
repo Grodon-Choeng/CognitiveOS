@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from app.api.http.deps.services import get_task_service
@@ -8,7 +9,6 @@ from app.application.tasks.commands import CancelTaskCommand, CompleteTaskComman
 from app.application.tasks.dto import TaskDTO, TaskListDTO
 from app.application.tasks.errors import TaskNotFoundError
 from app.application.tasks.queries import ListTasksQuery
-from app.main import app
 
 captured_task_list_queries: list[ListTasksQuery] = []
 
@@ -85,7 +85,7 @@ def override_task_service() -> FakeTaskService:
     return FakeTaskService()
 
 
-def test_create_task_route_returns_structured_response() -> None:
+def test_create_task_route_returns_structured_response(app: FastAPI) -> None:
     app.dependency_overrides[get_task_service] = override_task_service
 
     try:
@@ -98,7 +98,7 @@ def test_create_task_route_returns_structured_response() -> None:
     assert response.json()["status"] == "pending"
 
 
-def test_list_tasks_route_returns_structured_response() -> None:
+def test_list_tasks_route_returns_structured_response(app: FastAPI) -> None:
     captured_task_list_queries.clear()
     app.dependency_overrides[get_task_service] = override_task_service
 
@@ -116,7 +116,7 @@ def test_list_tasks_route_returns_structured_response() -> None:
     assert captured_task_list_queries[-1].query == "纪要"
 
 
-def test_get_task_route_returns_structured_response() -> None:
+def test_get_task_route_returns_structured_response(app: FastAPI) -> None:
     app.dependency_overrides[get_task_service] = override_task_service
 
     try:
@@ -129,7 +129,7 @@ def test_get_task_route_returns_structured_response() -> None:
     assert response.json()["title"] == "整理今天的会议纪要"
 
 
-def test_get_task_route_returns_404_when_missing() -> None:
+def test_get_task_route_returns_404_when_missing(app: FastAPI) -> None:
     app.dependency_overrides[get_task_service] = override_task_service
 
     try:
@@ -141,7 +141,7 @@ def test_get_task_route_returns_404_when_missing() -> None:
     assert response.status_code == 404
 
 
-def test_complete_task_route_returns_structured_response() -> None:
+def test_complete_task_route_returns_structured_response(app: FastAPI) -> None:
     app.dependency_overrides[get_task_service] = override_task_service
 
     try:
@@ -154,7 +154,7 @@ def test_complete_task_route_returns_structured_response() -> None:
     assert response.json()["status"] == "completed"
 
 
-def test_cancel_task_route_returns_structured_response() -> None:
+def test_cancel_task_route_returns_structured_response(app: FastAPI) -> None:
     app.dependency_overrides[get_task_service] = override_task_service
 
     try:

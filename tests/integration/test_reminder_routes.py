@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from app.api.http.deps.services import get_reminder_service
@@ -12,7 +13,6 @@ from app.application.reminders.commands import (
 from app.application.reminders.dto import ReminderDTO, ReminderListDTO, ReminderReplyDTO
 from app.application.reminders.errors import ReminderWorkflowCancelError, ReminderWorkflowStartError
 from app.application.reminders.queries import ListRemindersQuery
-from app.main import app
 
 captured_create_commands: list[CreateReminderCommand] = []
 captured_reminder_list_queries: list[ListRemindersQuery] = []
@@ -127,7 +127,7 @@ def override_failing_reminder_service() -> FakeFailingReminderService:
     return FakeFailingReminderService()
 
 
-def test_create_reminder_route_returns_structured_response() -> None:
+def test_create_reminder_route_returns_structured_response(app: FastAPI) -> None:
     captured_create_commands.clear()
     app.dependency_overrides[get_reminder_service] = override_reminder_service
 
@@ -157,7 +157,7 @@ def test_create_reminder_route_returns_structured_response() -> None:
     }
 
 
-def test_get_reminder_route_returns_structured_response() -> None:
+def test_get_reminder_route_returns_structured_response(app: FastAPI) -> None:
     app.dependency_overrides[get_reminder_service] = override_reminder_service
 
     try:
@@ -170,7 +170,7 @@ def test_get_reminder_route_returns_structured_response() -> None:
     assert response.json()["status"] == "pending"
 
 
-def test_list_reminders_route_returns_structured_response() -> None:
+def test_list_reminders_route_returns_structured_response(app: FastAPI) -> None:
     captured_reminder_list_queries.clear()
     app.dependency_overrides[get_reminder_service] = override_reminder_service
 
@@ -194,7 +194,7 @@ def test_list_reminders_route_returns_structured_response() -> None:
     assert captured_reminder_list_queries[-1].query == "打卡"
 
 
-def test_create_reminder_route_passes_dispatch_chat_and_thread_fields() -> None:
+def test_create_reminder_route_passes_dispatch_chat_and_thread_fields(app: FastAPI) -> None:
     captured_create_commands.clear()
     app.dependency_overrides[get_reminder_service] = override_reminder_service
 
@@ -223,7 +223,7 @@ def test_create_reminder_route_passes_dispatch_chat_and_thread_fields() -> None:
     assert command.dispatch_thread_id == "ot_thread_123"
 
 
-def test_reply_reminder_route_returns_structured_response() -> None:
+def test_reply_reminder_route_returns_structured_response(app: FastAPI) -> None:
     app.dependency_overrides[get_reminder_service] = override_reminder_service
 
     try:
@@ -244,7 +244,7 @@ def test_reply_reminder_route_returns_structured_response() -> None:
     }
 
 
-def test_cancel_reminder_route_returns_structured_response() -> None:
+def test_cancel_reminder_route_returns_structured_response(app: FastAPI) -> None:
     app.dependency_overrides[get_reminder_service] = override_reminder_service
 
     try:
@@ -257,7 +257,7 @@ def test_cancel_reminder_route_returns_structured_response() -> None:
     assert response.json()["status"] == "canceled"
 
 
-def test_create_reminder_route_returns_503_when_workflow_start_fails() -> None:
+def test_create_reminder_route_returns_503_when_workflow_start_fails(app: FastAPI) -> None:
     app.dependency_overrides[get_reminder_service] = override_failing_reminder_service
 
     try:
@@ -279,7 +279,7 @@ def test_create_reminder_route_returns_503_when_workflow_start_fails() -> None:
     }
 
 
-def test_cancel_reminder_route_returns_503_when_workflow_cancel_fails() -> None:
+def test_cancel_reminder_route_returns_503_when_workflow_cancel_fails(app: FastAPI) -> None:
     app.dependency_overrides[get_reminder_service] = override_failing_reminder_service
 
     try:
@@ -294,7 +294,7 @@ def test_cancel_reminder_route_returns_503_when_workflow_cancel_fails() -> None:
     }
 
 
-def test_create_reminder_route_rejects_dispatch_thread_without_chat() -> None:
+def test_create_reminder_route_rejects_dispatch_thread_without_chat(app: FastAPI) -> None:
     with TestClient(app) as client:
         response = client.post(
             "/api/v1/reminders",
@@ -309,7 +309,7 @@ def test_create_reminder_route_rejects_dispatch_thread_without_chat() -> None:
     assert response.status_code == 422
 
 
-def test_create_reminder_route_rejects_source_thread_without_chat() -> None:
+def test_create_reminder_route_rejects_source_thread_without_chat(app: FastAPI) -> None:
     with TestClient(app) as client:
         response = client.post(
             "/api/v1/reminders",
@@ -324,7 +324,7 @@ def test_create_reminder_route_rejects_source_thread_without_chat() -> None:
     assert response.status_code == 422
 
 
-def test_create_reminder_route_rejects_naive_remind_at() -> None:
+def test_create_reminder_route_rejects_naive_remind_at(app: FastAPI) -> None:
     with TestClient(app) as client:
         response = client.post(
             "/api/v1/reminders",

@@ -188,6 +188,7 @@ source = { editable = "." }
 dependencies = [
     { name = "alembic" },
     { name = "asyncpg" },
+    { name = "dishka" },
     { name = "fastapi" },
     { name = "greenlet" },
     { name = "httpx" },
@@ -210,6 +211,7 @@ dev = [
 requires-dist = [
     { name = "alembic", specifier = ">=1.14.0,<2.0.0" },
     { name = "asyncpg", specifier = ">=0.30.0,<1.0.0" },
+    { name = "dishka", specifier = ">=1.9.1,<2.0.0" },
     { name = "fastapi", specifier = ">=0.115.0,<1.0.0" },
     { name = "greenlet", specifier = ">=3.1.1,<4.0.0" },
     { name = "httpx", specifier = ">=0.28.0,<1.0.0" },
@@ -232,6 +234,15 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/d8/53/6f443c9a4a8358a93a6792e2acffb9d9d5cb0a5cfd8802644b7b1c9a02e4/colorama-0.4.6.tar.gz", hash = "sha256:08695f5cb7ed6e0531a20572697297273c47b8cae5a63ffc6d6ed5c201be6e44", size = 27697, upload-time = "2022-10-25T02:36:22.414Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/d1/d6/3965ed04c63042e047cb6a3e6ed1a63a35087b6a609aa3a15ed8ac56c221/colorama-0.4.6-py2.py3-none-any.whl", hash = "sha256:4f1d9991f5acc0ca119f9d443620b77f9d6b33703e51011c16baf57afb285fc6", size = 25335, upload-time = "2022-10-25T02:36:20.889Z" },
+]
+
+[[package]]
+name = "dishka"
+version = "1.9.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/b9/97/18d4a9bd44f6baa975cd8d54ed3a1a86b341a43c9c077e647d351c9d4573/dishka-1.9.1.tar.gz", hash = "sha256:973f19dc65160a97370181106764ae076052af4489e94b0cedb3eb4e47fe13bf", size = 274962, upload-time = "2026-03-08T09:43:47.298Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/33/98/c8f80be83fbd92f5f9d4bdb5d619a9c9901fb1523c0b02a448b942e532e6/dishka-1.9.1-py3-none-any.whl", hash = "sha256:5080a46bf40bd403aee396aac81f999f679078655f9a6f2062111d62e94e7b18", size = 114327, upload-time = "2026-03-08T09:43:46.097Z" },
 ]
 
 [[package]]

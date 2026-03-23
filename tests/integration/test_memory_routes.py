@@ -1,13 +1,13 @@
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from app.api.http.deps.services import get_memory_service
 from app.application.memory.commands import ArchiveMemoryCommand, CreateMemoryCommand
 from app.application.memory.dto import MemoryDTO, MemoryListDTO
 from app.application.memory.errors import MemoryNotFoundError
-from app.main import app
 
 
 @dataclass
@@ -70,7 +70,7 @@ def override_memory_service() -> FakeMemoryService:
     return FakeMemoryService()
 
 
-def test_create_memory_route_returns_structured_response() -> None:
+def test_create_memory_route_returns_structured_response(app: FastAPI) -> None:
     app.dependency_overrides[get_memory_service] = override_memory_service
 
     try:
@@ -86,7 +86,7 @@ def test_create_memory_route_returns_structured_response() -> None:
     assert response.json()["memory_id"] == "00000000-0000-0000-0000-000000000001"
 
 
-def test_list_memories_route_returns_structured_response() -> None:
+def test_list_memories_route_returns_structured_response(app: FastAPI) -> None:
     app.dependency_overrides[get_memory_service] = override_memory_service
 
     try:
@@ -100,7 +100,7 @@ def test_list_memories_route_returns_structured_response() -> None:
     assert response.json()["items"][0]["status"] == "active"
 
 
-def test_list_memories_route_accepts_query_filter() -> None:
+def test_list_memories_route_accepts_query_filter(app: FastAPI) -> None:
     app.dependency_overrides[get_memory_service] = override_memory_service
 
     try:
@@ -115,7 +115,7 @@ def test_list_memories_route_accepts_query_filter() -> None:
     assert response.status_code == 200
 
 
-def test_get_memory_route_returns_structured_response() -> None:
+def test_get_memory_route_returns_structured_response(app: FastAPI) -> None:
     app.dependency_overrides[get_memory_service] = override_memory_service
 
     try:
@@ -128,7 +128,7 @@ def test_get_memory_route_returns_structured_response() -> None:
     assert response.json()["content"] == "用户偏好：早上九点提醒"
 
 
-def test_archive_memory_route_returns_structured_response() -> None:
+def test_archive_memory_route_returns_structured_response(app: FastAPI) -> None:
     app.dependency_overrides[get_memory_service] = override_memory_service
 
     try:
@@ -141,7 +141,7 @@ def test_archive_memory_route_returns_structured_response() -> None:
     assert response.json()["status"] == "archived"
 
 
-def test_get_memory_route_returns_404_when_missing() -> None:
+def test_get_memory_route_returns_404_when_missing(app: FastAPI) -> None:
     app.dependency_overrides[get_memory_service] = override_memory_service
 
     try:

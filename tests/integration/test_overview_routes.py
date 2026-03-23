@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from app.api.http.deps.services import get_overview_service
@@ -10,7 +11,6 @@ from app.application.overview.dto import OverviewDTO
 from app.application.overview.queries import GetOverviewQuery
 from app.application.reminders.dto import ReminderDTO
 from app.application.tasks.dto import TaskDTO
-from app.main import app
 
 
 @dataclass
@@ -76,7 +76,7 @@ def override_overview_service() -> FakeOverviewService:
     return FakeOverviewService()
 
 
-def test_get_overview_route_returns_structured_response() -> None:
+def test_get_overview_route_returns_structured_response(app: FastAPI) -> None:
     app.dependency_overrides[get_overview_service] = override_overview_service
 
     try:

@@ -47,12 +47,14 @@ CognitiveOS 是一个面向个人助理场景的 AI-native 系统，第一阶段
 #### 选择
 
 - FastAPI
+- Dishka（用于依赖注入与运行时装配）
 
 #### 选择理由
 
 - Python 生态中成熟、主流、AI 生成成功率高
 - 路由、依赖注入、请求响应模型都比较明确
 - 非常适合作为“稳定底盘”
+- 通过 Dishka 管理 app/request 级生命周期后，可以把装配逻辑继续收敛在 bootstrap 层，而不把全局 service locator 扩散到业务代码
 
 #### 不选其他方案的原因
 
