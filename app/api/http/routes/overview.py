@@ -1,16 +1,15 @@
 from dataclasses import asdict
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Query
 
-from app.api.http.deps.services import get_overview_service
+from app.api.http.deps import OverviewServiceDep
 from app.api.http.schemas.common import AuditEventResponse
 from app.api.http.schemas.memory import MemoryResponse
 from app.api.http.schemas.overview import OverviewResponse
 from app.api.http.schemas.reminder import ReminderResponse
 from app.api.http.schemas.task import TaskResponse
 from app.application.overview.queries import GetOverviewQuery
-from app.application.overview.service import OverviewApplicationService
 
 router = APIRouter(prefix="/overview", tags=["overview"])
 
@@ -21,7 +20,7 @@ router = APIRouter(prefix="/overview", tags=["overview"])
     summary="查询统一产品概览",
 )
 async def get_overview(
-    service: Annotated[OverviewApplicationService, Depends(get_overview_service)],
+    service: OverviewServiceDep,
     conversation_id: str | None = None,
     session_id: str | None = None,
     reminder_limit: Annotated[int, Query(ge=1, le=20)] = 5,

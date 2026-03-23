@@ -1,9 +1,9 @@
 from dataclasses import asdict
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Query
 
-from app.api.http.deps.services import get_memory_service
+from app.api.http.deps import MemoryServiceDep
 from app.api.http.schemas.common import ErrorResponse
 from app.api.http.schemas.memory import (
     CreateMemoryRequest,
@@ -13,7 +13,6 @@ from app.api.http.schemas.memory import (
 )
 from app.application.memory.commands import ArchiveMemoryCommand, CreateMemoryCommand
 from app.application.memory.queries import ListMemoriesQuery
-from app.application.memory.service import MemoryApplicationService
 
 router = APIRouter(prefix="/memories", tags=["memories"])
 
@@ -26,7 +25,7 @@ router = APIRouter(prefix="/memories", tags=["memories"])
 )
 async def create_memory(
     payload: CreateMemoryRequest,
-    service: Annotated[MemoryApplicationService, Depends(get_memory_service)],
+    service: MemoryServiceDep,
 ) -> MemoryResponse:
     result = await service.create_memory(
         CreateMemoryCommand(
@@ -48,7 +47,7 @@ async def create_memory(
     summary="查询记忆列表",
 )
 async def list_memories(
-    service: Annotated[MemoryApplicationService, Depends(get_memory_service)],
+    service: MemoryServiceDep,
     conversation_id: str | None = None,
     session_id: str | None = None,
     status: MemoryStatusFilter | None = None,
@@ -75,7 +74,7 @@ async def list_memories(
 )
 async def get_memory(
     memory_id: str,
-    service: Annotated[MemoryApplicationService, Depends(get_memory_service)],
+    service: MemoryServiceDep,
 ) -> MemoryResponse:
     result = await service.get_memory(memory_id)
     return MemoryResponse(**asdict(result))
@@ -89,7 +88,7 @@ async def get_memory(
 )
 async def archive_memory(
     memory_id: str,
-    service: Annotated[MemoryApplicationService, Depends(get_memory_service)],
+    service: MemoryServiceDep,
 ) -> MemoryResponse:
     result = await service.archive_memory(ArchiveMemoryCommand(memory_id=memory_id))
     return MemoryResponse(**asdict(result))

@@ -1,9 +1,9 @@
 from dataclasses import asdict
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Query
 
-from app.api.http.deps.services import get_reminder_service
+from app.api.http.deps import ReminderServiceDep
 from app.api.http.schemas.common import ErrorResponse
 from app.api.http.schemas.reminder import (
     CreateReminderRequest,
@@ -19,7 +19,6 @@ from app.application.reminders.commands import (
     HandleReminderReplyCommand,
 )
 from app.application.reminders.queries import ListRemindersQuery
-from app.application.reminders.service import ReminderApplicationService
 
 router = APIRouter(prefix="/reminders", tags=["reminders"])
 
@@ -30,7 +29,7 @@ router = APIRouter(prefix="/reminders", tags=["reminders"])
     summary="查询提醒列表",
 )
 async def list_reminders(
-    service: Annotated[ReminderApplicationService, Depends(get_reminder_service)],
+    service: ReminderServiceDep,
     conversation_id: str | None = None,
     session_id: str | None = None,
     status: ReminderStatusFilter | None = None,
@@ -63,7 +62,7 @@ async def list_reminders(
 )
 async def create_reminder(
     payload: CreateReminderRequest,
-    service: Annotated[ReminderApplicationService, Depends(get_reminder_service)],
+    service: ReminderServiceDep,
 ) -> ReminderResponse:
     command = CreateReminderCommand(
         text=payload.text,
@@ -92,7 +91,7 @@ async def create_reminder(
 )
 async def get_reminder(
     reminder_id: str,
-    service: Annotated[ReminderApplicationService, Depends(get_reminder_service)],
+    service: ReminderServiceDep,
 ) -> ReminderResponse:
     result = await service.get_reminder(reminder_id)
     return ReminderResponse(**asdict(result))
@@ -107,7 +106,7 @@ async def get_reminder(
 async def reply_to_reminder(
     reminder_id: str,
     payload: ReplyReminderRequest,
-    service: Annotated[ReminderApplicationService, Depends(get_reminder_service)],
+    service: ReminderServiceDep,
 ) -> ReminderReplyResponse:
     command = HandleReminderReplyCommand(
         reminder_id=reminder_id,
@@ -129,7 +128,7 @@ async def reply_to_reminder(
 )
 async def cancel_reminder(
     reminder_id: str,
-    service: Annotated[ReminderApplicationService, Depends(get_reminder_service)],
+    service: ReminderServiceDep,
 ) -> ReminderResponse:
     result = await service.cancel_reminder(CancelReminderCommand(reminder_id=reminder_id))
     return ReminderResponse(**asdict(result))

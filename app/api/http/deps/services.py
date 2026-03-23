@@ -1,4 +1,7 @@
+from typing import Annotated
+
 from dishka.integrations.fastapi import FromDishka, inject
+from fastapi import Depends
 
 from app.application.audit.service import AuditQueryService
 from app.application.conversations.service import ConversationApplicationService
@@ -50,3 +53,18 @@ def get_feishu_webhook_handler(
     handler: FromDishka[FeishuWebhookHandler],
 ) -> FeishuWebhookHandler:
     return handler
+
+
+AuditServiceDep = Annotated[AuditQueryService, Depends(get_audit_service)]
+ConversationServiceDep = Annotated[
+    ConversationApplicationService,
+    Depends(get_conversation_service),
+]
+ReminderServiceDep = Annotated[ReminderApplicationService, Depends(get_reminder_service)]
+MemoryServiceDep = Annotated[MemoryApplicationService, Depends(get_memory_service)]
+TaskServiceDep = Annotated[TaskApplicationService, Depends(get_task_service)]
+OverviewServiceDep = Annotated[OverviewApplicationService, Depends(get_overview_service)]
+FeishuWebhookHandlerDep = Annotated[
+    FeishuWebhookHandler,
+    Depends(get_feishu_webhook_handler),
+]

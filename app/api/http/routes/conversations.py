@@ -1,15 +1,13 @@
 from dataclasses import asdict
-from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter
 
-from app.api.http.deps.services import get_conversation_service
+from app.api.http.deps import ConversationServiceDep
 from app.api.http.schemas.conversation import (
     ConversationMessageRequest,
     ConversationMessageResponse,
 )
 from app.application.conversations.commands import HandleInboundConversationMessageCommand
-from app.application.conversations.service import ConversationApplicationService
 
 router = APIRouter(prefix="/conversations", tags=["conversations"])
 
@@ -17,7 +15,7 @@ router = APIRouter(prefix="/conversations", tags=["conversations"])
 @router.post("/messages", summary="接收内部统一消息入口")
 async def receive_conversation_message(
     payload: ConversationMessageRequest,
-    service: Annotated[ConversationApplicationService, Depends(get_conversation_service)],
+    service: ConversationServiceDep,
 ) -> ConversationMessageResponse:
     command = HandleInboundConversationMessageCommand(
         channel=payload.channel,

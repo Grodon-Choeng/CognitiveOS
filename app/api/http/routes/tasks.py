@@ -1,9 +1,9 @@
 from dataclasses import asdict
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Query
 
-from app.api.http.deps.services import get_task_service
+from app.api.http.deps import TaskServiceDep
 from app.api.http.schemas.common import ErrorResponse
 from app.api.http.schemas.task import (
     CreateTaskRequest,
@@ -13,7 +13,6 @@ from app.api.http.schemas.task import (
 )
 from app.application.tasks.commands import CancelTaskCommand, CompleteTaskCommand, CreateTaskCommand
 from app.application.tasks.queries import ListTasksQuery
-from app.application.tasks.service import TaskApplicationService
 
 router = APIRouter(prefix="/tasks", tags=["tasks"])
 
@@ -25,7 +24,7 @@ router = APIRouter(prefix="/tasks", tags=["tasks"])
 )
 async def create_task(
     payload: CreateTaskRequest,
-    service: Annotated[TaskApplicationService, Depends(get_task_service)],
+    service: TaskServiceDep,
 ) -> TaskResponse:
     result = await service.create_task(
         CreateTaskCommand(
@@ -47,7 +46,7 @@ async def create_task(
     summary="查询任务列表",
 )
 async def list_tasks(
-    service: Annotated[TaskApplicationService, Depends(get_task_service)],
+    service: TaskServiceDep,
     conversation_id: str | None = None,
     session_id: str | None = None,
     status: TaskStatusFilter | None = None,
@@ -74,7 +73,7 @@ async def list_tasks(
 )
 async def get_task(
     task_id: str,
-    service: Annotated[TaskApplicationService, Depends(get_task_service)],
+    service: TaskServiceDep,
 ) -> TaskResponse:
     result = await service.get_task(task_id)
     return TaskResponse(**asdict(result))
@@ -88,7 +87,7 @@ async def get_task(
 )
 async def complete_task(
     task_id: str,
-    service: Annotated[TaskApplicationService, Depends(get_task_service)],
+    service: TaskServiceDep,
 ) -> TaskResponse:
     result = await service.complete_task(CompleteTaskCommand(task_id=task_id))
     return TaskResponse(**asdict(result))
@@ -102,7 +101,7 @@ async def complete_task(
 )
 async def cancel_task(
     task_id: str,
-    service: Annotated[TaskApplicationService, Depends(get_task_service)],
+    service: TaskServiceDep,
 ) -> TaskResponse:
     result = await service.cancel_task(CancelTaskCommand(task_id=task_id))
     return TaskResponse(**asdict(result))
