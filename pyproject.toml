@@ -17,6 +17,7 @@ dependencies = [
   "httpx>=0.28.0,<1.0.0",
   "lark-oapi>=1.4.18,<2.0.0",
   "pydantic-settings>=2.6.0,<3.0.0",
+  "python-socks>=2.5.3,<3.0.0",
   "sqlalchemy>=2.0.36,<3.0.0",
   "temporalio>=1.8.0,<2.0.0",
   "uvicorn[standard]>=0.32.0,<1.0.0",

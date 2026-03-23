@@ -34,8 +34,10 @@ class Settings(BaseSettings):
     temporal_namespace: str = "default"
     temporal_task_queue: str = "cognitiveos-reminders"
     temporal_reminder_workflow_name: str = "reminder-workflow"
+    conversation_llm_provider: str = "openai"
     openai_base_url: str = "https://api.openai.com/v1"
     openai_api_key: str | None = Field(default=None)
+    local_llm_base_url: str = "http://localhost:1234/api/v1/chat"
     conversation_intent_model: str | None = None
     conversation_intent_llm_timeout_seconds: float = 10.0
 

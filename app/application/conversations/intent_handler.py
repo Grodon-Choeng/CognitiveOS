@@ -27,6 +27,8 @@ from app.infrastructure.llm.models import GenerateRequest
 
 
 class ConversationIntent(StrEnum):
+    GREETING = "greeting"
+    HELP_SHOW = "help_show"
     REMINDER_CREATE = "reminder_create"
     REMINDER_CANCEL = "reminder_cancel"
     REMINDER_LIST = "reminder_list"
@@ -141,10 +143,12 @@ class LLMFirstConversationIntentClassifier:
         llm_gateway: LLMGateway | None,
         model: str | None,
         api_key_suffix: str | None,
+        provider: str = "openai",
     ) -> None:
         self.llm_gateway = llm_gateway
         self.model = model
         self.api_key_suffix = api_key_suffix
+        self.provider = provider
 
     async def classify(
         self,
@@ -187,7 +191,7 @@ class LLMFirstConversationIntentClassifier:
                 GenerateRequest(
                     prompt=_build_intent_prompt(command.text, context_text),
                     system_prompt=_build_intent_system_prompt(),
-                    provider="openai",
+                    provider=self.provider,
                     model=self.model,
                     api_key_suffix=self.api_key_suffix,
                     conversation_id=conversation_id,
@@ -237,6 +241,34 @@ class IntentConversationHandler:
             context_text=context_text,
         )
         try:
+            if decision.intent == ConversationIntent.GREETING:
+                return ConversationInboundResult(
+                    handled=True,
+                    conversation_id=conversation_id,
+                    session_id=session_id,
+                    handled_by="conversation",
+                    reason=f"greeting_replied_via_{decision.source}",
+                    response_text=(
+                        "你好，我可以帮你记提醒、建待办、记住信息，"
+                        "也可以帮你查看概览、提醒、待办和记忆。"
+                    ),
+                )
+            if decision.intent == ConversationIntent.HELP_SHOW:
+                return ConversationInboundResult(
+                    handled=True,
+                    conversation_id=conversation_id,
+                    session_id=session_id,
+                    handled_by="conversation",
+                    reason=f"help_shown_via_{decision.source}",
+                    response_text=(
+                        "我现在主要能帮你做这些事：\n"
+                        "- 提醒：例如“提醒：2026-03-24T09:00:00+08:00 开会”\n"
+                        "- 待办：例如“待办：整理周报”\n"
+                        "- 记忆：例如“记住：我喜欢早上九点提醒”\n"
+                        "- 查询：例如“查看概览”“查看待办”“查看提醒”“查看记忆”\n"
+                        "- 动作：例如“完成任务 周报”“取消提醒 开会”“归档记忆 九点提醒”"
+                    ),
+                )
             if decision.intent == ConversationIntent.TASK_CREATE and decision.content is not None:
                 await self.task_service.create_task(
                     CreateTaskCommand(
@@ -527,6 +559,26 @@ class IntentConversationHandler:
 def _classify_with_rules(
     command: HandleInboundConversationMessageCommand,
 ) -> ConversationIntentDecision:
+    if _is_help_request(command):
+        return ConversationIntentDecision(
+            intent=ConversationIntent.HELP_SHOW,
+            content=None,
+            status=None,
+            remind_at=None,
+            timezone=None,
+            source="rules",
+        )
+
+    if _is_greeting_request(command):
+        return ConversationIntentDecision(
+            intent=ConversationIntent.GREETING,
+            content=None,
+            status=None,
+            remind_at=None,
+            timezone=None,
+            source="rules",
+        )
+
     reminder_request = _extract_reminder_request(command)
     if reminder_request is not None:
         return reminder_request
@@ -708,13 +760,15 @@ def _classify_with_rules(
 def _build_intent_system_prompt() -> str:
     return (
         "你是 CognitiveOS 的对话意图分类器。"
-        "你只负责判断当前文本是否应该创建 reminder、取消 reminder、创建 task、"
+        "你只负责判断当前文本是否应该问候回复、展示帮助、创建 reminder、取消 reminder、创建 task、"
         "完成 task、取消 task、写入 memory、归档 memory，或者都不是。"
         "你必须返回 JSON，格式为"
-        '{"intent":"reminder_create|reminder_cancel|reminder_list|task_create|task_complete|task_cancel|task_list|memory_write|memory_archive|memory_list|overview_show|activity_show|unknown",'
+        '{"intent":"greeting|help_show|reminder_create|reminder_cancel|reminder_list|task_create|task_complete|task_cancel|task_list|memory_write|memory_archive|memory_list|overview_show|activity_show|unknown",'
         '"content":"提取后的正文或 null",'
         '"status":"pending|completed|canceled|failed|active|archived|unknown|null",'
         '"remind_at":"ISO8601时间或 null","timezone":"时区或 null"}。'
+        "如果文本只是打招呼，例如 hi、hello、hey、你好，返回 greeting；"
+        "如果文本是在询问你能做什么、如何使用、help，返回 help_show；"
         "如果文本是在表达未来要提醒的事项，返回 reminder_create，"
         "并提取提醒正文、带时区的 ISO8601 提醒时间，以及 IANA 时区字符串；"
         "如果文本是在要求取消当前会话最近一个提醒，返回 reminder_cancel；"
@@ -783,6 +837,8 @@ def _parse_intent_response(content: str) -> ConversationIntentDecision | None:
         if normalized_content is None:
             return None
     elif intent not in {
+        ConversationIntent.GREETING,
+        ConversationIntent.HELP_SHOW,
         ConversationIntent.UNKNOWN,
         ConversationIntent.REMINDER_CANCEL,
         ConversationIntent.REMINDER_LIST,
@@ -908,6 +964,37 @@ def _is_overview_request(command: HandleInboundConversationMessageCommand) -> bo
         return False
     normalized = command.text.strip().casefold()
     return normalized in {"查看概览", "看看概览", "今天有什么", "show overview", "overview"}
+
+
+def _is_help_request(command: HandleInboundConversationMessageCommand) -> bool:
+    if command.message_type != "text" or command.text is None:
+        return False
+    normalized = command.text.strip().casefold()
+    return normalized in {
+        "help",
+        "帮助",
+        "你可以帮我做什么",
+        "你能做什么",
+        "你会什么",
+        "可以做什么",
+        "怎么用",
+        "你可以做什么",
+    }
+
+
+def _is_greeting_request(command: HandleInboundConversationMessageCommand) -> bool:
+    if command.message_type != "text" or command.text is None:
+        return False
+    normalized = command.text.strip().casefold()
+    return normalized in {
+        "hi",
+        "hello",
+        "hey",
+        "你好",
+        "嗨",
+        "哈喽",
+        "在吗",
+    }
 
 
 def _is_activity_request(command: HandleInboundConversationMessageCommand) -> bool:

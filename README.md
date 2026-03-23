@@ -64,6 +64,7 @@ make infra-up
 - Temporal 动态配置文件：`dynamicconfig/development-sql.yaml`
 - 若需要使用飞书发送消息，还需要配置 `FEISHU_APP_ID` 与 `FEISHU_APP_SECRET`
 - 若需要接收飞书事件订阅回调，还需要配置 `FEISHU_VERIFICATION_TOKEN`；如果飞书事件订阅启用了加密，还需要配置 `FEISHU_ENCRYPT_KEY`
+- 若只使用飞书长连接接收入站事件，当前只需要 `FEISHU_APP_ID` 与 `FEISHU_APP_SECRET`
 
 ### 4. 执行数据库 migration
 
@@ -130,7 +131,7 @@ tests/
 - 聚合时间线入口为 `GET /api/v1/audit/timeline`，会把 `message/model/tool/workflow` 四类事件按时间混排返回。
 - 聚合时间线的游标当前带有事件类型信息，用于避免不同审计表在同一时间戳下分页时出现跨类型漂移。
 - 当前最小入站续执行逻辑：仅对飞书 `p2p` 文本消息生效，并按 `sender_open_id` 关联该用户最近一个 `pending` reminder。
-- conversation intent 当前改为 `LLM 优先、规则兜底`：若配置了 `COGNITIVE_OS_OPENAI_API_KEY` 与 `COGNITIVE_OS_CONVERSATION_INTENT_MODEL`，会优先走 `llm_gateway` 做 reminder/task/memory 意图识别；未配置或模型失败时再退回显式规则。
+- conversation intent 当前改为 `LLM 优先、规则兜底`：若配置了 `COGNITIVE_OS_CONVERSATION_INTENT_MODEL`，会优先走 `llm_gateway` 做 reminder/task/memory 意图识别；`COGNITIVE_OS_CONVERSATION_LLM_PROVIDER=openai` 时需要 `COGNITIVE_OS_OPENAI_API_KEY`，`local` 时使用 `COGNITIVE_OS_LOCAL_LLM_BASE_URL`；未配置或模型失败时再退回显式规则。
 - 当前 reminder create / list / get / reply / cancel 路由已接入 application service，可用于最小 reminder 生命周期闭环验证。
 - 已支持 `GET /api/v1/reminders` 查看提醒列表、`GET /api/v1/reminders/{reminder_id}` 查询状态，以及 `POST /api/v1/reminders/{reminder_id}/cancel` 主动取消 pending reminder。
 - `GET /api/v1/reminders` 现在也支持 `query` 关键词过滤，便于按内容搜索当前会话里的提醒。

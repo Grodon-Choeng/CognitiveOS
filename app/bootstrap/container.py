@@ -7,7 +7,10 @@ from app.application.conversations.intent_handler import (
     IntentConversationHandler,
     LLMFirstConversationIntentClassifier,
 )
-from app.application.conversations.service import ConversationApplicationService
+from app.application.conversations.service import (
+    ConversationApplicationService,
+    LLMConversationFallbackResponder,
+)
 from app.application.memory.ports import MemoryUnitOfWorkFactory
 from app.application.memory.service import MemoryApplicationService
 from app.application.overview.service import OverviewApplicationService
@@ -35,6 +38,7 @@ from app.infrastructure.integrations.messaging import (
     RoutingMessagingAdapter,
 )
 from app.infrastructure.llm.gateway import RecordingLLMGateway
+from app.infrastructure.llm.local_gateway import LocalChatLLMGateway
 from app.infrastructure.llm.openai_gateway import OpenAIChatLLMGateway
 from app.infrastructure.temporal.gateway import TemporalReminderWorkflowGateway
 from app.observability.message_events import (
@@ -67,6 +71,40 @@ class ContextProvider(Provider):
 
 
 class ApplicationProvider(Provider):
+    @staticmethod
+    def _build_conversation_llm_gateway(
+        *,
+        settings: Settings,
+        model_invocation_recorder: MultiModelInvocationRecorder,
+    ) -> RecordingLLMGateway | None:
+        if not settings.conversation_intent_model:
+            return None
+        provider = settings.conversation_llm_provider.strip().casefold()
+        if provider == "openai":
+            if not settings.openai_api_key:
+                return None
+            return RecordingLLMGateway(
+                OpenAIChatLLMGateway(
+                    api_key=settings.openai_api_key,
+                    model=settings.conversation_intent_model,
+                    base_url=settings.openai_base_url,
+                    timeout_seconds=settings.conversation_intent_llm_timeout_seconds,
+                ),
+                model_invocation_recorder,
+            )
+        if provider == "local":
+            return RecordingLLMGateway(
+                LocalChatLLMGateway(
+                    model=settings.conversation_intent_model,
+                    base_url=settings.local_llm_base_url,
+                    timeout_seconds=settings.conversation_intent_llm_timeout_seconds,
+                ),
+                model_invocation_recorder,
+            )
+        raise ValueError(
+            f"不支持的 conversation llm provider：{settings.conversation_llm_provider}"
+        )
+
     @provide(scope=Scope.APP)
     def provide_session_factory(self, settings: Settings) -> AsyncSessionFactory:
         return get_session_factory(settings)
@@ -249,21 +287,15 @@ class ApplicationProvider(Provider):
         settings: Settings,
         model_invocation_recorder: MultiModelInvocationRecorder,
     ) -> LLMFirstConversationIntentClassifier:
-        llm_gateway = None
-        if settings.openai_api_key and settings.conversation_intent_model:
-            llm_gateway = RecordingLLMGateway(
-                OpenAIChatLLMGateway(
-                    api_key=settings.openai_api_key,
-                    model=settings.conversation_intent_model,
-                    base_url=settings.openai_base_url,
-                    timeout_seconds=settings.conversation_intent_llm_timeout_seconds,
-                ),
-                model_invocation_recorder,
-            )
+        llm_gateway = self._build_conversation_llm_gateway(
+            settings=settings,
+            model_invocation_recorder=model_invocation_recorder,
+        )
         return LLMFirstConversationIntentClassifier(
             llm_gateway=llm_gateway,
             model=settings.conversation_intent_model,
             api_key_suffix=build_api_key_suffix(settings.openai_api_key),
+            provider=settings.conversation_llm_provider,
         )
 
     @provide(scope=Scope.APP)
@@ -271,12 +303,19 @@ class ApplicationProvider(Provider):
         self,
         conversation_context_resolver: SqlAlchemyConversationContextResolver,
         message_event_recorder: MultiMessageEventRecorder,
+        audit_service: AuditQueryService,
         reminder_service: ReminderApplicationService,
         conversation_intent_classifier: LLMFirstConversationIntentClassifier,
         task_service: TaskApplicationService,
         memory_service: MemoryApplicationService,
         overview_service: OverviewApplicationService,
+        settings: Settings,
+        model_invocation_recorder: MultiModelInvocationRecorder,
     ) -> ConversationApplicationService:
+        llm_gateway = self._build_conversation_llm_gateway(
+            settings=settings,
+            model_invocation_recorder=model_invocation_recorder,
+        )
         return ConversationApplicationService(
             conversation_context_resolver=conversation_context_resolver,
             message_event_recorder=message_event_recorder,
@@ -290,6 +329,13 @@ class ApplicationProvider(Provider):
                     overview_service=overview_service,
                 ),
             ],
+            fallback_responder=LLMConversationFallbackResponder(
+                llm_gateway=llm_gateway,
+                model=settings.conversation_intent_model,
+                api_key_suffix=build_api_key_suffix(settings.openai_api_key),
+                history_reader=audit_service,
+                provider=settings.conversation_llm_provider,
+            ),
         )
 
     @provide(scope=Scope.APP)

@@ -392,6 +392,64 @@ async def test_intent_classifier_prefers_llm_result() -> None:
 
 
 @pytest.mark.asyncio
+async def test_intent_classifier_supports_greeting_by_rule() -> None:
+    classifier = LLMFirstConversationIntentClassifier(
+        llm_gateway=FailingLLMGateway(),
+        model="gpt-test",
+        api_key_suffix="90abcdef",
+    )
+
+    result = await classifier.classify(
+        HandleInboundConversationMessageCommand(
+            channel="web",
+            message_type="text",
+            user_identity="user-1",
+            external_message_id=None,
+            root_message_id=None,
+            parent_message_id=None,
+            chat_id=None,
+            thread_id=None,
+            text="hey",
+            raw_payload={"text": "hey"},
+        ),
+        conversation_id="conversation-1",
+        session_id="session-1",
+    )
+
+    assert result.intent == ConversationIntent.GREETING
+    assert result.source == "rules"
+
+
+@pytest.mark.asyncio
+async def test_intent_classifier_supports_help_by_rule() -> None:
+    classifier = LLMFirstConversationIntentClassifier(
+        llm_gateway=FailingLLMGateway(),
+        model="gpt-test",
+        api_key_suffix="90abcdef",
+    )
+
+    result = await classifier.classify(
+        HandleInboundConversationMessageCommand(
+            channel="web",
+            message_type="text",
+            user_identity="user-1",
+            external_message_id=None,
+            root_message_id=None,
+            parent_message_id=None,
+            chat_id=None,
+            thread_id=None,
+            text="你可以帮我做什么",
+            raw_payload={"text": "你可以帮我做什么"},
+        ),
+        conversation_id="conversation-1",
+        session_id="session-1",
+    )
+
+    assert result.intent == ConversationIntent.HELP_SHOW
+    assert result.source == "rules"
+
+
+@pytest.mark.asyncio
 async def test_intent_classifier_falls_back_to_rules_when_llm_fails() -> None:
     classifier = LLMFirstConversationIntentClassifier(
         llm_gateway=FailingLLMGateway(),
@@ -465,6 +523,83 @@ async def test_intent_handler_dispatches_to_task_service() -> None:
     assert len(overview_service.queries) == 1
     assert llm_gateway.last_request is not None
     assert "当前会话上下文：" in llm_gateway.last_request.prompt
+
+
+@pytest.mark.asyncio
+async def test_intent_handler_replies_to_greeting() -> None:
+    handler = IntentConversationHandler(
+        classifier=LLMFirstConversationIntentClassifier(
+            llm_gateway=FailingLLMGateway(),
+            model="gpt-test",
+            api_key_suffix="90abcdef",
+        ),
+        task_service=FakeTaskService(),
+        memory_service=FakeMemoryService(),
+        reminder_service=FakeReminderService(),
+        overview_service=FakeOverviewService(),
+    )
+
+    result = await handler.handle(
+        HandleInboundConversationMessageCommand(
+            channel="web",
+            message_type="text",
+            user_identity="user-1",
+            external_message_id=None,
+            root_message_id=None,
+            parent_message_id=None,
+            chat_id=None,
+            thread_id=None,
+            text="hey",
+            raw_payload={"text": "hey"},
+        ),
+        conversation_id="conversation-1",
+        session_id="session-1",
+    )
+
+    assert result is not None
+    assert result.handled is True
+    assert result.handled_by == "conversation"
+    assert result.reason == "greeting_replied_via_rules"
+    assert "我可以帮你记提醒" in (result.response_text or "")
+
+
+@pytest.mark.asyncio
+async def test_intent_handler_shows_help() -> None:
+    handler = IntentConversationHandler(
+        classifier=LLMFirstConversationIntentClassifier(
+            llm_gateway=FailingLLMGateway(),
+            model="gpt-test",
+            api_key_suffix="90abcdef",
+        ),
+        task_service=FakeTaskService(),
+        memory_service=FakeMemoryService(),
+        reminder_service=FakeReminderService(),
+        overview_service=FakeOverviewService(),
+    )
+
+    result = await handler.handle(
+        HandleInboundConversationMessageCommand(
+            channel="web",
+            message_type="text",
+            user_identity="user-1",
+            external_message_id=None,
+            root_message_id=None,
+            parent_message_id=None,
+            chat_id=None,
+            thread_id=None,
+            text="你可以帮我做什么",
+            raw_payload={"text": "你可以帮我做什么"},
+        ),
+        conversation_id="conversation-1",
+        session_id="session-1",
+    )
+
+    assert result is not None
+    assert result.handled is True
+    assert result.handled_by == "conversation"
+    assert result.reason == "help_shown_via_rules"
+    assert "提醒" in (result.response_text or "")
+    assert "待办" in (result.response_text or "")
 
 
 @pytest.mark.asyncio
