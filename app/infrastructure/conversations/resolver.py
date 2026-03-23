@@ -227,7 +227,12 @@ def _build_binding_upsert_statement(
         thread_id=thread_id,
     )
     return insert_statement.on_conflict_do_update(
-        constraint="ux_conversation_bindings_source",
+        index_elements=[
+            ConversationBindingModel.channel,
+            ConversationBindingModel.user_identity,
+            ConversationBindingModel.chat_id,
+            ConversationBindingModel.thread_id,
+        ],
         set_={
             "conversation_id": insert_statement.excluded.conversation_id,
             "session_id": insert_statement.excluded.session_id,
