@@ -816,6 +816,7 @@ async def test_intent_handler_dispatches_to_complete_latest_task() -> None:
     assert result.handled_by == "task"
     assert result.reason == "task_completed_via_llm"
     assert task_service.completed_latest_calls == [("conversation-1", "session-1")]
+    assert result.response_text == "好的，已完成待办：最近待办"
 
 
 @pytest.mark.asyncio
@@ -856,6 +857,7 @@ async def test_intent_handler_dispatches_to_complete_matching_task() -> None:
     assert result is not None
     assert result.handled_by == "task"
     assert result.reason == "task_completed_via_llm"
+    assert result.response_text == "好的，已完成待办：纪要"
 
 
 @pytest.mark.asyncio
@@ -897,6 +899,7 @@ async def test_intent_handler_dispatches_to_cancel_latest_task() -> None:
     assert result.handled_by == "task"
     assert result.reason == "task_canceled_via_llm"
     assert task_service.canceled_latest_calls == [("conversation-1", "session-1")]
+    assert result.response_text == "好的，已取消待办：最近待办"
 
 
 @pytest.mark.asyncio
@@ -938,6 +941,7 @@ async def test_intent_handler_dispatches_to_archive_latest_memory() -> None:
     assert result.handled_by == "memory"
     assert result.reason == "memory_archived_via_llm"
     assert memory_service.archived_latest_calls == [("conversation-1", "session-1")]
+    assert result.response_text == "好的，已归档记忆：最近记忆"
 
 
 @pytest.mark.asyncio
@@ -978,6 +982,7 @@ async def test_intent_handler_dispatches_to_archive_matching_memory() -> None:
     assert result is not None
     assert result.handled_by == "memory"
     assert result.reason == "memory_archived_via_llm"
+    assert result.response_text == "好的，已归档记忆：九点提醒"
 
 
 @pytest.mark.asyncio
@@ -1120,6 +1125,7 @@ async def test_intent_handler_dispatches_to_cancel_latest_reminder() -> None:
     assert result.handled_by == "reminder"
     assert result.reason == "reminder_canceled_via_llm"
     assert reminder_service.canceled_latest_calls == [("conversation-1", "session-1")]
+    assert result.response_text == "好的，已取消提醒：最近提醒"
 
 
 @pytest.mark.asyncio
@@ -1160,6 +1166,7 @@ async def test_intent_handler_dispatches_to_cancel_matching_reminder() -> None:
     assert result is not None
     assert result.handled_by == "reminder"
     assert result.reason == "reminder_canceled_via_llm"
+    assert result.response_text == "好的，已取消提醒：打卡"
 
 
 @pytest.mark.asyncio
