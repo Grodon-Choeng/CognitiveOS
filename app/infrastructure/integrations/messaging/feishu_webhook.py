@@ -66,7 +66,10 @@ class FeishuWebhookHandler:
         self.inbound_event_recorder = inbound_event_recorder or NoopFeishuInboundEventRecorder()
         self.logger = logging.getLogger(__name__)
         self.record_on_dispatch = record_on_dispatch
-        self.dispatcher = dispatcher or self._build_dispatcher(settings)
+        self.dispatcher = dispatcher or self._build_dispatcher(
+            settings=settings,
+            record_on_dispatch=record_on_dispatch,
+        )
 
     async def handle(self, request: RawRequestProtocol) -> tuple[int, JSONObject]:
         response = self.dispatcher.do(request)
@@ -75,18 +78,24 @@ class FeishuWebhookHandler:
             await self._record_if_message_event(request.body)
         return response.status_code, payload
 
-    def _build_dispatcher(self, settings: Settings) -> Any:
+    def _build_dispatcher(
+        self,
+        *,
+        settings: Settings,
+        record_on_dispatch: bool,
+    ) -> Any:
         if not settings.feishu_app_id or not settings.feishu_app_secret:
             raise ValueError("飞书配置缺失：需要提供 FEISHU_APP_ID 和 FEISHU_APP_SECRET。")
-        if not settings.feishu_verification_token:
+        if not settings.feishu_verification_token and not record_on_dispatch:
             raise ValueError("飞书配置缺失：需要提供 FEISHU_VERIFICATION_TOKEN。")
 
         lark: Any = import_module("lark_oapi")
         encrypt_key = settings.feishu_encrypt_key or ""
+        verification_token = settings.feishu_verification_token or ""
         return (
             lark.EventDispatcherHandler.builder(
                 encrypt_key=encrypt_key,
-                verification_token=settings.feishu_verification_token,
+                verification_token=verification_token,
             )
             .register_p2_im_message_receive_v1(self._handle_message_event)
             .build()

@@ -121,3 +121,46 @@ def test_feishu_webhook_handler_requires_verification_token() -> None:
                 feishu_verification_token=None,
             )
         )
+
+
+def test_feishu_webhook_handler_allows_missing_verification_token_for_dispatch_recording(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeBuilder:
+        def __init__(self, *, encrypt_key: str, verification_token: str) -> None:
+            self.encrypt_key = encrypt_key
+            self.verification_token = verification_token
+
+        def register_p2_im_message_receive_v1(self, handler: object) -> "FakeBuilder":
+            _ = handler
+            return self
+
+        def build(self) -> object:
+            return object()
+
+    class FakeEventDispatcherHandler:
+        @staticmethod
+        def builder(*, encrypt_key: str, verification_token: str) -> FakeBuilder:
+            return FakeBuilder(
+                encrypt_key=encrypt_key,
+                verification_token=verification_token,
+            )
+
+    class FakeLarkModule:
+        EventDispatcherHandler = FakeEventDispatcherHandler
+
+    monkeypatch.setattr(
+        "app.infrastructure.integrations.messaging.feishu_webhook.import_module",
+        lambda module_name: FakeLarkModule(),
+    )
+
+    handler = FeishuWebhookHandler(
+        settings=Settings(
+            feishu_app_id="cli_test",
+            feishu_app_secret="secret_test",
+            feishu_verification_token=None,
+        ),
+        record_on_dispatch=True,
+    )
+
+    assert handler.dispatcher is not None

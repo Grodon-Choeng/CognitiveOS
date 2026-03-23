@@ -1,5 +1,5 @@
-import asyncio
 from types import SimpleNamespace
+from typing import Any
 
 import pytest
 
@@ -73,45 +73,45 @@ def test_feishu_long_connection_main_cleans_up_resources(
 ) -> None:
     calls: list[str] = []
 
-    async def fake_run_listener() -> None:
-        calls.append("start")
-
-    monkeypatch.setattr(
-        feishu_long_connection,
-        "run_feishu_long_connection_listener",
-        fake_run_listener,
-    )
-    monkeypatch.setattr(
-        feishu_long_connection,
-        "asyncio",
-        SimpleNamespace(run=asyncio.run),
-    )
-
-    feishu_long_connection.main()
-
-    assert calls == ["start"]
-
-
-@pytest.mark.asyncio
-async def test_run_feishu_long_connection_listener_cleans_up_resources(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    calls: list[str] = []
-
     class FakeListener:
         def start(self) -> None:
             calls.append("start")
+
+        async def stop(self) -> None:
+            calls.append("stop")
+
+    class FakeContainer:
+        pass
+
+    class FakeLoop:
+        def __init__(self) -> None:
+            self.closed = False
+
+        def run_until_complete(self, coro: Any) -> Any:
+            return asyncio_run(coro)
+
+        def shutdown_asyncgens(self) -> Any:
+            async def _noop() -> None:
+                return None
+
+            return _noop()
+
+        def close(self) -> None:
+            self.closed = True
+
+    async def fake_resolve_listener(container: object) -> FakeListener:
+        _ = container
+        return FakeListener()
 
     async def fake_cleanup(container: object) -> None:
         _ = container
         calls.append("cleanup")
 
-    class FakeContainer:
-        async def get(self, dependency: object) -> object:
-            assert dependency is feishu_long_connection.FeishuLongConnectionListener
-            return FakeListener()
-
-    monkeypatch.setattr(feishu_long_connection, "get_settings", lambda: SimpleNamespace())
+    monkeypatch.setattr(
+        feishu_long_connection,
+        "get_settings",
+        lambda: SimpleNamespace(),
+    )
     monkeypatch.setattr(
         feishu_long_connection,
         "configure_logging",
@@ -122,8 +122,88 @@ async def test_run_feishu_long_connection_listener_cleans_up_resources(
         "create_runtime_container",
         lambda settings: FakeContainer(),
     )
-    monkeypatch.setattr(feishu_long_connection, "cleanup_runtime_resources", fake_cleanup)
+    fake_loop = FakeLoop()
+    monkeypatch.setattr(
+        feishu_long_connection,
+        "_bind_feishu_ws_client_loop",
+        lambda loop: calls.append("bind"),
+    )
+    monkeypatch.setattr(
+        feishu_long_connection.asyncio,
+        "new_event_loop",
+        lambda: fake_loop,
+    )
+    monkeypatch.setattr(
+        feishu_long_connection.asyncio,
+        "set_event_loop",
+        lambda loop: calls.append("set_loop" if loop is not None else "clear_loop"),
+    )
+    monkeypatch.setattr(
+        feishu_long_connection,
+        "_resolve_listener",
+        fake_resolve_listener,
+    )
+    monkeypatch.setattr(
+        feishu_long_connection,
+        "cleanup_runtime_resources",
+        fake_cleanup,
+    )
+    monkeypatch.setattr(
+        feishu_long_connection,
+        "_drain_pending_tasks",
+        lambda loop: calls.append("drain"),
+    )
 
-    await feishu_long_connection.run_feishu_long_connection_listener()
+    feishu_long_connection.main()
 
-    assert calls == ["logging", "start", "cleanup"]
+    assert calls == [
+        "logging",
+        "set_loop",
+        "bind",
+        "bind",
+        "start",
+        "stop",
+        "cleanup",
+        "drain",
+        "clear_loop",
+    ]
+    assert fake_loop.closed is True
+
+
+@pytest.mark.asyncio
+async def test_resolve_feishu_long_connection_listener_from_container(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    listener = object()
+
+    class FakeContainer:
+        async def get(self, dependency: object) -> object:
+            assert dependency is feishu_long_connection.FeishuLongConnectionListener
+            return listener
+
+    resolved = await feishu_long_connection._resolve_listener(FakeContainer())  # type: ignore[arg-type]
+
+    assert resolved is listener
+
+
+def asyncio_run(coro: Any) -> Any:
+    import asyncio
+
+    return asyncio.run(coro)
+
+
+def test_bind_feishu_ws_client_loop_updates_sdk_global_loop(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_module = SimpleNamespace(loop=None)
+    fake_loop = object()
+
+    monkeypatch.setattr(
+        feishu_long_connection,
+        "import_module",
+        lambda module_name: fake_module,
+    )
+
+    feishu_long_connection._bind_feishu_ws_client_loop(fake_loop)  # type: ignore[arg-type]
+
+    assert fake_module.loop is fake_loop

@@ -1,3 +1,4 @@
+import inspect
 from importlib import import_module
 from typing import Any, Protocol
 
@@ -22,6 +23,14 @@ class FeishuLongConnectionListener:
 
     def start(self) -> None:
         self.client.start()
+
+    async def stop(self) -> None:
+        disconnect = getattr(self.client, "_disconnect", None)
+        if disconnect is None:
+            return
+        result = disconnect()
+        if inspect.isawaitable(result):
+            await result
 
     @staticmethod
     def _build_client(
