@@ -1098,6 +1098,8 @@ def _extract_reminder_list_status(command: HandleInboundConversationMessageComma
         "查看提醒列表": None,
         "查看已取消提醒": "canceled",
         "查看已完成提醒": "completed",
+        "查看失败提醒": "failed",
+        "查看已失败提醒": "failed",
         "reminder list": None,
         "show reminders": None,
     }
@@ -1123,6 +1125,8 @@ def _build_status_title(noun: str, status: str | None) -> str:
         return f"已完成{noun}"
     if status == "canceled":
         return f"已取消{noun}"
+    if status == "failed":
+        return f"失败{noun}"
     if status == "archived":
         return f"已归档{noun}"
     if status == "active":
