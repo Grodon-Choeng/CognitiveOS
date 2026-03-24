@@ -65,6 +65,8 @@ def _render_execution_result(
         tasks = _payload_items(result.payload, "pending_tasks")
         memories = _payload_items(result.payload, "active_memories")
         overview_view = _optional_str(result.payload.get("view"))
+        if overview_view == "working_set":
+            return _render_working_set_view(result)
         lines = [
             "我先帮你看了一眼今天的情况："
             if overview_view == "today"
@@ -118,8 +120,16 @@ def _render_execution_result(
             "你可以继续说“查看失败提醒”确认还有没有没恢复的。"
         )
     if result.action == "create_memory":
+        memory_type = _optional_str(result.payload.get("memory_type"))
+        scope_object_type = _optional_str(result.payload.get("scope_object_type"))
+        if scope_object_type:
+            return (
+                f"好，我已经把这条{_memory_type_label(memory_type)}记到{_scope_label(scope_object_type)}里了。\n"
+                f"内容是“{result.object_title}”。\n"
+                "如果你愿意，我也可以继续帮你看这个对象的上下文。"
+            )
         return (
-            "好，这条我记下了。\n"
+            f"好，这条{_memory_type_label(memory_type)}我记下了。\n"
             f"内容是“{result.object_title}”。\n"
             "以后你也可以让我把类似偏好继续记起来。"
         )
@@ -239,6 +249,28 @@ def _payload_items(payload: dict[str, object], key: str) -> list[dict[str, str]]
     return items
 
 
+def _render_working_set_view(result: AssistantExecutionResult) -> str:
+    reminders = _payload_items(result.payload, "pending_reminders")
+    tasks = _payload_items(result.payload, "pending_tasks")
+    memories = _payload_items(result.payload, "active_memories")
+    focused_object = result.payload.get("focused_object")
+    last_action = result.payload.get("last_assistant_action")
+    lines = ["这会话里最近我主要在处理这些："]
+    if isinstance(focused_object, dict):
+        title = focused_object.get("title")
+        if isinstance(title, str) and title:
+            lines.append(f"- 当前焦点：{title}")
+    if isinstance(last_action, dict):
+        summary = last_action.get("summary")
+        if isinstance(summary, str) and summary:
+            lines.append(f"- 最近动作：{summary}")
+    lines.append(f"- 待办任务 {len(tasks)} 个")
+    lines.append(f"- 待办提醒 {len(reminders)} 个")
+    lines.append(f"- 活跃记忆 {len(memories)} 条")
+    lines.append("你可以继续说“第二个”“那个”或直接描述你想改哪条。")
+    return "\n".join(lines)
+
+
 def _format_when(when: object, timezone: object) -> str:
     if not isinstance(when, str):
         return "未提供时间"
@@ -292,3 +324,21 @@ def _build_filtered_title(noun: str, status: str | None, query: str | None) -> s
     if query is None:
         return title
     return f"匹配“{query}”的{title}"
+
+
+def _memory_type_label(memory_type: str | None) -> str:
+    if memory_type == "preference":
+        return "偏好"
+    if memory_type == "context":
+        return "背景"
+    if memory_type == "temporary":
+        return "临时信息"
+    return "信息"
+
+
+def _scope_label(scope_object_type: str) -> str:
+    if scope_object_type == "task":
+        return "这个待办"
+    if scope_object_type == "reminder":
+        return "这个提醒"
+    return "这个对象"

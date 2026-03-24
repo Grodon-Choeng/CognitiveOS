@@ -17,6 +17,13 @@ _REFERENCE_FOLLOWUPS = {
     "不是这个，是另一个",
 }
 _CONFIRM_YES = {"是", "是的", "对", "对的", "好的", "好"}
+_MEMORY_PREFIXES = ("记住", "记一下", "记下", "memo")
+_WORKING_SET_REQUESTS = {
+    "这会话里最近在处理什么",
+    "最近在处理什么",
+    "当前工作集",
+    "working set",
+}
 
 
 class PlannerDecision(Protocol):
@@ -96,6 +103,17 @@ def _plan_with_referential_rules(
             reasoning="rules",
         )
 
+    if normalized in _WORKING_SET_REQUESTS:
+        return AssistantActionPlan(
+            intent="overview_show",
+            action="show_overview",
+            object_type=None,
+            object_id=None,
+            args={"view": "working_set"},
+            confidence=0.92,
+            reasoning="rules",
+        )
+
     if text.startswith("重试") and "提醒" in text:
         return AssistantActionPlan(
             intent="reminder_retry_failed",
@@ -104,6 +122,25 @@ def _plan_with_referential_rules(
             object_id=None,
             args={"reference_text": _strip_retry_prefix(text), "status": "failed"},
             confidence=0.9,
+            reasoning="rules",
+        )
+
+    scoped_memory_plan = _plan_scoped_memory(text, turn_context=turn_context)
+    if scoped_memory_plan is not None:
+        return scoped_memory_plan
+
+    direct_memory_content = _extract_prefixed_memory_content(text)
+    if direct_memory_content is not None:
+        return AssistantActionPlan(
+            intent="memory_write",
+            action="create_memory",
+            object_type=None,
+            object_id=None,
+            args={
+                "content": direct_memory_content,
+                "memory_type": _infer_memory_type(direct_memory_content),
+            },
+            confidence=0.92,
             reasoning="rules",
         )
 
@@ -116,6 +153,17 @@ def _plan_with_referential_rules(
             object_id=None,
             args={"reference_text": reference_text},
             confidence=0.92,
+            reasoning="rules",
+        )
+
+    if ("改成待办" in text or "改成任务" in text) and object_type == "reminder":
+        return AssistantActionPlan(
+            intent="reminder_to_task",
+            action="convert_reminder_to_task",
+            object_type="reminder",
+            object_id=None,
+            args={"reference_text": _extract_reference_before_phrase(text, "改成")},
+            confidence=0.9,
             reasoning="rules",
         )
 
@@ -143,16 +191,6 @@ def _plan_with_referential_rules(
             reasoning="rules",
         )
 
-    if ("改成待办" in text or "改成任务" in text) and object_type == "reminder":
-        return AssistantActionPlan(
-            intent="reminder_to_task",
-            action="convert_reminder_to_task",
-            object_type="reminder",
-            object_id=None,
-            args={"reference_text": _extract_reference_before_phrase(text, "改成")},
-            confidence=0.9,
-            reasoning="rules",
-        )
     return None
 
 
@@ -398,7 +436,10 @@ def _normalize_decision_to_plan(decision: PlannerDecision) -> AssistantActionPla
             action="create_memory",
             object_type="memory",
             object_id=None,
-            args={"content": decision.content},
+            args={
+                "content": decision.content,
+                "memory_type": _infer_memory_type(decision.content),
+            },
             confidence=source_confidence,
             reasoning=decision.source,
         )
@@ -500,6 +541,81 @@ def _strip_action_noise(text: str) -> str:
         if normalized.startswith(prefix):
             normalized = normalized.removeprefix(prefix).strip()
     return normalized
+
+
+def _plan_scoped_memory(
+    text: str,
+    *,
+    turn_context: AssistantTurnContext,
+) -> AssistantActionPlan | None:
+    scope_phrases = {
+        "记到任务里": "task",
+        "记到待办里": "task",
+        "记到提醒里": "reminder",
+    }
+    for phrase, object_type in scope_phrases.items():
+        if phrase not in text:
+            continue
+        content = _extract_scoped_memory_content(text, phrase)
+        return AssistantActionPlan(
+            intent="memory_write",
+            action="create_memory",
+            object_type=object_type,
+            object_id=None,
+            args={
+                "content": content,
+                "memory_type": _infer_memory_type(content),
+                "scope_reference_text": _infer_scope_reference_text(
+                    text,
+                    turn_context=turn_context,
+                ),
+            },
+            confidence=0.9,
+            reasoning="rules",
+        )
+    return None
+
+
+def _extract_prefixed_memory_content(text: str) -> str | None:
+    lowered_text = text.casefold()
+    for prefix in _MEMORY_PREFIXES:
+        lowered_prefix = prefix.casefold()
+        if lowered_text == lowered_prefix:
+            return None
+        if lowered_text.startswith(lowered_prefix):
+            candidate = text[len(prefix) :].lstrip("：: \n\t")
+            return candidate or None
+    return None
+
+
+def _extract_scoped_memory_content(text: str, phrase: str) -> str:
+    content = text.partition(phrase)[0].strip()
+    content = content.removeprefix("把").strip()
+    return content or text
+
+
+def _infer_scope_reference_text(
+    text: str,
+    *,
+    turn_context: AssistantTurnContext,
+) -> str | None:
+    for token in ("刚才那个", "这个", "那个", "第一个", "第二个", "最后一个"):
+        if token in text:
+            return token
+    if turn_context.focused_object is not None:
+        return "这个"
+    return None
+
+
+def _infer_memory_type(content: str) -> str:
+    normalized = content.casefold()
+    if "临时" in normalized:
+        return "temporary"
+    if "偏好" in normalized or "喜欢" in normalized or "不喜欢" in normalized:
+        return "preference"
+    if "背景" in normalized:
+        return "context"
+    return "note"
 
 
 def _strip_retry_prefix(text: str) -> str | None:

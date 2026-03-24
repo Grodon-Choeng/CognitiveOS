@@ -240,15 +240,18 @@ class AssistantExecutor:
                 conversation_id=turn_context.conversation_id,
                 session_id=turn_context.session_id,
             )
-            if _optional_str(plan.args.get("view")) == "today":
+            overview_view = _optional_str(plan.args.get("view"))
+            if overview_view == "today":
                 overview = await self.overview_service.get_today_view(query)
+            elif overview_view == "working_set":
+                overview = await self.overview_service.get_working_set_view(query)
             else:
                 overview = await self.overview_service.get_overview(query)
             return AssistantExecutionResult(
                 success=True,
                 action=plan.action,
                 payload={
-                    "view": _optional_str(plan.args.get("view")) or "default",
+                    "view": overview_view or "default",
                     "pending_tasks": [_task_item(task) for task in overview.pending_tasks],
                     "pending_reminders": [
                         _reminder_item(reminder) for reminder in overview.pending_reminders
@@ -256,6 +259,8 @@ class AssistantExecutor:
                     "active_memories": [
                         _memory_item(memory) for memory in overview.active_memories
                     ],
+                    "focused_object": _focused_object_payload(turn_context),
+                    "last_assistant_action": _last_action_payload(turn_context),
                     "recent_activity": [
                         {"kind": event.kind, "summary": event.summary}
                         for event in overview.recent_activity
@@ -422,20 +427,50 @@ class AssistantExecutor:
                 followup_options=["查看失败提醒", "查看提醒"],
             )
         if plan.action == "create_memory":
+            scope_object_type = None
+            scope_object_id = None
+            if plan.object_type in {"task", "reminder"}:
+                resolved_scope = self.resolver.resolve(plan, turn_context=turn_context)
+                if resolved_scope.status == "needs_disambiguation":
+                    return AssistantDisambiguationResult(
+                        prompt="你想把这条信息记到哪一个对象上？",
+                        candidates=[
+                            {
+                                "object_type": candidate.object_type,
+                                "object_id": candidate.object_id,
+                                "title": candidate.title,
+                            }
+                            for candidate in resolved_scope.candidates
+                        ],
+                    )
+                if resolved_scope.status == "needs_confirmation":
+                    candidate = resolved_scope.candidates[0] if resolved_scope.candidates else None
+                    return AssistantConfirmationResult(
+                        prompt="我理解成你要把这条信息挂到这个对象上，先确认一下。",
+                        confirm_action="create_memory",
+                        preview_text=candidate.title if candidate is not None else None,
+                    )
+                if resolved_scope.object_type is not None:
+                    plan = resolved_scope
+                    scope_object_type = resolved_scope.object_type
+                    scope_object_id = resolved_scope.object_id
             memory = await self.memory_service.create_memory(
                 CreateMemoryCommand(
                     content=str(plan.args["content"]),
+                    memory_type=_optional_str(plan.args.get("memory_type")),
                     conversation_id=turn_context.conversation_id,
                     session_id=turn_context.session_id,
                     source_channel=command.channel,
                     source_user_id=command.user_identity,
                     source_chat_id=command.chat_id,
                     source_thread_id=command.thread_id,
+                    scope_object_type=scope_object_type,
+                    scope_object_id=scope_object_id,
                 )
             )
             return AssistantExecutionResult(
                 success=True,
-                action=plan.action,
+                action="create_memory",
                 object_type="memory",
                 object_id=memory.memory_id,
                 object_title=memory.content,
@@ -698,4 +733,30 @@ def _memory_item(memory: MemoryDTO) -> dict[str, str]:
         "object_id": memory.memory_id,
         "title": memory.content,
         "status": memory.status,
+        "memory_type": memory.memory_type,
+        "scope_object_type": memory.scope_object_type or "",
+        "scope_object_id": memory.scope_object_id or "",
+    }
+
+
+def _focused_object_payload(turn_context: AssistantTurnContext) -> dict[str, str] | None:
+    focused_object = turn_context.focused_object
+    if focused_object is None:
+        return None
+    return {
+        "object_type": focused_object.object_type,
+        "object_id": focused_object.object_id,
+        "title": focused_object.title or "",
+    }
+
+
+def _last_action_payload(turn_context: AssistantTurnContext) -> dict[str, str] | None:
+    last_action = turn_context.last_assistant_action
+    if last_action is None:
+        return None
+    return {
+        "action_type": last_action.action_type,
+        "summary": last_action.summary or "",
+        "object_type": last_action.object_type or "",
+        "object_id": last_action.object_id or "",
     }
