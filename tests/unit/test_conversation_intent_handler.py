@@ -84,6 +84,13 @@ class FakeTaskService:
             completed_at=datetime(2026, 3, 22, 10, 0, tzinfo=UTC),
         )
 
+    async def complete_task(self, command: object) -> TaskDTO:
+        _ = command
+        return await self.complete_latest_task(
+            conversation_id="conversation-1",
+            session_id="session-1",
+        )
+
     async def cancel_latest_task(
         self,
         *,
@@ -99,6 +106,13 @@ class FakeTaskService:
             conversation_id=conversation_id,
             session_id=session_id,
             completed_at=None,
+        )
+
+    async def cancel_task(self, command: object) -> TaskDTO:
+        _ = command
+        return await self.cancel_latest_task(
+            conversation_id="conversation-1",
+            session_id="session-1",
         )
 
     async def complete_matching_task(
@@ -190,6 +204,13 @@ class FakeMemoryService:
             archived_at=datetime(2026, 3, 22, 10, 0, tzinfo=UTC),
         )
 
+    async def archive_memory(self, command: object) -> MemoryDTO:
+        _ = command
+        return await self.archive_latest_memory(
+            conversation_id="conversation-1",
+            session_id="session-1",
+        )
+
     async def archive_matching_memory(
         self,
         *,
@@ -260,6 +281,13 @@ class FakeReminderService:
             conversation_id=conversation_id,
             session_id=session_id,
             workflow_id="reminder:00000000-0000-0000-0000-000000000004",
+        )
+
+    async def cancel_reminder(self, command: object) -> ReminderDTO:
+        _ = command
+        return await self.cancel_latest_reminder(
+            conversation_id="conversation-1",
+            session_id="session-1",
         )
 
     async def cancel_matching_reminder(
@@ -560,7 +588,7 @@ async def test_intent_handler_replies_to_greeting() -> None:
     assert result.handled is True
     assert result.handled_by == "conversation"
     assert result.reason == "greeting_replied_via_rules"
-    assert "我可以帮你记提醒" in (result.response_text or "")
+    assert "你可以让我记提醒" in (result.response_text or "")
 
 
 @pytest.mark.asyncio
@@ -639,8 +667,8 @@ async def test_intent_handler_dispatches_to_task_list() -> None:
 
     assert result is not None
     assert result.handled_by == "task"
-    assert result.reason == "task_listed_via_llm"
-    assert "当前任务：" in (result.response_text or "")
+    assert result.reason == "task_listed_via_rules"
+    assert "你现在还有 1 个待办" in (result.response_text or "")
     assert task_service.list_queries
 
 
@@ -949,9 +977,10 @@ async def test_intent_handler_dispatches_to_complete_latest_task() -> None:
 
     assert result is not None
     assert result.handled_by == "task"
-    assert result.reason == "task_completed_via_llm"
+    assert result.reason == "task_completed_via_rules"
     assert task_service.completed_latest_calls == [("conversation-1", "session-1")]
-    assert result.response_text == "好的，已完成待办：最近待办"
+    assert "已经帮你完成这个待办了" in (result.response_text or "")
+    assert "最近待办" in (result.response_text or "")
 
 
 @pytest.mark.asyncio
@@ -991,8 +1020,9 @@ async def test_intent_handler_dispatches_to_complete_matching_task() -> None:
 
     assert result is not None
     assert result.handled_by == "task"
-    assert result.reason == "task_completed_via_llm"
-    assert result.response_text == "好的，已完成待办：纪要"
+    assert result.reason == "task_completed_via_rules"
+    assert "已经帮你完成这个待办了" in (result.response_text or "")
+    assert "纪要" in (result.response_text or "")
 
 
 @pytest.mark.asyncio
@@ -1032,9 +1062,10 @@ async def test_intent_handler_dispatches_to_cancel_latest_task() -> None:
 
     assert result is not None
     assert result.handled_by == "task"
-    assert result.reason == "task_canceled_via_llm"
+    assert result.reason == "task_canceled_via_rules"
     assert task_service.canceled_latest_calls == [("conversation-1", "session-1")]
-    assert result.response_text == "好的，已取消待办：最近待办"
+    assert "这个待办我已经取消了" in (result.response_text or "")
+    assert "最近待办" in (result.response_text or "")
 
 
 @pytest.mark.asyncio
@@ -1074,9 +1105,10 @@ async def test_intent_handler_dispatches_to_archive_latest_memory() -> None:
 
     assert result is not None
     assert result.handled_by == "memory"
-    assert result.reason == "memory_archived_via_llm"
+    assert result.reason == "memory_archived_via_rules"
     assert memory_service.archived_latest_calls == [("conversation-1", "session-1")]
-    assert result.response_text == "好的，已归档记忆：最近记忆"
+    assert "这条记忆我已经归档了" in (result.response_text or "")
+    assert "最近记忆" in (result.response_text or "")
 
 
 @pytest.mark.asyncio
@@ -1116,8 +1148,9 @@ async def test_intent_handler_dispatches_to_archive_matching_memory() -> None:
 
     assert result is not None
     assert result.handled_by == "memory"
-    assert result.reason == "memory_archived_via_llm"
-    assert result.response_text == "好的，已归档记忆：九点提醒"
+    assert result.reason == "memory_archived_via_rules"
+    assert "这条记忆我已经归档了" in (result.response_text or "")
+    assert "九点提醒" in (result.response_text or "")
 
 
 @pytest.mark.asyncio
@@ -1157,8 +1190,8 @@ async def test_intent_handler_dispatches_to_memory_list() -> None:
 
     assert result is not None
     assert result.handled_by == "memory"
-    assert result.reason == "memory_listed_via_llm"
-    assert "当前记忆：" in (result.response_text or "")
+    assert result.reason == "memory_listed_via_rules"
+    assert "当前活跃记忆有 1 个" in (result.response_text or "")
     assert memory_service.list_queries
 
 
@@ -1258,9 +1291,10 @@ async def test_intent_handler_dispatches_to_cancel_latest_reminder() -> None:
 
     assert result is not None
     assert result.handled_by == "reminder"
-    assert result.reason == "reminder_canceled_via_llm"
+    assert result.reason == "reminder_canceled_via_rules"
     assert reminder_service.canceled_latest_calls == [("conversation-1", "session-1")]
-    assert result.response_text == "好的，已取消提醒：最近提醒"
+    assert "这条提醒我已经取消了" in (result.response_text or "")
+    assert "最近提醒" in (result.response_text or "")
 
 
 @pytest.mark.asyncio
@@ -1300,8 +1334,9 @@ async def test_intent_handler_dispatches_to_cancel_matching_reminder() -> None:
 
     assert result is not None
     assert result.handled_by == "reminder"
-    assert result.reason == "reminder_canceled_via_llm"
-    assert result.response_text == "好的，已取消提醒：打卡"
+    assert result.reason == "reminder_canceled_via_rules"
+    assert "这条提醒我已经取消了" in (result.response_text or "")
+    assert "打卡" in (result.response_text or "")
 
 
 @pytest.mark.asyncio
@@ -1342,7 +1377,7 @@ async def test_intent_handler_dispatches_to_reminder_list() -> None:
     assert result is not None
     assert result.handled_by == "reminder"
     assert result.reason == "reminder_listed_via_llm"
-    assert "当前提醒：" in (result.response_text or "")
+    assert "你现在有 1 个提醒" in (result.response_text or "")
     assert reminder_service.list_queries
 
 
@@ -1512,8 +1547,8 @@ async def test_intent_handler_dispatches_to_overview_service() -> None:
 
     assert result is not None
     assert result.handled_by == "overview"
-    assert result.reason == "overview_shown_via_llm"
-    assert "当前概览：" in (result.response_text or "")
+    assert result.reason == "overview_shown_via_rules"
+    assert "我先帮你看了一眼当前会话" in (result.response_text or "")
     assert overview_service.queries[0].conversation_id == "conversation-1"
 
 
@@ -1554,8 +1589,8 @@ async def test_intent_handler_dispatches_to_recent_activity_view() -> None:
 
     assert result is not None
     assert result.handled_by == "overview"
-    assert result.reason == "activity_shown_via_llm"
-    assert "最近活动：" in (result.response_text or "")
+    assert result.reason == "activity_shown_via_rules"
+    assert "最近这几步我帮你处理的是" in (result.response_text or "")
     query = overview_service.queries[-1]
     assert query.reminder_limit == 0
     assert query.task_limit == 0
