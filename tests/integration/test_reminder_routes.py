@@ -9,6 +9,7 @@ from app.application.reminders.commands import (
     CancelReminderCommand,
     CreateReminderCommand,
     HandleReminderReplyCommand,
+    RescheduleReminderCommand,
 )
 from app.application.reminders.dto import ReminderDTO, ReminderListDTO, ReminderReplyDTO
 from app.application.reminders.errors import ReminderWorkflowCancelError, ReminderWorkflowStartError
@@ -16,6 +17,7 @@ from app.application.reminders.queries import ListRemindersQuery
 
 captured_create_commands: list[CreateReminderCommand] = []
 captured_reminder_list_queries: list[ListRemindersQuery] = []
+captured_reschedule_commands: list[RescheduleReminderCommand] = []
 
 
 @dataclass
@@ -82,6 +84,19 @@ class FakeReminderService:
             status="completed",
         )
 
+    async def reschedule_reminder(self, command: RescheduleReminderCommand) -> ReminderDTO:
+        captured_reschedule_commands.append(command)
+        return ReminderDTO(
+            reminder_id=command.reminder_id,
+            text=command.text or "明天下午三点提醒我打卡",
+            remind_at=command.remind_at,
+            timezone=command.timezone,
+            status="pending",
+            conversation_id="conversation-1",
+            session_id="session-1",
+            workflow_id=f"reminder:{command.reminder_id}",
+        )
+
     async def cancel_reminder(self, command: CancelReminderCommand) -> ReminderDTO:
         _ = command
         return ReminderDTO(
@@ -117,6 +132,10 @@ class FakeFailingReminderService:
     async def list_reminders(self, query: object) -> ReminderListDTO:
         _ = query
         raise AssertionError("本测试不应调用 list_reminders")
+
+    async def reschedule_reminder(self, command: RescheduleReminderCommand) -> ReminderDTO:
+        _ = command
+        raise ReminderWorkflowStartError("提醒工作流重新启动失败：RuntimeError: Temporal 不可用")
 
     async def cancel_reminder(self, command: CancelReminderCommand) -> ReminderDTO:
         _ = command
@@ -244,6 +263,37 @@ def test_reply_reminder_route_returns_structured_response(app: FastAPI) -> None:
     }
 
 
+def test_reschedule_reminder_route_returns_structured_response(app: FastAPI) -> None:
+    captured_reschedule_commands.clear()
+    app.dependency_overrides[get_reminder_service] = override_reminder_service
+
+    try:
+        with TestClient(app) as client:
+            response = client.post(
+                "/api/v1/reminders/00000000-0000-0000-0000-000000000001/reschedule",
+                json={
+                    "text": "明天下午三点提醒我打卡",
+                    "remind_at": "2026-03-20T15:00:00+08:00",
+                    "timezone": "Asia/Shanghai",
+                },
+            )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "reminder_id": "00000000-0000-0000-0000-000000000001",
+        "text": "明天下午三点提醒我打卡",
+        "remind_at": "2026-03-20T15:00:00+08:00",
+        "timezone": "Asia/Shanghai",
+        "status": "pending",
+        "conversation_id": "conversation-1",
+        "session_id": "session-1",
+        "workflow_id": "reminder:00000000-0000-0000-0000-000000000001",
+    }
+    assert captured_reschedule_commands[-1].text == "明天下午三点提醒我打卡"
+
+
 def test_cancel_reminder_route_returns_structured_response(app: FastAPI) -> None:
     app.dependency_overrides[get_reminder_service] = override_reminder_service
 
@@ -294,6 +344,27 @@ def test_cancel_reminder_route_returns_503_when_workflow_cancel_fails(app: FastA
     }
 
 
+def test_reschedule_reminder_route_returns_503_when_workflow_restart_fails(app: FastAPI) -> None:
+    app.dependency_overrides[get_reminder_service] = override_failing_reminder_service
+
+    try:
+        with TestClient(app) as client:
+            response = client.post(
+                "/api/v1/reminders/00000000-0000-0000-0000-000000000001/reschedule",
+                json={
+                    "remind_at": "2026-03-20T15:00:00+08:00",
+                    "timezone": "Asia/Shanghai",
+                },
+            )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 503
+    assert response.json() == {
+        "detail": "提醒工作流重新启动失败：RuntimeError: Temporal 不可用",
+    }
+
+
 def test_create_reminder_route_rejects_dispatch_thread_without_chat(app: FastAPI) -> None:
     with TestClient(app) as client:
         response = client.post(
@@ -331,6 +402,19 @@ def test_create_reminder_route_rejects_naive_remind_at(app: FastAPI) -> None:
             json={
                 "text": "时间缺少时区",
                 "remind_at": "2026-03-20T09:00:00",
+                "timezone": "Asia/Shanghai",
+            },
+        )
+
+    assert response.status_code == 422
+
+
+def test_reschedule_reminder_route_rejects_naive_remind_at(app: FastAPI) -> None:
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/v1/reminders/00000000-0000-0000-0000-000000000001/reschedule",
+            json={
+                "remind_at": "2026-03-20T15:00:00",
                 "timezone": "Asia/Shanghai",
             },
         )

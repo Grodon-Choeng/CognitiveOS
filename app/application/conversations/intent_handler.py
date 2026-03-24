@@ -1,4 +1,5 @@
 import json
+import logging
 from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
@@ -7,7 +8,6 @@ from typing import Protocol
 from app.application.conversations.commands import HandleInboundConversationMessageCommand
 from app.application.conversations.dto import ConversationInboundResult
 from app.application.memory.commands import CreateMemoryCommand
-from app.application.memory.conversation_handler import _extract_memory_content
 from app.application.memory.dto import MemoryDTO, MemoryListDTO
 from app.application.memory.errors import MemoryApplicationError
 from app.application.memory.queries import ListMemoriesQuery
@@ -18,12 +18,15 @@ from app.application.reminders.dto import ReminderDTO, ReminderListDTO
 from app.application.reminders.errors import ReminderApplicationError
 from app.application.reminders.queries import ListRemindersQuery
 from app.application.tasks.commands import CreateTaskCommand
-from app.application.tasks.conversation_handler import _extract_task_title
 from app.application.tasks.dto import TaskDTO, TaskListDTO
 from app.application.tasks.errors import TaskApplicationError
 from app.application.tasks.queries import ListTasksQuery
 from app.infrastructure.llm.gateway import LLMGateway
 from app.infrastructure.llm.models import GenerateRequest
+
+TASK_PREFIXES = ("待办", "todo", "task")
+MEMORY_PREFIXES = ("记住", "记一下", "记下", "memo")
+logger = logging.getLogger(__name__)
 
 
 class ConversationIntent(StrEnum):
@@ -199,7 +202,16 @@ class LLMFirstConversationIntentClassifier:
                     metadata={"component": "conversation_intent_classifier"},
                 )
             )
-        except Exception:
+        except Exception as exc:
+            logger.warning(
+                "对话意图分类调用 LLM 失败，回退到规则分类。",
+                extra={
+                    "conversation_id": conversation_id,
+                    "session_id": session_id,
+                    "error_type": type(exc).__name__,
+                    "error_message": str(exc),
+                },
+            )
             return None
 
         return _parse_intent_response(result.content)
@@ -551,7 +563,16 @@ class IntentConversationHandler:
                     recent_activity_limit=3,
                 )
             )
-        except Exception:
+        except Exception as exc:
+            logger.warning(
+                "构建对话意图上下文失败，继续使用无上下文分类。",
+                extra={
+                    "conversation_id": conversation_id,
+                    "session_id": session_id,
+                    "error_type": type(exc).__name__,
+                    "error_message": str(exc),
+                },
+            )
             return None
         return _format_overview_context_hint(overview)
 
@@ -891,18 +912,18 @@ def _extract_reminder_request(
             return None
         parts = candidate.split(maxsplit=1)
         if len(parts) != 2:
-            return None
+            continue
         remind_at_text, reminder_content = parts
         try:
             remind_at = datetime.fromisoformat(remind_at_text)
         except ValueError:
-            return None
+            continue
         timezone = str(remind_at.tzinfo) if remind_at.tzinfo is not None else None
         if timezone is None:
-            return None
+            continue
         reminder_content = reminder_content.strip()
         if not reminder_content:
-            return None
+            continue
         return ConversationIntentDecision(
             intent=ConversationIntent.REMINDER_CREATE,
             content=reminder_content,
@@ -913,50 +934,6 @@ def _extract_reminder_request(
         )
 
     return None
-
-
-def _is_task_complete_request(command: HandleInboundConversationMessageCommand) -> bool:
-    matched, _ = _extract_action_content(
-        command,
-        prefixes=("完成任务", "完成待办", "done task", "complete task"),
-    )
-    return matched
-
-
-def _is_task_list_request(command: HandleInboundConversationMessageCommand) -> bool:
-    return _extract_task_list_status(command) is not None
-
-
-def _is_task_cancel_request(command: HandleInboundConversationMessageCommand) -> bool:
-    matched, _ = _extract_action_content(
-        command,
-        prefixes=("取消任务", "取消待办", "cancel task"),
-    )
-    return matched
-
-
-def _is_memory_archive_request(command: HandleInboundConversationMessageCommand) -> bool:
-    matched, _ = _extract_action_content(
-        command,
-        prefixes=("归档记忆", "archive memory", "归档这条记忆"),
-    )
-    return matched
-
-
-def _is_memory_list_request(command: HandleInboundConversationMessageCommand) -> bool:
-    return _extract_memory_list_status(command) is not None
-
-
-def _is_reminder_cancel_request(command: HandleInboundConversationMessageCommand) -> bool:
-    matched, _ = _extract_action_content(
-        command,
-        prefixes=("取消提醒", "cancel reminder", "取消这个提醒"),
-    )
-    return matched
-
-
-def _is_reminder_list_request(command: HandleInboundConversationMessageCommand) -> bool:
-    return _extract_reminder_list_status(command) is not None
 
 
 def _is_overview_request(command: HandleInboundConversationMessageCommand) -> bool:
@@ -1121,6 +1098,38 @@ def _extract_action_content(
             content = normalized_text[len(prefix) :].lstrip("：: \n\t")
             return True, content or None
     return False, None
+
+
+def _extract_task_title(command: HandleInboundConversationMessageCommand) -> str | None:
+    return _extract_prefixed_content(command, prefixes=TASK_PREFIXES)
+
+
+def _extract_memory_content(command: HandleInboundConversationMessageCommand) -> str | None:
+    return _extract_prefixed_content(command, prefixes=MEMORY_PREFIXES)
+
+
+def _extract_prefixed_content(
+    command: HandleInboundConversationMessageCommand,
+    *,
+    prefixes: tuple[str, ...],
+) -> str | None:
+    if command.message_type != "text" or command.text is None:
+        return None
+
+    normalized_text = command.text.strip()
+    if not normalized_text:
+        return None
+
+    lowered_text = normalized_text.casefold()
+    for prefix in prefixes:
+        lowered_prefix = prefix.casefold()
+        if lowered_text == lowered_prefix:
+            return None
+        if lowered_text.startswith(lowered_prefix):
+            candidate = normalized_text[len(prefix) :].lstrip("：: \n\t")
+            if candidate:
+                return candidate
+    return None
 
 
 def _extract_task_list_status(command: HandleInboundConversationMessageCommand) -> str | None:

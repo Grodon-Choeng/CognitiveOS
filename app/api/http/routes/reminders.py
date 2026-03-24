@@ -12,11 +12,13 @@ from app.api.http.schemas.reminder import (
     ReminderResponse,
     ReminderStatusFilter,
     ReplyReminderRequest,
+    RescheduleReminderRequest,
 )
 from app.application.reminders.commands import (
     CancelReminderCommand,
     CreateReminderCommand,
     HandleReminderReplyCommand,
+    RescheduleReminderCommand,
 )
 from app.application.reminders.queries import ListRemindersQuery
 
@@ -114,6 +116,32 @@ async def reply_to_reminder(
     )
     result = await service.handle_reply(command)
     return ReminderReplyResponse(**asdict(result))
+
+
+@router.post(
+    "/{reminder_id}/reschedule",
+    response_model=ReminderResponse,
+    responses={
+        404: {"model": ErrorResponse},
+        409: {"model": ErrorResponse},
+        503: {"model": ErrorResponse},
+    },
+    summary="改期提醒",
+)
+async def reschedule_reminder(
+    reminder_id: str,
+    payload: RescheduleReminderRequest,
+    service: ReminderServiceDep,
+) -> ReminderResponse:
+    result = await service.reschedule_reminder(
+        RescheduleReminderCommand(
+            reminder_id=reminder_id,
+            text=payload.text,
+            remind_at=payload.remind_at,
+            timezone=payload.timezone,
+        )
+    )
+    return ReminderResponse(**asdict(result))
 
 
 @router.post(

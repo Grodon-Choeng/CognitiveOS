@@ -46,6 +46,20 @@ class ReplyReminderRequest(BaseModel):
     reply_text: str = Field(min_length=1, description="用户对提醒的回复内容。")
 
 
+class RescheduleReminderRequest(BaseModel):
+    remind_at: datetime
+    timezone: str = Field(default="UTC")
+    text: str | None = Field(default=None, min_length=1, description="更新后的提醒内容。")
+
+    @model_validator(mode="after")
+    def validate_schedule(self) -> "RescheduleReminderRequest":
+        if self.remind_at.tzinfo is None or self.remind_at.utcoffset() is None:
+            raise ValueError("remind_at 必须包含明确的时区信息。")
+        if not self.timezone.strip():
+            raise ValueError("timezone 不能为空。")
+        return self
+
+
 class ReminderResponse(BaseModel):
     reminder_id: str
     text: str

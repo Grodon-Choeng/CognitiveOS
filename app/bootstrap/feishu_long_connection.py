@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from importlib import import_module
 from typing import Any, cast
 
@@ -10,6 +11,8 @@ from app.config.settings import get_settings
 from app.infrastructure.integrations.messaging import FeishuLongConnectionListener
 from app.observability.logging import configure_logging
 
+logger = logging.getLogger(__name__)
+
 
 async def _resolve_listener(container: AsyncContainer) -> FeishuLongConnectionListener:
     return await container.get(FeishuLongConnectionListener)
@@ -18,7 +21,10 @@ async def _resolve_listener(container: AsyncContainer) -> FeishuLongConnectionLi
 def _bind_feishu_ws_client_loop(loop: asyncio.AbstractEventLoop) -> None:
     try:
         ws_client = import_module("lark_oapi.ws.client")
-    except Exception:
+    except ModuleNotFoundError as exc:
+        if exc.name not in {"lark_oapi", "lark_oapi.ws", "lark_oapi.ws.client"}:
+            raise
+        logger.info("未检测到飞书长连接 SDK，跳过事件循环绑定。")
         return
     cast(Any, ws_client).loop = loop
 
@@ -46,7 +52,7 @@ def main() -> None:
         _bind_feishu_ws_client_loop(loop)
         listener.start()
     except KeyboardInterrupt:
-        pass
+        logger.info("收到中断信号，准备停止飞书长连接监听。")
     finally:
         try:
             if listener is not None:

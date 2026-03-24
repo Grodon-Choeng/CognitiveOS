@@ -31,6 +31,14 @@ class CancelReminderCommand:
 
 
 @dataclass(slots=True, frozen=True)
+class RescheduleReminderCommand:
+    reminder_id: str
+    remind_at: datetime
+    timezone: str
+    text: str | None = None
+
+
+@dataclass(slots=True, frozen=True)
 class HandleReminderInboundMessageCommand:
     conversation_id: str | None
     session_id: str | None

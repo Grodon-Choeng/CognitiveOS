@@ -4,6 +4,7 @@ from app.application.reminders.commands import (
     CreateReminderCommand,
     HandleReminderInboundMessageCommand,
     HandleReminderReplyCommand,
+    RescheduleReminderCommand,
 )
 from app.application.reminders.dto import (
     ReminderDTO,
@@ -135,6 +136,53 @@ class ReminderApplicationService:
             )
 
         return ReminderListDTO(items=[self._to_dto(reminder) for reminder in reminders])
+
+    async def reschedule_reminder(self, command: RescheduleReminderCommand) -> ReminderDTO:
+        reminder_id = ReminderId.from_string(command.reminder_id)
+
+        async with self.unit_of_work_factory() as unit_of_work:
+            reminder = await unit_of_work.reminders.get(reminder_id)
+            if reminder is None:
+                raise ReminderNotFoundError(f"提醒不存在：{command.reminder_id}")
+            if reminder.status not in {ReminderStatus.PENDING, ReminderStatus.FAILED}:
+                raise ReminderStateConflictError(f"提醒当前状态不允许改期：{reminder.status.value}")
+
+            if reminder.status == ReminderStatus.PENDING and reminder.workflow_id is not None:
+                try:
+                    await self.workflow_gateway.cancel_reminder(reminder.workflow_id)
+                except Exception as workflow_error:
+                    raise ReminderWorkflowCancelError(
+                        f"提醒工作流取消失败：{type(workflow_error).__name__}: {workflow_error}"
+                    ) from workflow_error
+
+            reminder.text = command.text or reminder.text
+            reminder.schedule = ReminderSchedule(
+                remind_at=command.remind_at,
+                timezone=command.timezone,
+            )
+            reminder.status = ReminderStatus.PENDING
+            reminder.last_user_reply = None
+            reminder.workflow_id = reminder.workflow_id or _build_reminder_workflow_id(
+                reminder.reminder_id
+            )
+            await unit_of_work.reminders.update(reminder)
+            await unit_of_work.commit()
+
+        try:
+            await self.workflow_gateway.start_reminder(
+                reminder=reminder,
+                dispatch_target=ReminderDispatchTarget(
+                    channel=reminder.dispatch_channel or "console",
+                    recipient_id=reminder.dispatch_recipient_id or "local-user",
+                ),
+            )
+        except Exception as workflow_error:
+            await self._mark_workflow_start_failed(reminder, workflow_error)
+            raise ReminderWorkflowStartError(
+                f"提醒工作流重新启动失败：{type(workflow_error).__name__}: {workflow_error}"
+            ) from workflow_error
+
+        return self._to_dto(reminder)
 
     async def cancel_reminder(self, command: CancelReminderCommand) -> ReminderDTO:
         reminder_id = ReminderId.from_string(command.reminder_id)

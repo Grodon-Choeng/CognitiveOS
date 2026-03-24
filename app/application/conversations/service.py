@@ -1,4 +1,5 @@
 import json
+import logging
 from datetime import datetime
 from time import perf_counter
 from typing import Protocol
@@ -11,6 +12,8 @@ from app.application.conversations.ports import ConversationContextResolver
 from app.infrastructure.llm.gateway import LLMGateway
 from app.infrastructure.llm.models import GenerateRequest
 from app.observability.message_events import MessageEventRecord, MessageEventRecorder
+
+logger = logging.getLogger(__name__)
 
 
 class ConversationMessageHistoryReader(Protocol):
@@ -80,7 +83,16 @@ class LLMConversationFallbackResponder:
                     metadata={"component": "conversation_fallback_responder"},
                 )
             )
-        except Exception:
+        except Exception as exc:
+            logger.warning(
+                "对话兜底回复调用 LLM 失败，回退到无回复状态。",
+                extra={
+                    "conversation_id": conversation_id,
+                    "session_id": session_id,
+                    "error_type": type(exc).__name__,
+                    "error_message": str(exc),
+                },
+            )
             return None
         return _parse_fallback_reply(result.content)
 
@@ -97,7 +109,16 @@ class LLMConversationFallbackResponder:
                 session_id=session_id,
                 limit=12,
             )
-        except Exception:
+        except Exception as exc:
+            logger.warning(
+                "读取对话历史失败，使用空历史继续处理。",
+                extra={
+                    "conversation_id": conversation_id,
+                    "session_id": session_id,
+                    "error_type": type(exc).__name__,
+                    "error_message": str(exc),
+                },
+            )
             return "暂无最近对话。"
 
         lines: list[str] = []
