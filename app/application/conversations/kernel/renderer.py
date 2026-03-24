@@ -64,7 +64,12 @@ def _render_execution_result(
         reminders = _payload_items(result.payload, "pending_reminders")
         tasks = _payload_items(result.payload, "pending_tasks")
         memories = _payload_items(result.payload, "active_memories")
-        lines = ["我先帮你看了一眼当前会话："]
+        overview_view = _optional_str(result.payload.get("view"))
+        lines = [
+            "我先帮你看了一眼今天的情况："
+            if overview_view == "today"
+            else "我先帮你看了一眼当前会话："
+        ]
         lines.append(f"- 待办提醒 {len(reminders)} 个")
         lines.append(f"- 待办任务 {len(tasks)} 个")
         lines.append(f"- 活跃记忆 {len(memories)} 条")
@@ -98,6 +103,20 @@ def _render_execution_result(
             f"好，这条提醒我已经取消了。\n提醒内容是“{result.object_title}”。\n"
             "如果你要改时间，也可以直接重新告诉我。"
         )
+    if result.action == "reschedule_reminder":
+        payload = result.payload
+        when = _format_when(payload.get("when"), payload.get("timezone"))
+        return (
+            "好，这条提醒我已经帮你改时间了。\n"
+            f"新的时间是 {when}，内容还是“{result.object_title}”。\n"
+            "如果还要再改，也可以直接继续说。"
+        )
+    if result.action == "retry_failed_reminder":
+        return (
+            "好，我已经重新尝试启动这条失败提醒了。\n"
+            f"提醒内容是“{result.object_title}”。\n"
+            "你可以继续说“查看失败提醒”确认还有没有没恢复的。"
+        )
     if result.action == "create_memory":
         return (
             "好，这条我记下了。\n"
@@ -109,6 +128,26 @@ def _render_execution_result(
             "好，这条记忆我已经归档了。\n"
             f"内容是“{result.object_title}”。\n"
             "如果还要看其他记忆，也可以直接说“查看记忆”。"
+        )
+    if result.action == "convert_task_to_reminder":
+        reminder_items = _payload_items(result.payload, "reminder")
+        reminder_text = (
+            reminder_items[0]["title"]
+            if reminder_items
+            else result.object_title or "这条待办"
+        )
+        return (
+            "好，我已经把这条待办挂上提醒了。\n"
+            f"待办是“{result.object_title}”，提醒内容是“{reminder_text}”。\n"
+            "你可以继续说“查看提醒”或“查看待办”。"
+        )
+    if result.action == "convert_reminder_to_task":
+        task_items = _payload_items(result.payload, "task")
+        task_text = task_items[0]["title"] if task_items else result.object_title or "这条提醒"
+        return (
+            "好，我已经把这条提醒改成待办了。\n"
+            f"新的待办是“{task_text}”。\n"
+            "你可以继续说“查看待办”确认一下。"
         )
     if result.action == "list_tasks":
         query = _optional_str(result.payload.get("query"))
@@ -184,6 +223,8 @@ def _render_list_result(
 
 def _payload_items(payload: dict[str, object], key: str) -> list[dict[str, str]]:
     raw_items = payload.get(key)
+    if isinstance(raw_items, dict):
+        raw_items = [raw_items]
     if not isinstance(raw_items, list):
         return []
     items: list[dict[str, str]] = []

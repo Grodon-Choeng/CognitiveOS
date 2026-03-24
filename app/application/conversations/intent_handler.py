@@ -24,7 +24,12 @@ from app.application.memory.errors import MemoryApplicationError
 from app.application.memory.queries import ListMemoriesQuery
 from app.application.overview.dto import OverviewDTO
 from app.application.overview.queries import GetOverviewQuery
-from app.application.reminders.commands import CancelReminderCommand, CreateReminderCommand
+from app.application.reminders.commands import (
+    CancelReminderCommand,
+    CreateReminderCommand,
+    RescheduleReminderCommand,
+    RetryFailedReminderCommand,
+)
 from app.application.reminders.dto import ReminderDTO, ReminderListDTO
 from app.application.reminders.errors import ReminderApplicationError
 from app.application.reminders.queries import ListRemindersQuery
@@ -32,6 +37,7 @@ from app.application.tasks.commands import CancelTaskCommand, CompleteTaskComman
 from app.application.tasks.dto import TaskDTO, TaskListDTO
 from app.application.tasks.errors import TaskApplicationError
 from app.application.tasks.queries import ListTasksQuery
+from app.domain.reminders.entities import ReminderStatus
 from app.infrastructure.llm.gateway import LLMGateway
 from app.infrastructure.llm.models import GenerateRequest
 
@@ -45,11 +51,15 @@ class ConversationIntent(StrEnum):
     HELP_SHOW = "help_show"
     REMINDER_CREATE = "reminder_create"
     REMINDER_CANCEL = "reminder_cancel"
+    REMINDER_RESCHEDULE = "reminder_reschedule"
+    REMINDER_RETRY_FAILED = "reminder_retry_failed"
     REMINDER_LIST = "reminder_list"
     TASK_CREATE = "task_create"
     TASK_CANCEL = "task_cancel"
     TASK_COMPLETE = "task_complete"
     TASK_LIST = "task_list"
+    TASK_TO_REMINDER = "task_to_reminder"
+    REMINDER_TO_TASK = "reminder_to_task"
     MEMORY_WRITE = "memory_write"
     MEMORY_ARCHIVE = "memory_archive"
     MEMORY_LIST = "memory_list"
@@ -70,6 +80,7 @@ class ConversationIntentDecision:
 
 class TaskCreator(Protocol):
     async def create_task(self, command: CreateTaskCommand) -> TaskDTO: ...
+    async def get_task(self, task_id: str) -> TaskDTO: ...
 
     async def complete_task(self, command: CompleteTaskCommand) -> TaskDTO: ...
 
@@ -95,6 +106,12 @@ class TaskCreator(Protocol):
         conversation_id: str,
         session_id: str,
         title_hint: str,
+    ) -> TaskDTO: ...
+    async def attach_reminder(
+        self,
+        *,
+        task_id: str,
+        reminder_id: str,
     ) -> TaskDTO: ...
 
     async def cancel_matching_task(
@@ -133,6 +150,7 @@ class MemoryCreator(Protocol):
 
 class ReminderCreator(Protocol):
     async def create_reminder(self, command: CreateReminderCommand) -> ReminderDTO: ...
+    async def get_reminder(self, reminder_id: str) -> ReminderDTO: ...
 
     async def cancel_reminder(self, command: CancelReminderCommand) -> ReminderDTO: ...
 
@@ -150,12 +168,22 @@ class ReminderCreator(Protocol):
         session_id: str,
         text_hint: str,
     ) -> ReminderDTO: ...
+    async def link_task(
+        self,
+        *,
+        reminder_id: str,
+        task_id: str,
+    ) -> ReminderDTO: ...
+    async def retry_failed_reminder(self, command: RetryFailedReminderCommand) -> ReminderDTO: ...
+    async def reschedule_reminder(self, command: RescheduleReminderCommand) -> ReminderDTO: ...
 
     async def list_reminders(self, query: ListRemindersQuery) -> ReminderListDTO: ...
 
 
 class OverviewReader(Protocol):
     async def get_overview(self, query: GetOverviewQuery) -> OverviewDTO: ...
+    async def get_today_view(self, query: GetOverviewQuery) -> OverviewDTO: ...
+    async def get_working_set_view(self, query: GetOverviewQuery) -> OverviewDTO: ...
 
 
 class LLMFirstConversationIntentClassifier:
@@ -252,9 +280,9 @@ class IntentConversationHandler:
         self,
         *,
         classifier: LLMFirstConversationIntentClassifier,
-        task_service: TaskCreator,
-        memory_service: MemoryCreator,
-        reminder_service: ReminderCreator,
+    task_service: TaskCreator,
+    memory_service: MemoryCreator,
+    reminder_service: ReminderCreator,
         overview_service: OverviewReader,
         turn_context_builder: AssistantTurnContextBuilder | None = None,
         planner: AssistantActionPlanner | None = None,
@@ -269,6 +297,7 @@ class IntentConversationHandler:
         self.turn_context_builder = turn_context_builder or AssistantTurnContextBuilder(
             overview_service=overview_service,
             history_reader=_EmptyHistoryReader(),
+            reminder_reader=reminder_service,
         )
         self.planner = planner or AssistantActionPlanner(classifier=classifier)
         self.executor = executor or AssistantExecutor(
@@ -507,6 +536,20 @@ def _classify_with_rules(
             source="rules",
         )
 
+    matched, content = _extract_action_content(
+        command,
+        prefixes=("重试失败提醒", "重试提醒", "retry failed reminder", "retry reminder"),
+    )
+    if matched:
+        return ConversationIntentDecision(
+            intent=ConversationIntent.REMINDER_RETRY_FAILED,
+            content=content,
+            status=ReminderStatus.FAILED.value,
+            remind_at=None,
+            timezone=None,
+            source="rules",
+        )
+
     reminder_list_status = _extract_reminder_list_status(command)
     if reminder_list_status is not None:
         return ConversationIntentDecision(
@@ -563,9 +606,10 @@ def _build_intent_system_prompt() -> str:
     return (
         "你是 CognitiveOS 的对话意图分类器。"
         "你只负责判断当前文本是否应该问候回复、展示帮助、创建 reminder、取消 reminder、创建 task、"
-        "完成 task、取消 task、写入 memory、归档 memory，或者都不是。"
+        "完成 task、取消 task、把 task 转成 reminder、把 reminder 转成 task、重试失败提醒、"
+        "改期 reminder、写入 memory、归档 memory，或者都不是。"
         "你必须返回 JSON，格式为"
-        '{"intent":"greeting|help_show|reminder_create|reminder_cancel|reminder_list|task_create|task_complete|task_cancel|task_list|memory_write|memory_archive|memory_list|overview_show|activity_show|unknown",'
+        '{"intent":"greeting|help_show|reminder_create|reminder_cancel|reminder_reschedule|reminder_retry_failed|reminder_list|task_create|task_complete|task_cancel|task_list|task_to_reminder|reminder_to_task|memory_write|memory_archive|memory_list|overview_show|activity_show|unknown",'
         '"content":"提取后的正文或 null",'
         '"status":"pending|completed|canceled|failed|active|archived|unknown|null",'
         '"remind_at":"ISO8601时间或 null","timezone":"时区或 null"}。'
@@ -574,11 +618,16 @@ def _build_intent_system_prompt() -> str:
         "如果文本是在表达未来要提醒的事项，返回 reminder_create，"
         "并提取提醒正文、带时区的 ISO8601 提醒时间，以及 IANA 时区字符串；"
         "如果文本是在要求取消当前会话最近一个提醒，返回 reminder_cancel；"
+        "如果文本是在要求改期某个提醒，返回 reminder_reschedule，并填写 remind_at/timezone；"
+        "如果文本是在要求重试失败提醒，返回 reminder_retry_failed；"
         "如果文本是在要求查看当前会话里的提醒列表，返回 reminder_list；"
         "如果文本是在要求按关键词查找提醒，也返回 reminder_list，并把关键词写到 content；"
         "如果文本是在表达待办事项，返回 task_create；"
         "如果文本是在要求完成当前会话里最近一个待办，返回 task_complete；"
         "如果文本是在要求取消当前会话里最近一个待办，返回 task_cancel；"
+        "如果文本是在要求把某个 task 转成 reminder，"
+        "返回 task_to_reminder，并填写 remind_at/timezone；"
+        "如果文本是在要求把某个 reminder 改成 task，返回 reminder_to_task；"
         "如果文本是在要求查看当前会话里的待办列表，返回 task_list；"
         "如果文本是在要求按关键词查找待办，也返回 task_list，并把关键词写到 content；"
         "如果文本是在要求系统记住某件事实或偏好，返回 memory_write；"
@@ -638,12 +687,24 @@ def _parse_intent_response(content: str) -> ConversationIntentDecision | None:
     elif intent in {ConversationIntent.TASK_CREATE, ConversationIntent.MEMORY_WRITE}:
         if normalized_content is None:
             return None
+    elif intent in {
+        ConversationIntent.REMINDER_RESCHEDULE,
+        ConversationIntent.TASK_TO_REMINDER,
+    }:
+        if not isinstance(remind_at_value, str) or timezone is None:
+            return None
+        try:
+            remind_at = datetime.fromisoformat(remind_at_value)
+        except ValueError:
+            return None
     elif intent not in {
         ConversationIntent.GREETING,
         ConversationIntent.HELP_SHOW,
         ConversationIntent.UNKNOWN,
         ConversationIntent.REMINDER_CANCEL,
+        ConversationIntent.REMINDER_RETRY_FAILED,
         ConversationIntent.REMINDER_LIST,
+        ConversationIntent.REMINDER_TO_TASK,
         ConversationIntent.TASK_COMPLETE,
         ConversationIntent.TASK_CANCEL,
         ConversationIntent.TASK_LIST,
@@ -1044,9 +1105,22 @@ def _handled_by_for_intent(intent: ConversationIntent) -> str | None:
 
 
 def _handled_by_for_action(action: str | None) -> str | None:
-    if action in {"create_task", "list_tasks", "complete_task", "cancel_task"}:
+    if action in {
+        "create_task",
+        "list_tasks",
+        "complete_task",
+        "cancel_task",
+        "convert_reminder_to_task",
+    }:
         return "task"
-    if action in {"create_reminder", "list_reminders", "cancel_reminder"}:
+    if action in {
+        "create_reminder",
+        "list_reminders",
+        "cancel_reminder",
+        "reschedule_reminder",
+        "retry_failed_reminder",
+        "convert_task_to_reminder",
+    }:
         return "reminder"
     if action in {"create_memory", "list_memories", "archive_memory"}:
         return "memory"
@@ -1079,7 +1153,11 @@ def _reason_for_result(
         "cancel_task": f"task_canceled_via_{source}",
         "create_reminder": f"reminder_created_via_{source}",
         "cancel_reminder": f"reminder_canceled_via_{source}",
+        "reschedule_reminder": f"reminder_rescheduled_via_{source}",
+        "retry_failed_reminder": f"reminder_retried_via_{source}",
         "list_reminders": f"reminder_listed_via_{source}",
+        "convert_task_to_reminder": f"task_converted_to_reminder_via_{source}",
+        "convert_reminder_to_task": f"reminder_converted_to_task_via_{source}",
         "create_memory": f"memory_created_via_{source}",
         "archive_memory": f"memory_archived_via_{source}",
         "list_memories": f"memory_listed_via_{source}",

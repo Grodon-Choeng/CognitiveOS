@@ -34,6 +34,7 @@ async def test_runtime_container_reuses_app_scoped_singletons() -> None:
         assert messaging_adapter is await container.get(MessagingAdapter)
         assert conversation_service.reminder_handler is not None
         assert conversation_service.turn_context_builder is not None
+        assert conversation_service.turn_state_store is not None
         assert conversation_service.planner is not None
         assert conversation_service.executor is not None
         assert conversation_service.renderer is not None

@@ -5,6 +5,19 @@ from app.application.conversations.commands import HandleInboundConversationMess
 from app.application.conversations.kernel.plans import AssistantActionPlan
 from app.application.conversations.kernel.state import AssistantTurnContext
 
+_REFERENCE_FOLLOWUPS = {
+    "这个",
+    "那个",
+    "刚才那个",
+    "就刚才那个",
+    "第一个",
+    "第二个",
+    "最后一个",
+    "另一个",
+    "不是这个，是另一个",
+}
+_CONFIRM_YES = {"是", "是的", "对", "对的", "好的", "好"}
+
 
 class PlannerDecision(Protocol):
     intent: str
@@ -37,6 +50,10 @@ class AssistantActionPlanner:
         *,
         turn_context: AssistantTurnContext,
     ) -> AssistantActionPlan:
+        followup_plan = _plan_from_dialogue_state(command, turn_context=turn_context)
+        if followup_plan is not None:
+            return followup_plan
+
         direct_plan = _plan_with_referential_rules(command, turn_context=turn_context)
         if direct_plan is not None:
             return direct_plan
@@ -65,7 +82,30 @@ def _plan_with_referential_rules(
     if not text:
         return None
 
+    normalized = text.casefold()
     object_type = _infer_object_type(text, turn_context=turn_context)
+
+    if normalized in {"今天有什么", "我今天还有什么", "看看今天还有什么", "today"}:
+        return AssistantActionPlan(
+            intent="overview_show",
+            action="show_overview",
+            object_type=None,
+            object_id=None,
+            args={"view": "today"},
+            confidence=0.92,
+            reasoning="rules",
+        )
+
+    if text.startswith("重试") and "提醒" in text:
+        return AssistantActionPlan(
+            intent="reminder_retry_failed",
+            action="retry_failed_reminder",
+            object_type="reminder",
+            object_id=None,
+            args={"reference_text": _strip_retry_prefix(text), "status": "failed"},
+            confidence=0.9,
+            reasoning="rules",
+        )
 
     if text.startswith("完成") and object_type == "task":
         reference_text = _extract_reference_after_action(text, action="完成")
@@ -100,6 +140,58 @@ def _plan_with_referential_rules(
             object_id=None,
             args={"reference_text": reference_text},
             confidence=0.9,
+            reasoning="rules",
+        )
+
+    if ("改成待办" in text or "改成任务" in text) and object_type == "reminder":
+        return AssistantActionPlan(
+            intent="reminder_to_task",
+            action="convert_reminder_to_task",
+            object_type="reminder",
+            object_id=None,
+            args={"reference_text": _extract_reference_before_phrase(text, "改成")},
+            confidence=0.9,
+            reasoning="rules",
+        )
+    return None
+
+
+def _plan_from_dialogue_state(
+    command: HandleInboundConversationMessageCommand,
+    *,
+    turn_context: AssistantTurnContext,
+) -> AssistantActionPlan | None:
+    if command.message_type != "text" or command.text is None:
+        return None
+    normalized = command.text.strip()
+    if not normalized or turn_context.last_assistant_action is None:
+        return None
+
+    if (
+        turn_context.dialogue_mode == "confirmation"
+        and normalized in _CONFIRM_YES
+        and turn_context.focused_object is not None
+    ):
+        action = turn_context.last_assistant_action.action_type
+        return AssistantActionPlan(
+            intent=action,
+            action=action,
+            object_type=turn_context.focused_object.object_type,
+            object_id=turn_context.focused_object.object_id,
+            confidence=0.96,
+            reasoning="rules",
+        )
+
+    if normalized in _REFERENCE_FOLLOWUPS and turn_context.visible_candidates:
+        action = turn_context.last_assistant_action.action_type
+        object_type = turn_context.visible_candidates[0].object_type
+        return AssistantActionPlan(
+            intent=action,
+            action=action,
+            object_type=object_type,
+            object_id=None,
+            args={"reference_text": _normalize_followup_reference(normalized)},
+            confidence=0.94,
             reasoning="rules",
         )
     return None
@@ -152,6 +244,7 @@ def _normalize_decision_to_plan(decision: PlannerDecision) -> AssistantActionPla
             action="show_overview",
             object_type=None,
             object_id=None,
+            args={"view": "default"},
             confidence=source_confidence,
             reasoning=decision.source,
         )
@@ -233,6 +326,34 @@ def _normalize_decision_to_plan(decision: PlannerDecision) -> AssistantActionPla
             confidence=source_confidence,
             reasoning=decision.source,
         )
+    if (
+        decision.intent == "reminder_reschedule"
+        and decision.remind_at is not None
+        and decision.timezone is not None
+    ):
+        return AssistantActionPlan(
+            intent=decision.intent,
+            action="reschedule_reminder",
+            object_type="reminder",
+            object_id=None,
+            args={
+                "reference_text": decision.content,
+                "remind_at": decision.remind_at,
+                "timezone": decision.timezone,
+            },
+            confidence=source_confidence,
+            reasoning=decision.source,
+        )
+    if decision.intent == "reminder_retry_failed":
+        return AssistantActionPlan(
+            intent=decision.intent,
+            action="retry_failed_reminder",
+            object_type="reminder",
+            object_id=None,
+            args={"reference_text": decision.content, "status": "failed"},
+            confidence=source_confidence,
+            reasoning=decision.source,
+        )
     if decision.intent == "reminder_list":
         return AssistantActionPlan(
             intent=decision.intent,
@@ -240,6 +361,34 @@ def _normalize_decision_to_plan(decision: PlannerDecision) -> AssistantActionPla
             object_type="reminder",
             object_id=None,
             args={"status": decision.status, "query": decision.content},
+            confidence=source_confidence,
+            reasoning=decision.source,
+        )
+    if (
+        decision.intent == "task_to_reminder"
+        and decision.remind_at is not None
+        and decision.timezone is not None
+    ):
+        return AssistantActionPlan(
+            intent=decision.intent,
+            action="convert_task_to_reminder",
+            object_type="task",
+            object_id=None,
+            args={
+                "reference_text": decision.content,
+                "remind_at": decision.remind_at,
+                "timezone": decision.timezone,
+            },
+            confidence=max(source_confidence, 0.88),
+            reasoning=decision.source,
+        )
+    if decision.intent == "reminder_to_task":
+        return AssistantActionPlan(
+            intent=decision.intent,
+            action="convert_reminder_to_task",
+            object_type="reminder",
+            object_id=None,
+            args={"reference_text": decision.content},
             confidence=source_confidence,
             reasoning=decision.source,
         )
@@ -310,12 +459,16 @@ def _infer_object_type(
             "create_task",
             "complete_task",
             "cancel_task",
+            "convert_reminder_to_task",
         }:
             return "task"
         if turn_context.last_assistant_action.action_type in {
             "list_reminders",
             "create_reminder",
             "cancel_reminder",
+            "reschedule_reminder",
+            "retry_failed_reminder",
+            "convert_task_to_reminder",
         }:
             return "reminder"
         if turn_context.last_assistant_action.action_type in {
@@ -347,3 +500,27 @@ def _strip_action_noise(text: str) -> str:
         if normalized.startswith(prefix):
             normalized = normalized.removeprefix(prefix).strip()
     return normalized
+
+
+def _strip_retry_prefix(text: str) -> str | None:
+    normalized = text
+    for prefix in ("重试失败提醒", "重试提醒", "重试"):
+        if normalized.startswith(prefix):
+            normalized = normalized.removeprefix(prefix).strip()
+            break
+    normalized = _strip_action_noise(normalized)
+    return normalized or None
+
+
+def _extract_reference_before_phrase(text: str, phrase: str) -> str | None:
+    before, _, _ = text.partition(phrase)
+    normalized = _strip_action_noise(before.strip())
+    return normalized or None
+
+
+def _normalize_followup_reference(text: str) -> str:
+    if text in {"另一个", "不是这个，是另一个"}:
+        return "第二个"
+    if text == "就刚才那个":
+        return "刚才那个"
+    return text

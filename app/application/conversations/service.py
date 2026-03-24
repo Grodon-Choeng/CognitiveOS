@@ -1,6 +1,6 @@
 import json
 import logging
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass, replace
 from datetime import datetime
 from time import perf_counter
 from typing import Protocol, cast
@@ -15,7 +15,7 @@ from app.application.conversations.kernel.results import (
     AssistantExecutionResult,
 )
 from app.application.conversations.kernel.state import AssistantTurnContext
-from app.application.conversations.ports import ConversationContextResolver
+from app.application.conversations.ports import AssistantTurnStateStore, ConversationContextResolver
 from app.infrastructure.llm.gateway import LLMGateway
 from app.infrastructure.llm.models import GenerateRequest
 from app.infrastructure.types import JSONObject, JSONValue
@@ -101,6 +101,7 @@ class ConversationRenderer(Protocol):
 class _ConversationTurnOutcome:
     result: ConversationInboundResult
     assistant_turn_state: JSONObject | None = None
+    debug: JSONObject | None = None
 
 
 class LLMConversationFallbackResponder:
@@ -209,6 +210,7 @@ class ConversationApplicationService:
         message_event_recorder: MessageEventRecorder,
         reminder_handler: ReminderFastPathHandler,
         turn_context_builder: TurnContextBuilder,
+        turn_state_store: AssistantTurnStateStore | None,
         planner: ConversationPlanner,
         executor: ConversationExecutor,
         renderer: ConversationRenderer,
@@ -218,6 +220,7 @@ class ConversationApplicationService:
         self.message_event_recorder = message_event_recorder
         self.reminder_handler = reminder_handler
         self.turn_context_builder = turn_context_builder
+        self.turn_state_store = turn_state_store
         self.planner = planner
         self.executor = executor
         self.renderer = renderer
@@ -226,6 +229,7 @@ class ConversationApplicationService:
     async def handle_inbound_message(
         self,
         command: HandleInboundConversationMessageCommand,
+        include_debug: bool = False,
     ) -> ConversationInboundResult:
         conversation_context = await self.conversation_context_resolver.resolve_for_inbound(
             source_channel=command.channel,
@@ -260,15 +264,26 @@ class ConversationApplicationService:
             )
             raise
 
+        if outcome.assistant_turn_state is not None and self.turn_state_store is not None:
+            await self.turn_state_store.save(
+                conversation_id=conversation_context.conversation_id,
+                session_id=conversation_context.session_id,
+                state=outcome.assistant_turn_state,
+            )
+
+        final_result = outcome.result
+        if include_debug and outcome.debug is not None:
+            final_result = replace(final_result, debug=outcome.debug)
+
         await self.message_event_recorder.record(
             _build_inbound_record(
                 command=command,
                 conversation_id=conversation_context.conversation_id,
                 session_id=conversation_context.session_id,
-                handled=outcome.result.handled,
-                handled_by=outcome.result.handled_by,
-                reason=outcome.result.reason,
-                response_text=outcome.result.response_text,
+                handled=final_result.handled,
+                handled_by=final_result.handled_by,
+                reason=final_result.reason,
+                response_text=final_result.response_text,
                 success=True,
                 error_code=None,
                 error_message=None,
@@ -276,7 +291,7 @@ class ConversationApplicationService:
                 assistant_turn_state=outcome.assistant_turn_state,
             )
         )
-        return outcome.result
+        return final_result
 
     async def _handle_with_kernel(
         self,
@@ -302,6 +317,10 @@ class ConversationApplicationService:
                         "object_id": None,
                         "summary": reminder_result.response_text or "提醒续执行已完成",
                     },
+                },
+                debug={
+                    "stage": "reminder_fast_path",
+                    "response_text": reminder_result.response_text,
                 },
             )
 
@@ -334,8 +353,15 @@ class ConversationApplicationService:
             return _ConversationTurnOutcome(
                 result=result,
                 assistant_turn_state=_build_assistant_turn_state(
+                    plan=plan,
                     plan_action=plan.action,
                     execution_result=execution_result,
+                ),
+                debug=_build_debug_payload(
+                    turn_context=turn_context,
+                    plan=plan,
+                    execution_result=execution_result,
+                    response_text=response_text,
                 ),
             )
 
@@ -365,6 +391,10 @@ class ConversationApplicationService:
                             "summary": fallback_reply,
                         },
                     },
+                    debug={
+                        "stage": "fallback",
+                        "response_text": fallback_reply,
+                    },
                 )
 
         return _ConversationTurnOutcome(
@@ -390,6 +420,7 @@ class ConversationApplicationService:
                     "summary": "未命中能力，返回引导说明。",
                 },
             },
+            debug={"stage": "no_handler", "response_text": "default_guidance"},
         )
 
 
@@ -490,9 +521,22 @@ def _parse_fallback_reply(content: str) -> str | None:
 
 
 def _handled_by_for_action(action: str | None) -> str | None:
-    if action in {"create_task", "list_tasks", "complete_task", "cancel_task"}:
+    if action in {
+        "create_task",
+        "list_tasks",
+        "complete_task",
+        "cancel_task",
+        "convert_reminder_to_task",
+    }:
         return "task"
-    if action in {"create_reminder", "list_reminders", "cancel_reminder"}:
+    if action in {
+        "create_reminder",
+        "list_reminders",
+        "cancel_reminder",
+        "reschedule_reminder",
+        "retry_failed_reminder",
+        "convert_task_to_reminder",
+    }:
         return "reminder"
     if action in {"create_memory", "list_memories", "archive_memory"}:
         return "memory"
@@ -525,7 +569,11 @@ def _reason_for_result(
         "cancel_task": f"task_canceled_via_{source}",
         "create_reminder": f"reminder_created_via_{source}",
         "cancel_reminder": f"reminder_canceled_via_{source}",
+        "reschedule_reminder": f"reminder_rescheduled_via_{source}",
+        "retry_failed_reminder": f"reminder_retried_via_{source}",
         "list_reminders": f"reminder_listed_via_{source}",
+        "convert_task_to_reminder": f"task_converted_to_reminder_via_{source}",
+        "convert_reminder_to_task": f"reminder_converted_to_task_via_{source}",
         "create_memory": f"memory_created_via_{source}",
         "archive_memory": f"memory_archived_via_{source}",
         "list_memories": f"memory_listed_via_{source}",
@@ -537,6 +585,7 @@ def _reason_for_result(
 
 def _build_assistant_turn_state(
     *,
+    plan: AssistantActionPlan,
     plan_action: str | None,
     execution_result: AssistantExecutionResult
     | AssistantDisambiguationResult
@@ -564,8 +613,12 @@ def _build_assistant_turn_state(
             },
         }
     if isinstance(execution_result, AssistantConfirmationResult):
-        return {
+        state: JSONObject = {
             "dialogue_mode": "confirmation",
+            "pending_confirmation": {
+                "confirm_action": execution_result.confirm_action,
+                "preview_text": execution_result.preview_text,
+            },
             "last_assistant_action": {
                 "action_type": execution_result.confirm_action,
                 "success": True,
@@ -574,8 +627,15 @@ def _build_assistant_turn_state(
                 "summary": execution_result.preview_text or execution_result.prompt,
             },
         }
+        if plan.object_type is not None and plan.object_id is not None:
+            state["focused_object"] = {
+                "object_type": plan.object_type,
+                "object_id": plan.object_id,
+                "title": execution_result.preview_text,
+            }
+        return state
 
-    state: JSONObject = {
+    state_payload: JSONObject = {
         "dialogue_mode": "normal",
         "last_assistant_action": {
             "action_type": execution_result.action,
@@ -586,15 +646,15 @@ def _build_assistant_turn_state(
         },
     }
     if execution_result.object_type is not None and execution_result.object_id is not None:
-        state["focused_object"] = {
+        state_payload["focused_object"] = {
             "object_type": execution_result.object_type,
             "object_id": execution_result.object_id,
             "title": execution_result.object_title,
         }
     visible_candidates = _extract_visible_candidates(execution_result)
     if visible_candidates:
-        state["visible_candidates"] = cast(JSONValue, visible_candidates)
-    return state
+        state_payload["visible_candidates"] = cast(JSONValue, visible_candidates)
+    return state_payload
 
 
 def _extract_visible_candidates(execution_result: AssistantExecutionResult) -> list[JSONObject]:
@@ -618,3 +678,60 @@ def _extract_visible_candidates(execution_result: AssistantExecutionResult) -> l
                 }
             )
     return candidates
+
+
+def _build_debug_payload(
+    *,
+    turn_context: AssistantTurnContext,
+    plan: AssistantActionPlan,
+    execution_result: ConversationExecutionResult,
+    response_text: str,
+) -> JSONObject:
+    return {
+        "stage": "kernel",
+        "turn_context": _serialize_turn_context(turn_context),
+        "plan": _serialize_plan(plan),
+        "execution_result": _serialize_execution_result(execution_result),
+        "response_text": response_text,
+    }
+
+
+def _serialize_turn_context(turn_context: AssistantTurnContext) -> JSONObject:
+    payload = asdict(turn_context)
+    return cast(JSONObject, _json_safe(payload))
+
+
+def _serialize_plan(plan: AssistantActionPlan) -> JSONObject:
+    payload = asdict(plan)
+    return cast(JSONObject, _json_safe(payload))
+
+
+def _serialize_execution_result(result: ConversationExecutionResult) -> JSONObject:
+    if result is None:
+        return {"result_type": "none"}
+    if isinstance(result, AssistantExecutionResult):
+        payload = asdict(result)
+        payload["result_type"] = "execution"
+        return cast(JSONObject, _json_safe(payload))
+    if isinstance(result, AssistantDisambiguationResult):
+        payload = asdict(result)
+        payload["result_type"] = "disambiguation"
+        return cast(JSONObject, _json_safe(payload))
+    payload = asdict(result)
+    payload["result_type"] = "confirmation"
+    return cast(JSONObject, _json_safe(payload))
+
+
+def _json_safe(value: object) -> JSONValue:
+    if isinstance(value, datetime):
+        return value.isoformat()
+    if isinstance(value, dict):
+        return {
+            str(key): _json_safe(item_value)
+            for key, item_value in value.items()
+        }
+    if isinstance(value, list):
+        return [_json_safe(item) for item in value]
+    if isinstance(value, tuple):
+        return [_json_safe(item) for item in value]
+    return cast(JSONValue, value)

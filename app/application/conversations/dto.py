@@ -1,5 +1,7 @@
 from dataclasses import dataclass
 
+from app.infrastructure.types import JSONObject
+
 
 @dataclass(slots=True, frozen=True)
 class ConversationInboundResult:
@@ -9,3 +11,4 @@ class ConversationInboundResult:
     handled_by: str | None = None
     reason: str | None = None
     response_text: str | None = None
+    debug: JSONObject | None = None

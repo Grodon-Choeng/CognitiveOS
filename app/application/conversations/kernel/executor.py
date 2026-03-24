@@ -15,7 +15,12 @@ from app.application.memory.errors import MemoryApplicationError
 from app.application.memory.queries import ListMemoriesQuery
 from app.application.overview.dto import OverviewDTO
 from app.application.overview.queries import GetOverviewQuery
-from app.application.reminders.commands import CancelReminderCommand, CreateReminderCommand
+from app.application.reminders.commands import (
+    CancelReminderCommand,
+    CreateReminderCommand,
+    RescheduleReminderCommand,
+    RetryFailedReminderCommand,
+)
 from app.application.reminders.dto import ReminderDTO, ReminderListDTO
 from app.application.reminders.errors import ReminderApplicationError
 from app.application.reminders.queries import ListRemindersQuery
@@ -31,6 +36,7 @@ KernelExecutionResult = (
 
 class TaskExecutorService(Protocol):
     async def create_task(self, command: CreateTaskCommand) -> TaskDTO: ...
+    async def get_task(self, task_id: str) -> TaskDTO: ...
     async def complete_task(self, command: CompleteTaskCommand) -> TaskDTO: ...
     async def cancel_task(self, command: CancelTaskCommand) -> TaskDTO: ...
     async def complete_latest_task(
@@ -59,11 +65,18 @@ class TaskExecutorService(Protocol):
         session_id: str,
         title_hint: str,
     ) -> TaskDTO: ...
+    async def attach_reminder(
+        self,
+        *,
+        task_id: str,
+        reminder_id: str,
+    ) -> TaskDTO: ...
     async def list_tasks(self, query: ListTasksQuery) -> TaskListDTO: ...
 
 
 class ReminderExecutorService(Protocol):
     async def create_reminder(self, command: CreateReminderCommand) -> ReminderDTO: ...
+    async def get_reminder(self, reminder_id: str) -> ReminderDTO: ...
     async def cancel_reminder(self, command: CancelReminderCommand) -> ReminderDTO: ...
     async def cancel_latest_reminder(
         self,
@@ -78,6 +91,14 @@ class ReminderExecutorService(Protocol):
         session_id: str,
         text_hint: str,
     ) -> ReminderDTO: ...
+    async def link_task(
+        self,
+        *,
+        reminder_id: str,
+        task_id: str,
+    ) -> ReminderDTO: ...
+    async def retry_failed_reminder(self, command: RetryFailedReminderCommand) -> ReminderDTO: ...
+    async def reschedule_reminder(self, command: RescheduleReminderCommand) -> ReminderDTO: ...
     async def list_reminders(self, query: ListRemindersQuery) -> ReminderListDTO: ...
 
 
@@ -102,6 +123,8 @@ class MemoryExecutorService(Protocol):
 
 class OverviewExecutorService(Protocol):
     async def get_overview(self, query: GetOverviewQuery) -> OverviewDTO: ...
+    async def get_today_view(self, query: GetOverviewQuery) -> OverviewDTO: ...
+    async def get_working_set_view(self, query: GetOverviewQuery) -> OverviewDTO: ...
 
 
 class AssistantExecutor:
@@ -153,7 +176,16 @@ class AssistantExecutor:
         if plan.status == "unsupported" or plan.action is None:
             return None
 
-        if plan.action in {"complete_task", "cancel_task", "cancel_reminder", "archive_memory"}:
+        if plan.action in {
+            "complete_task",
+            "cancel_task",
+            "cancel_reminder",
+            "archive_memory",
+            "retry_failed_reminder",
+            "convert_task_to_reminder",
+            "convert_reminder_to_task",
+            "reschedule_reminder",
+        }:
             plan = self.resolver.resolve(plan, turn_context=turn_context)
             if plan.status == "needs_disambiguation":
                 return AssistantDisambiguationResult(
@@ -204,16 +236,19 @@ class AssistantExecutor:
                 },
             )
         if plan.action == "show_overview":
-            overview = await self.overview_service.get_overview(
-                GetOverviewQuery(
-                    conversation_id=turn_context.conversation_id,
-                    session_id=turn_context.session_id,
-                )
+            query = GetOverviewQuery(
+                conversation_id=turn_context.conversation_id,
+                session_id=turn_context.session_id,
             )
+            if _optional_str(plan.args.get("view")) == "today":
+                overview = await self.overview_service.get_today_view(query)
+            else:
+                overview = await self.overview_service.get_overview(query)
             return AssistantExecutionResult(
                 success=True,
                 action=plan.action,
                 payload={
+                    "view": _optional_str(plan.args.get("view")) or "default",
                     "pending_tasks": [_task_item(task) for task in overview.pending_tasks],
                     "pending_reminders": [
                         _reminder_item(reminder) for reminder in overview.pending_reminders
@@ -298,6 +333,7 @@ class AssistantExecutor:
                     text=str(plan.args["text"]),
                     remind_at=plan.args["remind_at"],
                     timezone=str(plan.args["timezone"]),
+                    linked_task_id=_optional_str(plan.args.get("linked_task_id")),
                     conversation_id=turn_context.conversation_id,
                     session_id=turn_context.session_id,
                     source_channel=command.channel,
@@ -319,6 +355,25 @@ class AssistantExecutor:
                 payload=_reminder_item(reminder),
                 followup_options=["查看提醒", "取消这个提醒"],
             )
+        if plan.action == "reschedule_reminder":
+            assert plan.object_id is not None
+            reminder = await self.reminder_service.reschedule_reminder(
+                RescheduleReminderCommand(
+                    reminder_id=plan.object_id,
+                    remind_at=plan.args["remind_at"],
+                    timezone=str(plan.args["timezone"]),
+                    text=_optional_str(plan.args.get("text")),
+                )
+            )
+            return AssistantExecutionResult(
+                success=True,
+                action=plan.action,
+                object_type="reminder",
+                object_id=reminder.reminder_id,
+                object_title=reminder.text,
+                payload=_reminder_item(reminder),
+                followup_options=["查看提醒", "查看概览"],
+            )
         if plan.action == "list_reminders":
             reminder_list = await self.reminder_service.list_reminders(
                 ListRemindersQuery(
@@ -338,7 +393,11 @@ class AssistantExecutor:
                     "query": _optional_str(plan.args.get("query")),
                     "items": [_reminder_item(reminder) for reminder in reminder_list.items],
                 },
-                followup_options=["取消第二个", "查看概览"],
+                followup_options=(
+                    ["重试第一个失败提醒", "查看概览"]
+                    if _optional_str(plan.args.get("status")) == "failed"
+                    else ["取消第二个", "查看概览"]
+                ),
             )
         if plan.action == "cancel_reminder":
             reminder = await self._cancel_reminder(plan, turn_context=turn_context)
@@ -350,6 +409,17 @@ class AssistantExecutor:
                 object_title=reminder.text,
                 payload=_reminder_item(reminder),
                 followup_options=["查看提醒", "查看概览"],
+            )
+        if plan.action == "retry_failed_reminder":
+            reminder = await self._retry_failed_reminder(plan, turn_context=turn_context)
+            return AssistantExecutionResult(
+                success=True,
+                action=plan.action,
+                object_type="reminder",
+                object_id=reminder.reminder_id,
+                object_title=reminder.text,
+                payload=_reminder_item(reminder),
+                followup_options=["查看失败提醒", "查看提醒"],
             )
         if plan.action == "create_memory":
             memory = await self.memory_service.create_memory(
@@ -403,6 +473,78 @@ class AssistantExecutor:
                 object_title=memory.content,
                 payload=_memory_item(memory),
                 followup_options=["查看记忆", "查看概览"],
+            )
+        if plan.action == "convert_task_to_reminder":
+            task = await self._get_task_from_plan(plan, turn_context=turn_context)
+            reminder = await self.reminder_service.create_reminder(
+                CreateReminderCommand(
+                    text=_optional_str(plan.args.get("text")) or task.title,
+                    remind_at=plan.args["remind_at"],
+                    timezone=str(plan.args["timezone"]),
+                    linked_task_id=task.task_id,
+                    conversation_id=turn_context.conversation_id,
+                    session_id=turn_context.session_id,
+                    source_channel=command.channel,
+                    source_user_id=command.user_identity,
+                    source_chat_id=command.chat_id,
+                    source_thread_id=command.thread_id,
+                    dispatch_channel=command.channel,
+                    dispatch_recipient_id=command.user_identity,
+                    dispatch_chat_id=command.chat_id,
+                    dispatch_thread_id=command.thread_id,
+                )
+            )
+            await self.task_service.attach_reminder(
+                task_id=task.task_id,
+                reminder_id=reminder.reminder_id,
+            )
+            return AssistantExecutionResult(
+                success=True,
+                action=plan.action,
+                object_type="task",
+                object_id=task.task_id,
+                object_title=task.title,
+                payload={
+                    "task": _task_item(task),
+                    "reminder": _reminder_item(reminder),
+                },
+                followup_options=["查看提醒", "查看待办"],
+            )
+        if plan.action == "convert_reminder_to_task":
+            reminder = await self._get_reminder_from_plan(plan, turn_context=turn_context)
+            task = await self.task_service.create_task(
+                CreateTaskCommand(
+                    title=reminder.text,
+                    linked_reminder_id=reminder.reminder_id,
+                    source_type="reminder",
+                    source_id=reminder.reminder_id,
+                    conversation_id=turn_context.conversation_id,
+                    session_id=turn_context.session_id,
+                    source_channel=command.channel,
+                    source_user_id=command.user_identity,
+                    source_chat_id=command.chat_id,
+                    source_thread_id=command.thread_id,
+                )
+            )
+            await self.reminder_service.link_task(
+                reminder_id=reminder.reminder_id,
+                task_id=task.task_id,
+            )
+            if reminder.status == "pending":
+                await self.reminder_service.cancel_reminder(
+                    CancelReminderCommand(reminder_id=reminder.reminder_id)
+                )
+            return AssistantExecutionResult(
+                success=True,
+                action=plan.action,
+                object_type="reminder",
+                object_id=reminder.reminder_id,
+                object_title=reminder.text,
+                payload={
+                    "task": _task_item(task),
+                    "reminder": _reminder_item(reminder),
+                },
+                followup_options=["查看待办", "查看提醒"],
             )
         return None
 
@@ -494,6 +636,35 @@ class AssistantExecutor:
             ArchiveMemoryCommand(memory_id=plan.object_id)
         )
 
+    async def _retry_failed_reminder(
+        self,
+        plan: AssistantActionPlan,
+        *,
+        turn_context: AssistantTurnContext,
+    ) -> ReminderDTO:
+        assert plan.object_id is not None
+        return await self.reminder_service.retry_failed_reminder(
+            RetryFailedReminderCommand(reminder_id=plan.object_id)
+        )
+
+    async def _get_task_from_plan(
+        self,
+        plan: AssistantActionPlan,
+        *,
+        turn_context: AssistantTurnContext,
+    ) -> TaskDTO:
+        assert plan.object_id is not None
+        return await self.task_service.get_task(plan.object_id)
+
+    async def _get_reminder_from_plan(
+        self,
+        plan: AssistantActionPlan,
+        *,
+        turn_context: AssistantTurnContext,
+    ) -> ReminderDTO:
+        assert plan.object_id is not None
+        return await self.reminder_service.get_reminder(plan.object_id)
+
 
 def _optional_str(value: object) -> str | None:
     return value if isinstance(value, str) else None
@@ -505,6 +676,7 @@ def _task_item(task: TaskDTO) -> dict[str, str]:
         "object_id": task.task_id,
         "title": task.title,
         "status": task.status,
+        "linked_reminder_id": task.linked_reminder_id or "",
     }
 
 
@@ -516,6 +688,7 @@ def _reminder_item(reminder: ReminderDTO) -> dict[str, str]:
         "status": reminder.status,
         "when": reminder.remind_at.isoformat(),
         "timezone": reminder.timezone,
+        "linked_task_id": reminder.linked_task_id or "",
     }
 
 

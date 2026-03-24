@@ -75,10 +75,20 @@ class ReferenceResolver:
             return ReferenceResolution(status="not_found")
         object_type = plan.object_type
         reference_text = _normalize_reference_text(plan.args.get("reference_text"))
-        working_candidates = _get_working_candidates(turn_context, object_type)
+        status_hint = plan.args.get("status")
+        working_candidates = _get_working_candidates(
+            turn_context,
+            object_type,
+            status_hint if isinstance(status_hint, str) else None,
+        )
         visible_candidates = _get_visible_candidates(turn_context, object_type)
 
         if reference_text is None:
+            if status_hint == "failed" and len(working_candidates) > 1:
+                return ReferenceResolution(
+                    status="ambiguous",
+                    candidates=working_candidates[:MAX_DISAMBIGUATION_CANDIDATES],
+                )
             if (
                 turn_context.focused_object is not None
                 and turn_context.focused_object.object_type == object_type
@@ -179,12 +189,17 @@ def _get_visible_candidates(
 def _get_working_candidates(
     turn_context: AssistantTurnContext,
     object_type: str,
+    status: str | None = None,
 ) -> list[CandidateRef]:
-    key = {
-        "task": "pending_tasks",
-        "reminder": "pending_reminders",
-        "memory": "active_memories",
-    }.get(object_type)
+    key: str | None
+    if object_type == "reminder" and status == "failed":
+        key = "failed_reminders"
+    else:
+        key = {
+            "task": "pending_tasks",
+            "reminder": "pending_reminders",
+            "memory": "active_memories",
+        }.get(object_type)
     if key is None:
         return []
     candidates: list[CandidateRef] = []

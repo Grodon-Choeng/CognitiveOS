@@ -15,6 +15,7 @@ from app.application.conversations.service import (
     LLMConversationFallbackResponder,
 )
 from app.infrastructure.llm.models import GenerateRequest, GenerateResult
+from app.infrastructure.types import JSONObject
 from app.observability.message_events import MessageEventRecord
 
 
@@ -246,6 +247,29 @@ class FakeRenderer:
         return self.text
 
 
+class FakeTurnStateStore:
+    def __init__(self) -> None:
+        self.saved: list[tuple[str, str, object]] = []
+
+    async def load(
+        self,
+        *,
+        conversation_id: str,
+        session_id: str,
+    ) -> JSONObject | None:
+        _ = (conversation_id, session_id)
+        return None
+
+    async def save(
+        self,
+        *,
+        conversation_id: str,
+        session_id: str,
+        state: JSONObject,
+    ) -> None:
+        self.saved.append((conversation_id, session_id, state))
+
+
 def _build_service(
     *,
     recorder: FakeMessageEventRecorder,
@@ -254,12 +278,14 @@ def _build_service(
     executor: FakeExecutor | None = None,
     renderer: FakeRenderer | None = None,
     fallback_responder: LLMConversationFallbackResponder | None = None,
+    turn_state_store: FakeTurnStateStore | None = None,
 ) -> ConversationApplicationService:
     return ConversationApplicationService(
         conversation_context_resolver=FakeConversationContextResolver(),
         message_event_recorder=recorder,
         reminder_handler=reminder_handler or FakeReminderHandler(),
         turn_context_builder=FakeTurnContextBuilder(),
+        turn_state_store=turn_state_store or FakeTurnStateStore(),
         planner=planner or FakePlanner(),
         executor=executor
         or FakeExecutor(
@@ -331,7 +357,12 @@ async def test_conversation_service_uses_reminder_fast_path_first() -> None:
 @pytest.mark.asyncio
 async def test_conversation_service_runs_kernel_path_and_records_state() -> None:
     recorder = FakeMessageEventRecorder()
-    service = _build_service(recorder=recorder, renderer=FakeRenderer("你现在还有 1 个待办。"))
+    turn_state_store = FakeTurnStateStore()
+    service = _build_service(
+        recorder=recorder,
+        renderer=FakeRenderer("你现在还有 1 个待办。"),
+        turn_state_store=turn_state_store,
+    )
 
     result = await service.handle_inbound_message(
         HandleInboundConversationMessageCommand(
@@ -362,6 +393,7 @@ async def test_conversation_service_runs_kernel_path_and_records_state() -> None
     first_candidate = visible_candidates[0]
     assert isinstance(first_candidate, dict)
     assert first_candidate["object_id"] == "task-1"
+    assert turn_state_store.saved
 
 
 @pytest.mark.asyncio

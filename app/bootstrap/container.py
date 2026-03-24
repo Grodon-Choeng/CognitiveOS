@@ -12,6 +12,7 @@ from app.application.conversations.kernel.planner import AssistantActionPlanner
 from app.application.conversations.kernel.renderer import AssistantResponseRenderer
 from app.application.conversations.kernel.resolver import ReferenceResolver
 from app.application.conversations.kernel.state import AssistantTurnContextBuilder
+from app.application.conversations.ports import AssistantTurnStateStore
 from app.application.conversations.service import (
     ConversationApplicationService,
     LLMConversationFallbackResponder,
@@ -27,6 +28,7 @@ from app.application.tasks.service import TaskApplicationService
 from app.bootstrap.inbound_events import ConversationInboundEventRecorder
 from app.config.settings import Settings
 from app.infrastructure.conversations import SqlAlchemyConversationContextResolver
+from app.infrastructure.conversations.turn_state_store import SQLAlchemyAssistantTurnStateStore
 from app.infrastructure.db.session import get_session_factory
 from app.infrastructure.db.uow import (
     SQLAlchemyMemoryUnitOfWork,
@@ -308,14 +310,25 @@ class ApplicationProvider(Provider):
         return ReferenceResolver()
 
     @provide(scope=Scope.APP)
+    def provide_assistant_turn_state_store(
+        self,
+        session_factory: AsyncSessionFactory,
+    ) -> AssistantTurnStateStore:
+        return SQLAlchemyAssistantTurnStateStore(session_factory)
+
+    @provide(scope=Scope.APP)
     def provide_turn_context_builder(
         self,
         overview_service: OverviewApplicationService,
         audit_service: AuditQueryService,
+        reminder_service: ReminderApplicationService,
+        assistant_turn_state_store: AssistantTurnStateStore,
     ) -> AssistantTurnContextBuilder:
         return AssistantTurnContextBuilder(
             overview_service=overview_service,
             history_reader=audit_service,
+            reminder_reader=reminder_service,
+            turn_state_store=assistant_turn_state_store,
         )
 
     @provide(scope=Scope.APP)
@@ -379,6 +392,7 @@ class ApplicationProvider(Provider):
         audit_service: AuditQueryService,
         reminder_service: ReminderApplicationService,
         turn_context_builder: AssistantTurnContextBuilder,
+        assistant_turn_state_store: AssistantTurnStateStore,
         assistant_action_planner: AssistantActionPlanner,
         assistant_executor: AssistantExecutor,
         assistant_response_renderer: AssistantResponseRenderer,
@@ -394,6 +408,7 @@ class ApplicationProvider(Provider):
             message_event_recorder=message_event_recorder,
             reminder_handler=ReminderConversationHandler(reminder_service),
             turn_context_builder=turn_context_builder,
+            turn_state_store=assistant_turn_state_store,
             planner=assistant_action_planner,
             executor=assistant_executor,
             renderer=assistant_response_renderer,

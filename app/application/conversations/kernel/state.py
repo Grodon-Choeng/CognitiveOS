@@ -3,8 +3,11 @@ from datetime import datetime
 from typing import Any, Literal, Protocol
 
 from app.application.audit.dto import AuditEventPageDTO
+from app.application.conversations.ports import AssistantTurnStateStore
 from app.application.overview.dto import OverviewDTO
 from app.application.overview.queries import GetOverviewQuery
+from app.application.reminders.dto import ReminderListDTO
+from app.application.reminders.queries import ListRemindersQuery
 
 DialogueMode = Literal[
     "normal",
@@ -79,17 +82,25 @@ class TurnContextHistoryReader(Protocol):
     ) -> AuditEventPageDTO: ...
 
 
+class TurnContextReminderReader(Protocol):
+    async def list_reminders(self, query: ListRemindersQuery) -> ReminderListDTO: ...
+
+
 class AssistantTurnContextBuilder:
     def __init__(
         self,
         *,
         overview_service: TurnContextOverviewReader,
         history_reader: TurnContextHistoryReader,
+        reminder_reader: TurnContextReminderReader | None = None,
+        turn_state_store: AssistantTurnStateStore | None = None,
         working_set_limit: int = 5,
         history_limit: int = 12,
     ) -> None:
         self.overview_service = overview_service
         self.history_reader = history_reader
+        self.reminder_reader = reminder_reader
+        self.turn_state_store = turn_state_store
         self.working_set_limit = working_set_limit
         self.history_limit = history_limit
 
@@ -119,7 +130,15 @@ class AssistantTurnContextBuilder:
 
         recent_messages = _build_recent_messages(history_page)
         metadata = _build_working_set_metadata(overview)
-        state_metadata = _extract_latest_state_metadata(history_page)
+        metadata["failed_reminders"] = await self._build_failed_reminders(
+            conversation_id=conversation_id,
+            session_id=session_id,
+        )
+        state_metadata = await self._load_state_metadata(
+            conversation_id=conversation_id,
+            session_id=session_id,
+            history_page=history_page,
+        )
 
         focused_object = _build_focused_object(state_metadata)
         visible_candidates = _build_visible_candidates(state_metadata)
@@ -153,6 +172,48 @@ class AssistantTurnContextBuilder:
             last_assistant_action=last_assistant_action,
             metadata=metadata,
         )
+
+    async def _load_state_metadata(
+        self,
+        *,
+        conversation_id: str,
+        session_id: str,
+        history_page: AuditEventPageDTO,
+    ) -> dict[str, Any]:
+        if self.turn_state_store is not None:
+            stored_state = await self.turn_state_store.load(
+                conversation_id=conversation_id,
+                session_id=session_id,
+            )
+            if stored_state is not None:
+                return stored_state
+        return _extract_latest_state_metadata(history_page)
+
+    async def _build_failed_reminders(
+        self,
+        *,
+        conversation_id: str,
+        session_id: str,
+    ) -> list[dict[str, str]]:
+        if self.reminder_reader is None:
+            return []
+        reminder_list = await self.reminder_reader.list_reminders(
+            ListRemindersQuery(
+                conversation_id=conversation_id,
+                session_id=session_id,
+                status="failed",
+                limit=self.working_set_limit,
+            )
+        )
+        return [
+            {
+                "object_type": "reminder",
+                "object_id": reminder.reminder_id,
+                "title": reminder.text,
+                "status": reminder.status,
+            }
+            for reminder in reminder_list.items
+        ]
 
 
 def _build_recent_messages(history_page: AuditEventPageDTO) -> list[str]:

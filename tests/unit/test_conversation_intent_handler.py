@@ -1,4 +1,5 @@
 from datetime import UTC, datetime
+from typing import Any
 
 import pytest
 
@@ -14,7 +15,7 @@ from app.application.memory.dto import MemoryDTO, MemoryListDTO
 from app.application.memory.queries import ListMemoriesQuery
 from app.application.overview.dto import OverviewDTO
 from app.application.overview.queries import GetOverviewQuery
-from app.application.reminders.commands import CreateReminderCommand
+from app.application.reminders.commands import CancelReminderCommand, CreateReminderCommand
 from app.application.reminders.dto import ReminderDTO, ReminderListDTO
 from app.application.reminders.queries import ListRemindersQuery
 from app.application.tasks.commands import CreateTaskCommand
@@ -49,6 +50,7 @@ class FakeTaskService:
         self.created_titles: list[str] = []
         self.completed_latest_calls: list[tuple[str, str]] = []
         self.canceled_latest_calls: list[tuple[str, str]] = []
+        self.attached_reminders: list[tuple[str, str]] = []
         self.list_queries: list[ListTasksQuery] = []
         self.complete_latest_error: Exception | None = None
 
@@ -58,6 +60,20 @@ class FakeTaskService:
         return TaskDTO(
             task_id="00000000-0000-0000-0000-000000000001",
             title=title,
+            created_at=datetime(2026, 3, 22, 9, 0, tzinfo=UTC),
+            status="pending",
+            conversation_id="conversation-1",
+            session_id="session-1",
+            linked_reminder_id=command.linked_reminder_id,
+            source_type=command.source_type,
+            source_id=command.source_id,
+            completed_at=None,
+        )
+
+    async def get_task(self, task_id: str) -> TaskDTO:
+        return TaskDTO(
+            task_id=task_id,
+            title="整理纪要",
             created_at=datetime(2026, 3, 22, 9, 0, tzinfo=UTC),
             status="pending",
             conversation_id="conversation-1",
@@ -167,6 +183,24 @@ class FakeTaskService:
             ]
         )
 
+    async def attach_reminder(
+        self,
+        *,
+        task_id: str,
+        reminder_id: str,
+    ) -> TaskDTO:
+        self.attached_reminders.append((task_id, reminder_id))
+        return TaskDTO(
+            task_id=task_id,
+            title="整理纪要",
+            created_at=datetime(2026, 3, 22, 9, 0, tzinfo=UTC),
+            status="pending",
+            conversation_id="conversation-1",
+            session_id="session-1",
+            linked_reminder_id=reminder_id,
+            completed_at=None,
+        )
+
 
 class FakeMemoryService:
     def __init__(self) -> None:
@@ -182,6 +216,7 @@ class FakeMemoryService:
             content=content,
             created_at=datetime(2026, 3, 22, 9, 0, tzinfo=UTC),
             status="active",
+            memory_type="note",
             conversation_id="conversation-1",
             session_id="session-1",
             archived_at=None,
@@ -199,6 +234,7 @@ class FakeMemoryService:
             content="最近记忆",
             created_at=datetime(2026, 3, 22, 9, 0, tzinfo=UTC),
             status="archived",
+            memory_type="note",
             conversation_id=conversation_id,
             session_id=session_id,
             archived_at=datetime(2026, 3, 22, 10, 0, tzinfo=UTC),
@@ -224,6 +260,7 @@ class FakeMemoryService:
             content=content_hint,
             created_at=datetime(2026, 3, 22, 9, 0, tzinfo=UTC),
             status="archived",
+            memory_type="note",
             conversation_id=conversation_id,
             session_id=session_id,
             archived_at=datetime(2026, 3, 22, 10, 0, tzinfo=UTC),
@@ -238,6 +275,7 @@ class FakeMemoryService:
                     content="喜欢早上九点提醒",
                     created_at=datetime(2026, 3, 22, 8, 0, tzinfo=UTC),
                     status="active",
+                    memory_type="note",
                     conversation_id="conversation-1",
                     session_id="session-1",
                     archived_at=None,
@@ -250,6 +288,10 @@ class FakeReminderService:
     def __init__(self) -> None:
         self.created_requests: list[tuple[str, datetime, str]] = []
         self.canceled_latest_calls: list[tuple[str, str]] = []
+        self.linked_tasks: list[tuple[str, str]] = []
+        self.retry_commands: list[str] = []
+        self.cancel_commands: list[str] = []
+        self.reschedule_commands: list[tuple[str, datetime, str]] = []
         self.list_queries: list[ListRemindersQuery] = []
 
     async def create_reminder(self, command: CreateReminderCommand) -> ReminderDTO:
@@ -260,9 +302,22 @@ class FakeReminderService:
             remind_at=command.remind_at,
             timezone=command.timezone,
             status="pending",
+            linked_task_id=command.linked_task_id,
             conversation_id="conversation-1",
             session_id="session-1",
             workflow_id="reminder:00000000-0000-0000-0000-000000000001",
+        )
+
+    async def get_reminder(self, reminder_id: str) -> ReminderDTO:
+        return ReminderDTO(
+            reminder_id=reminder_id,
+            text="九点打卡",
+            remind_at=datetime(2026, 3, 23, 9, 0, tzinfo=UTC),
+            timezone="Asia/Shanghai",
+            status="pending",
+            conversation_id="conversation-1",
+            session_id="session-1",
+            workflow_id=f"reminder:{reminder_id}",
         )
 
     async def cancel_latest_reminder(
@@ -283,11 +338,17 @@ class FakeReminderService:
             workflow_id="reminder:00000000-0000-0000-0000-000000000004",
         )
 
-    async def cancel_reminder(self, command: object) -> ReminderDTO:
-        _ = command
-        return await self.cancel_latest_reminder(
+    async def cancel_reminder(self, command: CancelReminderCommand) -> ReminderDTO:
+        self.cancel_commands.append(command.reminder_id)
+        return ReminderDTO(
+            reminder_id=command.reminder_id,
+            text="九点打卡",
+            remind_at=datetime(2026, 3, 23, 9, 0, tzinfo=UTC),
+            timezone="Asia/Shanghai",
+            status="canceled",
             conversation_id="conversation-1",
             session_id="session-1",
+            workflow_id=f"reminder:{command.reminder_id}",
         )
 
     async def cancel_matching_reminder(
@@ -311,6 +372,24 @@ class FakeReminderService:
 
     async def list_reminders(self, query: ListRemindersQuery) -> ReminderListDTO:
         self.list_queries.append(query)
+        if query.status == "failed":
+            return ReminderListDTO(
+                items=[
+                    ReminderDTO(
+                        reminder_id="00000000-0000-0000-0000-000000000099",
+                        text="失败提醒",
+                        remind_at=datetime(2026, 3, 23, 9, 0, tzinfo=UTC),
+                        timezone="Asia/Shanghai",
+                        status="failed",
+                        failure_stage="workflow_start",
+                        failure_reason_code="RuntimeError",
+                        retryable=True,
+                        conversation_id="conversation-1",
+                        session_id="session-1",
+                        workflow_id=None,
+                    )
+                ]
+            )
         return ReminderListDTO(
             items=[
                 ReminderDTO(
@@ -324,6 +403,53 @@ class FakeReminderService:
                     workflow_id="reminder:r-30",
                 )
             ]
+        )
+
+    async def reschedule_reminder(self, command: Any) -> ReminderDTO:
+        self.reschedule_commands.append(
+            (command.reminder_id, command.remind_at, command.timezone)
+        )
+        return ReminderDTO(
+            reminder_id=command.reminder_id,
+            text="九点打卡",
+            remind_at=command.remind_at,
+            timezone=command.timezone,
+            status="pending",
+            conversation_id="conversation-1",
+            session_id="session-1",
+            workflow_id=f"reminder:{command.reminder_id}",
+        )
+
+    async def link_task(
+        self,
+        *,
+        reminder_id: str,
+        task_id: str,
+    ) -> ReminderDTO:
+        self.linked_tasks.append((reminder_id, task_id))
+        return ReminderDTO(
+            reminder_id=reminder_id,
+            text="九点打卡",
+            remind_at=datetime(2026, 3, 23, 9, 0, tzinfo=UTC),
+            timezone="Asia/Shanghai",
+            status="pending",
+            linked_task_id=task_id,
+            conversation_id="conversation-1",
+            session_id="session-1",
+            workflow_id=f"reminder:{reminder_id}",
+        )
+
+    async def retry_failed_reminder(self, command: Any) -> ReminderDTO:
+        self.retry_commands.append(command.reminder_id)
+        return ReminderDTO(
+            reminder_id=command.reminder_id,
+            text="失败提醒",
+            remind_at=datetime(2026, 3, 23, 9, 0, tzinfo=UTC),
+            timezone="Asia/Shanghai",
+            status="pending",
+            conversation_id="conversation-1",
+            session_id="session-1",
+            workflow_id=f"reminder:{command.reminder_id}",
         )
 
 
@@ -365,6 +491,7 @@ class FakeOverviewService:
                     content="喜欢早上九点提醒",
                     created_at=datetime(2026, 3, 22, 8, 0, tzinfo=UTC),
                     status="active",
+                    memory_type="note",
                     conversation_id=query.conversation_id,
                     session_id=query.session_id,
                     archived_at=None,
@@ -386,6 +513,12 @@ class FakeOverviewService:
                 )
             ],
         )
+
+    async def get_today_view(self, query: GetOverviewQuery) -> OverviewDTO:
+        return await self.get_overview(query)
+
+    async def get_working_set_view(self, query: GetOverviewQuery) -> OverviewDTO:
+        return await self.get_overview(query)
 
 
 @pytest.mark.asyncio
@@ -1637,3 +1770,167 @@ async def test_intent_handler_returns_feedback_when_latest_task_missing() -> Non
     assert result.handled_by == "task"
     assert result.reason == "task_complete_feedback"
     assert result.response_text == "当前会话没有可完成的待办任务。"
+
+
+@pytest.mark.asyncio
+async def test_intent_handler_converts_task_to_reminder() -> None:
+    task_service = FakeTaskService()
+    reminder_service = FakeReminderService()
+    handler = IntentConversationHandler(
+        classifier=LLMFirstConversationIntentClassifier(
+            llm_gateway=FakeLLMGateway(
+                '{"intent":"task_to_reminder","content":null,"remind_at":"2026-03-23T09:00:00+08:00","timezone":"Asia/Shanghai"}'
+            ),
+            model="gpt-test",
+            api_key_suffix="90abcdef",
+        ),
+        task_service=task_service,
+        memory_service=FakeMemoryService(),
+        reminder_service=reminder_service,
+        overview_service=FakeOverviewService(),
+    )
+
+    result = await handler.handle(
+        HandleInboundConversationMessageCommand(
+            channel="web",
+            message_type="text",
+            user_identity="user-1",
+            external_message_id=None,
+            root_message_id=None,
+            parent_message_id=None,
+            chat_id=None,
+            thread_id=None,
+            text="这个待办明天早上提醒我",
+            raw_payload={"text": "这个待办明天早上提醒我"},
+        ),
+        conversation_id="conversation-1",
+        session_id="session-1",
+    )
+
+    assert result is not None
+    assert result.handled_by == "reminder"
+    assert result.reason == "task_converted_to_reminder_via_llm"
+    assert task_service.attached_reminders == [
+        ("t-1", "00000000-0000-0000-0000-000000000001")
+    ]
+    assert "把这条待办挂上提醒" in (result.response_text or "")
+
+
+@pytest.mark.asyncio
+async def test_intent_handler_converts_reminder_to_task() -> None:
+    task_service = FakeTaskService()
+    reminder_service = FakeReminderService()
+    handler = IntentConversationHandler(
+        classifier=LLMFirstConversationIntentClassifier(
+            llm_gateway=FakeLLMGateway('{"intent":"reminder_to_task","content":null}'),
+            model="gpt-test",
+            api_key_suffix="90abcdef",
+        ),
+        task_service=task_service,
+        memory_service=FakeMemoryService(),
+        reminder_service=reminder_service,
+        overview_service=FakeOverviewService(),
+    )
+
+    result = await handler.handle(
+        HandleInboundConversationMessageCommand(
+            channel="web",
+            message_type="text",
+            user_identity="user-1",
+            external_message_id=None,
+            root_message_id=None,
+            parent_message_id=None,
+            chat_id=None,
+            thread_id=None,
+            text="改成待办",
+            raw_payload={"text": "改成待办"},
+        ),
+        conversation_id="conversation-1",
+        session_id="session-1",
+    )
+
+    assert result is not None
+    assert result.handled_by == "task"
+    assert result.reason == "reminder_converted_to_task_via_llm"
+    assert reminder_service.linked_tasks == [("r-1", "00000000-0000-0000-0000-000000000001")]
+    assert "改成待办" in (result.response_text or "")
+
+
+@pytest.mark.asyncio
+async def test_intent_handler_retries_failed_reminder() -> None:
+    reminder_service = FakeReminderService()
+    handler = IntentConversationHandler(
+        classifier=LLMFirstConversationIntentClassifier(
+            llm_gateway=FailingLLMGateway(),
+            model="gpt-test",
+            api_key_suffix="90abcdef",
+        ),
+        task_service=FakeTaskService(),
+        memory_service=FakeMemoryService(),
+        reminder_service=reminder_service,
+        overview_service=FakeOverviewService(),
+    )
+
+    result = await handler.handle(
+        HandleInboundConversationMessageCommand(
+            channel="web",
+            message_type="text",
+            user_identity="user-1",
+            external_message_id=None,
+            root_message_id=None,
+            parent_message_id=None,
+            chat_id=None,
+            thread_id=None,
+            text="重试失败提醒",
+            raw_payload={"text": "重试失败提醒"},
+        ),
+        conversation_id="conversation-1",
+        session_id="session-1",
+    )
+
+    assert result is not None
+    assert result.handled_by == "reminder"
+    assert result.reason == "reminder_retried_via_rules"
+    assert reminder_service.retry_commands == ["00000000-0000-0000-0000-000000000099"]
+    assert "重新尝试启动" in (result.response_text or "")
+
+
+@pytest.mark.asyncio
+async def test_intent_handler_reschedules_reminder() -> None:
+    reminder_service = FakeReminderService()
+    handler = IntentConversationHandler(
+        classifier=LLMFirstConversationIntentClassifier(
+            llm_gateway=FakeLLMGateway(
+                '{"intent":"reminder_reschedule","content":null,"remind_at":"2026-03-24T09:00:00+08:00","timezone":"Asia/Shanghai"}'
+            ),
+            model="gpt-test",
+            api_key_suffix="90abcdef",
+        ),
+        task_service=FakeTaskService(),
+        memory_service=FakeMemoryService(),
+        reminder_service=reminder_service,
+        overview_service=FakeOverviewService(),
+    )
+
+    result = await handler.handle(
+        HandleInboundConversationMessageCommand(
+            channel="web",
+            message_type="text",
+            user_identity="user-1",
+            external_message_id=None,
+            root_message_id=None,
+            parent_message_id=None,
+            chat_id=None,
+            thread_id=None,
+            text="把这个提醒改到明天九点",
+            raw_payload={"text": "把这个提醒改到明天九点"},
+        ),
+        conversation_id="conversation-1",
+        session_id="session-1",
+    )
+
+    assert result is not None
+    assert result.handled_by == "reminder"
+    assert result.reason == "reminder_rescheduled_via_llm"
+    assert reminder_service.reschedule_commands
+    assert "改时间" in (result.response_text or "")
