@@ -1,0 +1,253 @@
+from collections.abc import Callable
+from datetime import datetime
+
+from app.application.conversations.kernel.results import (
+    AssistantConfirmationResult,
+    AssistantDisambiguationResult,
+    AssistantExecutionResult,
+)
+from app.application.conversations.kernel.state import AssistantTurnContext
+
+
+class AssistantResponseRenderer:
+    def render(
+        self,
+        result: (
+            AssistantExecutionResult | AssistantDisambiguationResult | AssistantConfirmationResult
+        ),
+        *,
+        turn_context: AssistantTurnContext,
+    ) -> str:
+        if isinstance(result, AssistantDisambiguationResult):
+            lines = [result.prompt]
+            for index, candidate in enumerate(result.candidates, start=1):
+                lines.append(f"{index}. {candidate['title']}")
+            lines.append("你可以直接说“第一个”或把标题再说完整一点。")
+            return "\n".join(lines)
+
+        if isinstance(result, AssistantConfirmationResult):
+            lines = [result.prompt]
+            if result.preview_text:
+                lines.append(f"我当前理解的是“{result.preview_text}”。")
+            lines.append("如果没问题，你可以直接回复“是的”或再说得更具体一点。")
+            return "\n".join(lines)
+
+        if result.message_hint:
+            return result.message_hint
+        return _render_execution_result(result, turn_context=turn_context)
+
+
+def _render_execution_result(
+    result: AssistantExecutionResult,
+    *,
+    turn_context: AssistantTurnContext,
+) -> str:
+    if result.action == "reply_greeting":
+        return "你好，我在。你可以让我记提醒、建待办、记住偏好，也可以直接问我今天还有什么。"
+    if result.action == "show_help":
+        return (
+            "我现在主要能帮你做四类事：提醒、待办、记忆和概览。\n"
+            "你可以直接说“明天提醒我买药”“待办：整理周报”“记一下我不喜欢早上八点前提醒”或“看看今天还有什么”。"
+        )
+    if result.action == "show_activity":
+        activities = result.payload.get("recent_activity")
+        if not isinstance(activities, list) or not activities:
+            return "这会儿还没有最近活动。"
+        lines = ["最近这几步我帮你处理的是："]
+        for activity in activities:
+            if isinstance(activity, dict):
+                summary = activity.get("summary")
+                if isinstance(summary, str):
+                    lines.append(f"- {summary}")
+        return "\n".join(lines)
+    if result.action == "show_overview":
+        reminders = _payload_items(result.payload, "pending_reminders")
+        tasks = _payload_items(result.payload, "pending_tasks")
+        memories = _payload_items(result.payload, "active_memories")
+        lines = ["我先帮你看了一眼当前会话："]
+        lines.append(f"- 待办提醒 {len(reminders)} 个")
+        lines.append(f"- 待办任务 {len(tasks)} 个")
+        lines.append(f"- 活跃记忆 {len(memories)} 条")
+        lines.append("你可以继续说“查看待办”“查看提醒”或“查看记忆”。")
+        return "\n".join(lines)
+    if result.action == "create_task":
+        return (
+            f"好，已经记成待办了。\n内容是“{result.object_title}”。\n"
+            "如果你愿意，我也可以马上帮你看一下当前待办列表。"
+        )
+    if result.action == "complete_task":
+        return (
+            f"好，已经帮你完成这个待办了。\n待办是“{result.object_title}”。\n"
+            "你可以继续说“查看待办”看看还剩什么。"
+        )
+    if result.action == "cancel_task":
+        return (
+            f"好，这个待办我已经取消了。\n待办是“{result.object_title}”。\n"
+            "如果你想，我也可以继续帮你整理剩下的待办。"
+        )
+    if result.action == "create_reminder":
+        payload = result.payload
+        when = _format_when(payload.get("when"), payload.get("timezone"))
+        return (
+            "好，已经记成提醒了。\n"
+            f"时间是 {when}，内容是“{result.object_title}”。\n"
+            "之后你也可以直接说“取消这个提醒”。"
+        )
+    if result.action == "cancel_reminder":
+        return (
+            f"好，这条提醒我已经取消了。\n提醒内容是“{result.object_title}”。\n"
+            "如果你要改时间，也可以直接重新告诉我。"
+        )
+    if result.action == "create_memory":
+        return (
+            "好，这条我记下了。\n"
+            f"内容是“{result.object_title}”。\n"
+            "以后你也可以让我把类似偏好继续记起来。"
+        )
+    if result.action == "archive_memory":
+        return (
+            "好，这条记忆我已经归档了。\n"
+            f"内容是“{result.object_title}”。\n"
+            "如果还要看其他记忆，也可以直接说“查看记忆”。"
+        )
+    if result.action == "list_tasks":
+        query = _optional_str(result.payload.get("query"))
+        status = _optional_str(result.payload.get("status"))
+        return _render_list_result(
+            result=result,
+            empty_text=f"当前没有{_build_filtered_title('任务', status, query)}。",
+            header_builder=lambda count: _build_list_header(
+                noun="任务",
+                count=count,
+                status=status,
+                query=query,
+                default_header=f"你现在还有 {count} 个待办：",
+            ),
+            line_builder=lambda index, item: f"{index}. {item['title']}",
+            followup_hint="你可以直接说“完成第二个”或“取消第一个”。",
+        )
+    if result.action == "list_reminders":
+        query = _optional_str(result.payload.get("query"))
+        status = _optional_str(result.payload.get("status"))
+        return _render_list_result(
+            result=result,
+            empty_text=f"当前没有{_build_filtered_title('提醒', status, query)}。",
+            header_builder=lambda count: _build_list_header(
+                noun="提醒",
+                count=count,
+                status=status,
+                query=query,
+                default_header=f"你现在有 {count} 个提醒：",
+            ),
+            line_builder=lambda index, item: (
+                f"{index}. {item['title']}（"
+                f"{_format_when(item.get('when'), item.get('timezone'))}）"
+            ),
+            followup_hint="你可以直接说“取消第二个”或“取消买药那个提醒”。",
+        )
+    if result.action == "list_memories":
+        query = _optional_str(result.payload.get("query"))
+        status = _optional_str(result.payload.get("status"))
+        return _render_list_result(
+            result=result,
+            empty_text=f"当前没有{_build_filtered_title('记忆', status, query)}。",
+            header_builder=lambda count: _build_list_header(
+                noun="记忆",
+                count=count,
+                status=status,
+                query=query,
+                default_header=f"我这边还记着 {count} 条信息：",
+            ),
+            line_builder=lambda index, item: f"{index}. {item['title']}",
+            followup_hint="你可以直接说“归档第一个”。",
+        )
+    return "这一步已经处理好了。"
+
+
+def _render_list_result(
+    *,
+    result: AssistantExecutionResult,
+    empty_text: str,
+    header_builder: Callable[[int], str],
+    line_builder: Callable[[int, dict[str, str]], str],
+    followup_hint: str,
+) -> str:
+    items = _payload_items(result.payload, "items")
+    if not items:
+        return empty_text
+    lines = [header_builder(len(items))]
+    for index, item in enumerate(items, start=1):
+        lines.append(line_builder(index, item))
+    lines.append(followup_hint)
+    return "\n".join(lines)
+
+
+def _payload_items(payload: dict[str, object], key: str) -> list[dict[str, str]]:
+    raw_items = payload.get(key)
+    if not isinstance(raw_items, list):
+        return []
+    items: list[dict[str, str]] = []
+    for item in raw_items:
+        if isinstance(item, dict):
+            normalized_item: dict[str, str] = {}
+            for item_key, item_value in item.items():
+                if isinstance(item_key, str) and isinstance(item_value, str):
+                    normalized_item[item_key] = item_value
+            if normalized_item:
+                items.append(normalized_item)
+    return items
+
+
+def _format_when(when: object, timezone: object) -> str:
+    if not isinstance(when, str):
+        return "未提供时间"
+    try:
+        parsed = datetime.fromisoformat(when)
+    except ValueError:
+        return when
+    timezone_text = timezone if isinstance(timezone, str) else "本地时区"
+    return f"{parsed.strftime('%Y-%m-%d %H:%M')}（{timezone_text}）"
+
+
+def _optional_str(value: object) -> str | None:
+    return value if isinstance(value, str) else None
+
+
+def _build_list_header(
+    *,
+    noun: str,
+    count: int,
+    status: str | None,
+    query: str | None,
+    default_header: str,
+) -> str:
+    if query:
+        return f"我找到 {count} 个匹配“{query}”的{_build_status_title(noun, status)}："
+    if status and noun != "任务":
+        return f"当前{_build_status_title(noun, status)}有 {count} 个："
+    if status and noun == "任务" and status != "pending":
+        return f"当前{_build_status_title(noun, status)}有 {count} 个："
+    return default_header
+
+
+def _build_status_title(noun: str, status: str | None) -> str:
+    if status == "pending":
+        return f"待办{noun}"
+    if status == "completed":
+        return f"已完成{noun}"
+    if status == "canceled":
+        return f"已取消{noun}"
+    if status == "failed":
+        return f"失败{noun}"
+    if status == "archived":
+        return f"已归档{noun}"
+    if status == "active":
+        return f"活跃{noun}"
+    return noun
+
+
+def _build_filtered_title(noun: str, status: str | None, query: str | None) -> str:
+    title = _build_status_title(noun, status)
+    if query is None:
+        return title
+    return f"匹配“{query}”的{title}"
