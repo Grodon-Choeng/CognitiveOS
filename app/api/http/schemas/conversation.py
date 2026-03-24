@@ -34,3 +34,4 @@ class ConversationMessageResponse(BaseModel):
     handled_by: str | None = None
     reason: str | None = None
     response_text: str | None = None
+    debug: JSONObject | None = None

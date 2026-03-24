@@ -66,7 +66,24 @@ flowchart LR
 - conversation binding 仍放在 `app/infrastructure/conversations/resolver.py`。
 - “这个 / 那个 / 第二个” 这类对象级解析 **只放 application kernel**，不继续往 infrastructure 下沉。
 - reminder workflow、LLM gateway、messaging adapter 维持既有设计，本轮不扩到新的基础设施抽象。
-- `assistant_turn_states` 持久化表暂不引入；P0 仅通过消息审计中的结构化 metadata 复用上一回合状态。
+- `assistant_turn_states` 已作为 infrastructure-level persistence 引入，用来持久化 conversation execution state；消息审计中的 `assistant_turn_state` 继续作为审计快照保留。
+
+## 持久化执行态
+
+assistant kernel 现在会把以下状态写入 `assistant_turn_states`：
+
+- `focused_object_type` / `focused_object_id`
+- `dialogue_mode`
+- `last_action_type` / `last_action_success`
+- `visible_candidates_json`
+- `pending_confirmation_json`
+- `state_json`
+
+读取顺序为：
+
+1. `assistant_turn_states`
+2. 最近消息审计中的 `assistant_turn_state`
+3. 当前会话 working set（overview + failed reminders）
 
 ## 当前支持的主动作
 
@@ -84,7 +101,12 @@ flowchart LR
   - `complete_task`
   - `cancel_task`
   - `cancel_reminder`
+  - `reschedule_reminder`
+  - `retry_failed_reminder`
   - `archive_memory`
+- 转换类
+  - `convert_task_to_reminder`
+  - `convert_reminder_to_task`
 
 ## 当前明确不做
 

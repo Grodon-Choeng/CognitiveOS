@@ -49,6 +49,7 @@ class FakeOverviewService:
                     content="用户喜欢早上九点提醒",
                     created_at=datetime(2026, 3, 22, 8, 0, tzinfo=UTC),
                     status="active",
+                    memory_type="note",
                     conversation_id="conversation-1",
                     session_id="session-1",
                     archived_at=None,

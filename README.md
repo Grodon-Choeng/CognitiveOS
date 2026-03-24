@@ -137,12 +137,17 @@ tests/
 - `取消买药那个提醒`
 - `记一下我不喜欢早上八点前提醒`
 - `看看今天还有什么`
+- `把这个提醒改到明天九点`
+- `这个待办明天早上提醒我`
+- `改成待办`
+- `重试失败提醒`
 
 ### 当前范围说明
 
 - reminder reply continuation 仍保留优先快路径
-- 当前 turn state 先基于 overview + 最近消息审计 metadata 构建，不单独建表
-- `assistant_turn_states`、task/reminder 转换、memory schema 扩展留到后续阶段
+- 当前 turn state 已持久化到 `assistant_turn_states`
+- 已支持 task/reminder 双向转换、失败提醒重试和 conversation debug 返回
+- memory 已支持 `memory_type`、`scope_object_type`、`scope_object_id`、`importance`、`expires_at`
 
 ## 说明
 
@@ -158,6 +163,7 @@ tests/
 - 内部统一消息入口为 `POST /api/v1/conversations/messages`，用于让 Web 与飞书共用同一条 conversation 处理链路。
 - conversation source binding 当前使用数据库唯一约束 + upsert 写入，避免并发场景下为同一来源键写出重复映射。
 - conversation assistant kernel 当前会在入站消息审计 metadata 中附带结构化 `assistant_turn_state`，用于复用上一回合的焦点对象、候选列表和最近动作。
+- assistant turn state 现在也会双写到数据库表 `assistant_turn_states`，用于 webhook / 长连接 / 多轮异步对话下的稳定恢复。
 - 统一审计查询入口为 `GET /api/v1/audit/events`，支持按 `kind`、`conversation_id`、`session_id`、`success`、`channel`、`provider`、`tool_name`、`workflow_type`、时间范围与游标分页查询 `message/model/tool/workflow` 四类事件。
 - 聚合时间线入口为 `GET /api/v1/audit/timeline`，会把 `message/model/tool/workflow` 四类事件按时间混排返回。
 - 聚合时间线的游标当前带有事件类型信息，用于避免不同审计表在同一时间戳下分页时出现跨类型漂移。
@@ -179,6 +185,9 @@ tests/
 - reminder 查询在 conversation 中现在也支持 `查看失败提醒`，便于排查工作流启动失败后留下的提醒记录。
 - conversation 查询现在还支持 `搜索任务 xxx`、`搜索提醒 xxx` 这类关键词检索。
 - memory 列表查询现在还支持 `query` 关键词过滤；conversation 里也支持 `搜索记忆 xxx` 这种读取方式。
+- conversation 现在支持把 task 转成 reminder、把 reminder 改成 task，以及对 failed reminder 发起重试。
+- `POST /api/v1/reminders/{reminder_id}/retry` 已支持对失败提醒进行重试。
+- `POST /api/v1/conversations/messages?debug=true` 会返回 turn state、plan、execution result 等调试信息。
 - 当 conversation 无法识别输入时，也会自动返回一条引导提示，而不是静默无响应。
 - conversation 对话入口现在还支持最小动作类命令：`完成任务` / `取消任务` 会作用于当前会话最近一条 pending task，`归档记忆` 会归档当前会话最近一条 active memory，`取消提醒` 会取消当前会话最近一条 pending reminder。
 - 当这些动作当前没有可操作对象时，系统会直接返回用户可读反馈，而不是静默失败。

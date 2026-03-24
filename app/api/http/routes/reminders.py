@@ -19,6 +19,7 @@ from app.application.reminders.commands import (
     CreateReminderCommand,
     HandleReminderReplyCommand,
     RescheduleReminderCommand,
+    RetryFailedReminderCommand,
 )
 from app.application.reminders.queries import ListRemindersQuery
 
@@ -28,6 +29,8 @@ router = APIRouter(prefix="/reminders", tags=["reminders"])
 @router.get(
     "",
     response_model=ReminderListResponse,
+    response_model_exclude_none=True,
+    response_model_exclude_defaults=True,
     summary="查询提醒列表",
 )
 async def list_reminders(
@@ -55,6 +58,8 @@ async def list_reminders(
 @router.post(
     "",
     response_model=ReminderResponse,
+    response_model_exclude_none=True,
+    response_model_exclude_defaults=True,
     responses={
         404: {"model": ErrorResponse},
         409: {"model": ErrorResponse},
@@ -70,6 +75,7 @@ async def create_reminder(
         text=payload.text,
         remind_at=payload.remind_at,
         timezone=payload.timezone,
+        linked_task_id=payload.linked_task_id,
         conversation_id=payload.conversation_id,
         session_id=payload.session_id,
         source_channel=payload.source_channel,
@@ -88,6 +94,8 @@ async def create_reminder(
 @router.get(
     "/{reminder_id}",
     response_model=ReminderResponse,
+    response_model_exclude_none=True,
+    response_model_exclude_defaults=True,
     responses={404: {"model": ErrorResponse}},
     summary="查询提醒",
 )
@@ -121,6 +129,8 @@ async def reply_to_reminder(
 @router.post(
     "/{reminder_id}/reschedule",
     response_model=ReminderResponse,
+    response_model_exclude_none=True,
+    response_model_exclude_defaults=True,
     responses={
         404: {"model": ErrorResponse},
         409: {"model": ErrorResponse},
@@ -147,6 +157,8 @@ async def reschedule_reminder(
 @router.post(
     "/{reminder_id}/cancel",
     response_model=ReminderResponse,
+    response_model_exclude_none=True,
+    response_model_exclude_defaults=True,
     responses={
         404: {"model": ErrorResponse},
         409: {"model": ErrorResponse},
@@ -159,4 +171,26 @@ async def cancel_reminder(
     service: ReminderServiceDep,
 ) -> ReminderResponse:
     result = await service.cancel_reminder(CancelReminderCommand(reminder_id=reminder_id))
+    return ReminderResponse(**asdict(result))
+
+
+@router.post(
+    "/{reminder_id}/retry",
+    response_model=ReminderResponse,
+    response_model_exclude_none=True,
+    response_model_exclude_defaults=True,
+    responses={
+        404: {"model": ErrorResponse},
+        409: {"model": ErrorResponse},
+        503: {"model": ErrorResponse},
+    },
+    summary="重试失败提醒",
+)
+async def retry_failed_reminder(
+    reminder_id: str,
+    service: ReminderServiceDep,
+) -> ReminderResponse:
+    result = await service.retry_failed_reminder(
+        RetryFailedReminderCommand(reminder_id=reminder_id)
+    )
     return ReminderResponse(**asdict(result))

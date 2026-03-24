@@ -20,6 +20,7 @@ router = APIRouter(prefix="/tasks", tags=["tasks"])
 @router.post(
     "",
     response_model=TaskResponse,
+    response_model_exclude_none=True,
     summary="创建任务",
 )
 async def create_task(
@@ -29,6 +30,9 @@ async def create_task(
     result = await service.create_task(
         CreateTaskCommand(
             title=payload.title,
+            linked_reminder_id=payload.linked_reminder_id,
+            source_type=payload.source_type,
+            source_id=payload.source_id,
             conversation_id=payload.conversation_id,
             session_id=payload.session_id,
             source_channel=payload.source_channel,
@@ -43,6 +47,7 @@ async def create_task(
 @router.get(
     "",
     response_model=TaskListResponse,
+    response_model_exclude_none=True,
     summary="查询任务列表",
 )
 async def list_tasks(
@@ -68,6 +73,7 @@ async def list_tasks(
 @router.get(
     "/{task_id}",
     response_model=TaskResponse,
+    response_model_exclude_none=True,
     responses={404: {"model": ErrorResponse}},
     summary="查询任务",
 )
@@ -82,6 +88,7 @@ async def get_task(
 @router.post(
     "/{task_id}/complete",
     response_model=TaskResponse,
+    response_model_exclude_none=True,
     responses={404: {"model": ErrorResponse}, 409: {"model": ErrorResponse}},
     summary="完成任务",
 )
@@ -96,6 +103,7 @@ async def complete_task(
 @router.post(
     "/{task_id}/cancel",
     response_model=TaskResponse,
+    response_model_exclude_none=True,
     responses={404: {"model": ErrorResponse}, 409: {"model": ErrorResponse}},
     summary="取消任务",
 )

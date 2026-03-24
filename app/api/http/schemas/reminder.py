@@ -10,6 +10,7 @@ class CreateReminderRequest(BaseModel):
     text: str = Field(min_length=1, description="用户输入的提醒原文。")
     remind_at: datetime
     timezone: str = Field(default="UTC")
+    linked_task_id: str | None = Field(default=None, description="关联任务 ID。")
     conversation_id: str | None = Field(default=None, description="内部统一对话 ID。")
     session_id: str | None = Field(default=None, description="内部统一会话 ID。")
     source_channel: str | None = Field(default=None, description="来源渠道。")
@@ -66,6 +67,10 @@ class ReminderResponse(BaseModel):
     remind_at: datetime
     timezone: str
     status: str
+    linked_task_id: str | None = None
+    failure_stage: str | None = None
+    failure_reason_code: str | None = None
+    retryable: bool = True
     conversation_id: str | None = None
     session_id: str | None = None
     workflow_id: str | None = None

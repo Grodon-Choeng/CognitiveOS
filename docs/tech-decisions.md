@@ -249,7 +249,13 @@ AI 系统最怕“看起来做了事，但不知道为什么这么做”。
 - `ConversationContextResolver` 仍只负责 conversation/session binding
 - 对象级引用解析不下沉到 infrastructure
 - 不围绕 Temporal 造新的 workflow facade
-- 不为 turn state 引入单独持久化表，P0 先复用消息审计 metadata
+- 当前已引入 `assistant_turn_states` 持久化表，用于保存多轮对话执行态；消息审计 metadata 继续保留为审计快照
+
+#### 衍生决策
+
+- task / reminder 的互转由 conversation executor 编排，具体持久化字段落在各自 service / repository
+- failed reminder 的恢复不另造新 workflow 抽象，仍直接复用现有 reminder workflow gateway
+- conversation debug 信息通过 `POST /api/v1/conversations/messages?debug=true` 暴露，不单独开辟第二套 handler 链路
 
 ---
 

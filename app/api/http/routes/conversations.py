@@ -1,6 +1,6 @@
 from dataclasses import asdict
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Query
 
 from app.api.http.deps import ConversationServiceDep
 from app.api.http.schemas.conversation import (
@@ -12,10 +12,15 @@ from app.application.conversations.commands import HandleInboundConversationMess
 router = APIRouter(prefix="/conversations", tags=["conversations"])
 
 
-@router.post("/messages", summary="接收内部统一消息入口")
+@router.post(
+    "/messages",
+    summary="接收内部统一消息入口",
+    response_model_exclude_none=True,
+)
 async def receive_conversation_message(
     payload: ConversationMessageRequest,
     service: ConversationServiceDep,
+    debug: bool = Query(default=False),
 ) -> ConversationMessageResponse:
     command = HandleInboundConversationMessageCommand(
         channel=payload.channel,
@@ -29,5 +34,5 @@ async def receive_conversation_message(
         text=payload.text,
         raw_payload=payload.raw_payload or payload.model_dump(mode="json"),
     )
-    result = await service.handle_inbound_message(command)
+    result = await service.handle_inbound_message(command, include_debug=debug)
     return ConversationMessageResponse(**asdict(result))

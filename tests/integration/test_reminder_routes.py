@@ -10,6 +10,7 @@ from app.application.reminders.commands import (
     CreateReminderCommand,
     HandleReminderReplyCommand,
     RescheduleReminderCommand,
+    RetryFailedReminderCommand,
 )
 from app.application.reminders.dto import ReminderDTO, ReminderListDTO, ReminderReplyDTO
 from app.application.reminders.errors import ReminderWorkflowCancelError, ReminderWorkflowStartError
@@ -110,6 +111,19 @@ class FakeReminderService:
             workflow_id="reminder:00000000-0000-0000-0000-000000000001",
         )
 
+    async def retry_failed_reminder(self, command: RetryFailedReminderCommand) -> ReminderDTO:
+        _ = command
+        return ReminderDTO(
+            reminder_id="00000000-0000-0000-0000-000000000003",
+            text="失败提醒恢复",
+            remind_at=datetime(2026, 3, 20, 15, 0, tzinfo=UTC),
+            timezone="Asia/Shanghai",
+            status="pending",
+            conversation_id="conversation-1",
+            session_id="session-1",
+            workflow_id="reminder:00000000-0000-0000-0000-000000000003",
+        )
+
 
 def override_reminder_service() -> FakeReminderService:
     return FakeReminderService()
@@ -140,6 +154,10 @@ class FakeFailingReminderService:
     async def cancel_reminder(self, command: CancelReminderCommand) -> ReminderDTO:
         _ = command
         raise ReminderWorkflowCancelError("提醒工作流取消失败：RuntimeError: Temporal 不可用")
+
+    async def retry_failed_reminder(self, command: RetryFailedReminderCommand) -> ReminderDTO:
+        _ = command
+        raise ReminderWorkflowStartError("失败提醒重试失败：RuntimeError: Temporal 不可用")
 
 
 def override_failing_reminder_service() -> FakeFailingReminderService:
@@ -363,6 +381,20 @@ def test_reschedule_reminder_route_returns_503_when_workflow_restart_fails(app: 
     assert response.json() == {
         "detail": "提醒工作流重新启动失败：RuntimeError: Temporal 不可用",
     }
+
+
+def test_retry_failed_reminder_route_returns_structured_response(app: FastAPI) -> None:
+    app.dependency_overrides[get_reminder_service] = override_reminder_service
+
+    try:
+        with TestClient(app) as client:
+            response = client.post("/api/v1/reminders/00000000-0000-0000-0000-000000000003/retry")
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json()["reminder_id"] == "00000000-0000-0000-0000-000000000003"
+    assert response.json()["status"] == "pending"
 
 
 def test_create_reminder_route_rejects_dispatch_thread_without_chat(app: FastAPI) -> None:

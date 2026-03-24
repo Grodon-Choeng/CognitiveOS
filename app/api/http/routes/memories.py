@@ -20,6 +20,8 @@ router = APIRouter(prefix="/memories", tags=["memories"])
 @router.post(
     "",
     response_model=MemoryResponse,
+    response_model_exclude_none=True,
+    response_model_exclude_defaults=True,
     responses={404: {"model": ErrorResponse}},
     summary="写入记忆",
 )
@@ -30,12 +32,17 @@ async def create_memory(
     result = await service.create_memory(
         CreateMemoryCommand(
             content=payload.content,
+            memory_type=payload.memory_type,
             conversation_id=payload.conversation_id,
             session_id=payload.session_id,
             source_channel=payload.source_channel,
             source_user_id=payload.source_user_id,
             source_chat_id=payload.source_chat_id,
             source_thread_id=payload.source_thread_id,
+            scope_object_type=payload.scope_object_type,
+            scope_object_id=payload.scope_object_id,
+            importance=payload.importance,
+            expires_at=payload.expires_at,
         )
     )
     return MemoryResponse(**asdict(result))
@@ -44,6 +51,8 @@ async def create_memory(
 @router.get(
     "",
     response_model=MemoryListResponse,
+    response_model_exclude_none=True,
+    response_model_exclude_defaults=True,
     summary="查询记忆列表",
 )
 async def list_memories(
@@ -69,6 +78,8 @@ async def list_memories(
 @router.get(
     "/{memory_id}",
     response_model=MemoryResponse,
+    response_model_exclude_none=True,
+    response_model_exclude_defaults=True,
     responses={404: {"model": ErrorResponse}},
     summary="查询记忆",
 )
@@ -83,6 +94,8 @@ async def get_memory(
 @router.post(
     "/{memory_id}/archive",
     response_model=MemoryResponse,
+    response_model_exclude_none=True,
+    response_model_exclude_defaults=True,
     responses={404: {"model": ErrorResponse}, 409: {"model": ErrorResponse}},
     summary="归档记忆",
 )

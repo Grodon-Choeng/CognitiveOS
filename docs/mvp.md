@@ -47,6 +47,7 @@ P0 目标：把当前会话入口升级成 `state -> plan -> resolve -> execute 
 - 列表回复后，下一轮能解析“第二个”“那个”
 - reminder reply continuation 快路径不回退
 - 消息审计保留，并带上结构化 turn state
+- 当前这些能力已经落地完成
 
 ## P1
 
@@ -57,6 +58,12 @@ P1 目标：把“助手感”做出来
 - 支持 task / reminder 转换动作
 - 增加最小澄清与确认机制
 
+### 当前进度
+
+- 已支持 `这个 / 那个 / 刚才那个 / 第一个 / 第二个 / 最后一个 / 另一个`
+- 已支持 `convert_task_to_reminder` / `convert_reminder_to_task`
+- 已支持最小 confirmation / disambiguation 持久化
+
 ## P2
 
 P2 目标：把可用性与恢复能力做扎实
@@ -64,6 +71,12 @@ P2 目标：把可用性与恢复能力做扎实
 - 执行态持久化（例如 `assistant_turn_states`）
 - 失败恢复与重试动作
 - 更完整的 conversation behavior tests / resolver tests / renderer tests
+
+### 当前进度
+
+- `assistant_turn_states` 已落地
+- failed reminder retry 已落地
+- conversation / resolver / renderer / recovery 回归测试已补齐
 
 ## 当前非目标
 
