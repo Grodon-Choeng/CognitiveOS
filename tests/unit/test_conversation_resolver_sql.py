@@ -21,5 +21,5 @@ def test_binding_upsert_statement_uses_conflict_update() -> None:
         )
     )
 
-    assert 'ON CONFLICT (channel, user_identity, chat_id, thread_id)' in compiled
+    assert "ON CONFLICT (channel, user_identity, chat_id, thread_id)" in compiled
     assert "DO UPDATE SET" in compiled

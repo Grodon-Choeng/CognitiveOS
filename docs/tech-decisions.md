@@ -211,6 +211,48 @@ AI 系统最怕“看起来做了事，但不知道为什么这么做”。
 
 ---
 
+### 3.9 Assistant Execution Kernel
+
+#### 决策
+
+- 在 `app/application/conversations/kernel/` 内建立 assistant execution kernel
+- conversation 主链路采用：
+  - `resolve context`
+  - `build turn state`
+  - `plan`
+  - `resolve target`
+  - `execute`
+  - `render`
+  - `record`
+- reminder continuation 继续保留优先快路径
+
+#### 选择理由
+
+当前 conversation 入口已经不仅是“分类后调一个 service”，而是需要解决：
+
+- 当前回合上下文组装
+- 对象引用解析
+- 动作规划归一化
+- 执行结果结构化
+- 回复自然语言渲染
+
+如果继续把这些逻辑混在单个 handler 里，会导致：
+
+- 理解、执行、回复强耦合
+- task/reminder/memory 只能平行发展，不能共享“助手”的交互体验
+- `这个 / 那个 / 第二个` 这类高频表达无法稳定演进
+
+因此 conversation 需要一个清晰的 application-layer kernel，而不是继续堆叠更大的 if/else handler。
+
+#### 边界约束
+
+- `ConversationContextResolver` 仍只负责 conversation/session binding
+- 对象级引用解析不下沉到 infrastructure
+- 不围绕 Temporal 造新的 workflow facade
+- 不为 turn state 引入单独持久化表，P0 先复用消息审计 metadata
+
+---
+
 ## 4. 最终架构立场
 
 可以概括成一句话：

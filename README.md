@@ -6,6 +6,10 @@ CognitiveOS 是一个面向个人助理场景的 AI-native 模块化单体后端
 
 `reminder creation` → `persistence` → `Temporal workflow bootstrap` → `message sending adapter contract` → `user reply continuation path`
 
+当前 conversation 主链路已升级为 assistant execution kernel：
+
+`resolve context` → `build turn state` → `plan` → `resolve target` → `execute` → `render` → `record`
+
 ## 当前技术基线
 
 - Web 层：`FastAPI`
@@ -114,6 +118,32 @@ tests/
   workflow/
 ```
 
+## Assistant Execution Kernel（P0）
+
+当前 `app/application/conversations/kernel/` 负责 assistant 对话执行内核，重点先把这三件事做好：
+
+- `ReferenceResolver`
+  - 统一解析 `这个 / 那个 / 第二个 / 买药那个`
+- `ActionPlan -> Executor`
+  - 把理解、执行、回复拆开，不再在一个 handler 里硬编码到底
+- `AssistantResponseRenderer`
+  - 把回复从“接口感”改成更自然的助手表达
+
+### 当前支持的话术示例
+
+- `明天早上九点提醒我打卡`
+- `查看待办`
+- `完成第二个`
+- `取消买药那个提醒`
+- `记一下我不喜欢早上八点前提醒`
+- `看看今天还有什么`
+
+### 当前范围说明
+
+- reminder reply continuation 仍保留优先快路径
+- 当前 turn state 先基于 overview + 最近消息审计 metadata 构建，不单独建表
+- `assistant_turn_states`、task/reminder 转换、memory schema 扩展留到后续阶段
+
 ## 说明
 
 - 当前配置会默认读取 `.env`，因此复制完成后即可直接本地运行。
@@ -127,11 +157,13 @@ tests/
 - 飞书也支持通过长连接接收入站事件，入口命令为 `make feishu-longconn`。
 - 内部统一消息入口为 `POST /api/v1/conversations/messages`，用于让 Web 与飞书共用同一条 conversation 处理链路。
 - conversation source binding 当前使用数据库唯一约束 + upsert 写入，避免并发场景下为同一来源键写出重复映射。
+- conversation assistant kernel 当前会在入站消息审计 metadata 中附带结构化 `assistant_turn_state`，用于复用上一回合的焦点对象、候选列表和最近动作。
 - 统一审计查询入口为 `GET /api/v1/audit/events`，支持按 `kind`、`conversation_id`、`session_id`、`success`、`channel`、`provider`、`tool_name`、`workflow_type`、时间范围与游标分页查询 `message/model/tool/workflow` 四类事件。
 - 聚合时间线入口为 `GET /api/v1/audit/timeline`，会把 `message/model/tool/workflow` 四类事件按时间混排返回。
 - 聚合时间线的游标当前带有事件类型信息，用于避免不同审计表在同一时间戳下分页时出现跨类型漂移。
 - 当前最小入站续执行逻辑：仅对飞书 `p2p` 文本消息生效，并按 `sender_open_id` 关联该用户最近一个 `pending` reminder。
 - conversation intent 当前改为 `LLM 优先、规则兜底`：若配置了 `COGNITIVE_OS_CONVERSATION_INTENT_MODEL`，会优先走 `llm_gateway` 做 reminder/task/memory 意图识别；`COGNITIVE_OS_CONVERSATION_LLM_PROVIDER=openai` 时需要 `COGNITIVE_OS_OPENAI_API_KEY`，`local` 时使用 `COGNITIVE_OS_LOCAL_LLM_BASE_URL`；未配置或模型失败时再退回显式规则。
+- 在 assistant kernel 内部，当前规划阶段会优先尝试显式规则快路径，再复用已有 classifier 与 fallback responder。
 - reminder 的规则兜底当前保持收敛：只覆盖显式、低歧义的输入，例如 `提醒：2026-03-24T09:00:00+08:00 开会`；更自然的时间表达默认优先交给 `LLM` 处理。
 - 当前 reminder create / list / get / reply / cancel 路由已接入 application service，可用于最小 reminder 生命周期闭环验证。
 - 已支持 `GET /api/v1/reminders` 查看提醒列表、`GET /api/v1/reminders/{reminder_id}` 查询状态，以及 `POST /api/v1/reminders/{reminder_id}/cancel` 主动取消 pending reminder。
@@ -158,3 +190,4 @@ tests/
 - reminder 创建阶段若 Temporal 工作流启动失败，当前会把 reminder 标记为 `failed`，并通过 HTTP `503` 返回错误，避免留下“仍是 pending 但实际不可继续”的脏状态。
 - 数据库、Temporal、消息发送适配器都已补齐骨架与契约，后续可在此基础上继续实现。
 - 更详细的技术立场见 `docs/tech-decisions.md`。
+- assistant conversation 结构与分期范围见 `docs/architecture.md` 与 `docs/mvp.md`。

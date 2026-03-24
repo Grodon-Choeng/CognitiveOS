@@ -1,19 +1,31 @@
 import json
 import logging
+from dataclasses import dataclass
 from datetime import datetime
 from time import perf_counter
-from typing import Protocol
+from typing import Protocol, cast
 
 from app.application.audit.dto import AuditEventPageDTO
 from app.application.conversations.commands import HandleInboundConversationMessageCommand
 from app.application.conversations.dto import ConversationInboundResult
-from app.application.conversations.handlers import ConversationInboundHandler
+from app.application.conversations.kernel.plans import AssistantActionPlan
+from app.application.conversations.kernel.results import (
+    AssistantConfirmationResult,
+    AssistantDisambiguationResult,
+    AssistantExecutionResult,
+)
+from app.application.conversations.kernel.state import AssistantTurnContext
 from app.application.conversations.ports import ConversationContextResolver
 from app.infrastructure.llm.gateway import LLMGateway
 from app.infrastructure.llm.models import GenerateRequest
+from app.infrastructure.types import JSONObject, JSONValue
 from app.observability.message_events import MessageEventRecord, MessageEventRecorder
 
 logger = logging.getLogger(__name__)
+
+ConversationExecutionResult = (
+    AssistantExecutionResult | AssistantDisambiguationResult | AssistantConfirmationResult | None
+)
 
 
 class ConversationMessageHistoryReader(Protocol):
@@ -33,6 +45,62 @@ class ConversationMessageHistoryReader(Protocol):
         cursor: str | None = None,
         limit: int = 50,
     ) -> AuditEventPageDTO: ...
+
+
+class ReminderFastPathHandler(Protocol):
+    async def handle(
+        self,
+        command: HandleInboundConversationMessageCommand,
+        *,
+        conversation_id: str,
+        session_id: str,
+    ) -> ConversationInboundResult | None: ...
+
+
+class TurnContextBuilder(Protocol):
+    async def build(
+        self,
+        *,
+        conversation_id: str,
+        session_id: str,
+        latest_user_text: str | None,
+    ) -> AssistantTurnContext: ...
+
+
+class ConversationPlanner(Protocol):
+    async def plan(
+        self,
+        command: HandleInboundConversationMessageCommand,
+        *,
+        turn_context: AssistantTurnContext,
+    ) -> AssistantActionPlan: ...
+
+
+class ConversationExecutor(Protocol):
+    async def execute(
+        self,
+        plan: AssistantActionPlan,
+        *,
+        command: HandleInboundConversationMessageCommand,
+        turn_context: AssistantTurnContext,
+    ) -> ConversationExecutionResult: ...
+
+
+class ConversationRenderer(Protocol):
+    def render(
+        self,
+        result: AssistantExecutionResult
+        | AssistantDisambiguationResult
+        | AssistantConfirmationResult,
+        *,
+        turn_context: AssistantTurnContext,
+    ) -> str: ...
+
+
+@dataclass(slots=True, frozen=True)
+class _ConversationTurnOutcome:
+    result: ConversationInboundResult
+    assistant_turn_state: JSONObject | None = None
 
 
 class LLMConversationFallbackResponder:
@@ -136,14 +204,23 @@ class LLMConversationFallbackResponder:
 class ConversationApplicationService:
     def __init__(
         self,
+        *,
         conversation_context_resolver: ConversationContextResolver,
         message_event_recorder: MessageEventRecorder,
-        handlers: list[ConversationInboundHandler],
+        reminder_handler: ReminderFastPathHandler,
+        turn_context_builder: TurnContextBuilder,
+        planner: ConversationPlanner,
+        executor: ConversationExecutor,
+        renderer: ConversationRenderer,
         fallback_responder: LLMConversationFallbackResponder | None = None,
     ) -> None:
         self.conversation_context_resolver = conversation_context_resolver
         self.message_event_recorder = message_event_recorder
-        self.handlers = handlers
+        self.reminder_handler = reminder_handler
+        self.turn_context_builder = turn_context_builder
+        self.planner = planner
+        self.executor = executor
+        self.renderer = renderer
         self.fallback_responder = fallback_responder
 
     async def handle_inbound_message(
@@ -159,7 +236,7 @@ class ConversationApplicationService:
         started_at = perf_counter()
 
         try:
-            result = await self._dispatch_to_handlers(
+            outcome = await self._handle_with_kernel(
                 command=command,
                 conversation_id=conversation_context.conversation_id,
                 session_id=conversation_context.session_id,
@@ -178,6 +255,7 @@ class ConversationApplicationService:
                     error_code=type(exc).__name__,
                     error_message=str(exc),
                     latency_ms=(perf_counter() - started_at) * 1000,
+                    assistant_turn_state=None,
                 )
             )
             raise
@@ -187,33 +265,79 @@ class ConversationApplicationService:
                 command=command,
                 conversation_id=conversation_context.conversation_id,
                 session_id=conversation_context.session_id,
-                handled=result.handled,
-                handled_by=result.handled_by,
-                reason=result.reason,
-                response_text=result.response_text,
+                handled=outcome.result.handled,
+                handled_by=outcome.result.handled_by,
+                reason=outcome.result.reason,
+                response_text=outcome.result.response_text,
                 success=True,
                 error_code=None,
                 error_message=None,
                 latency_ms=(perf_counter() - started_at) * 1000,
+                assistant_turn_state=outcome.assistant_turn_state,
             )
         )
-        return result
+        return outcome.result
 
-    async def _dispatch_to_handlers(
+    async def _handle_with_kernel(
         self,
         *,
         command: HandleInboundConversationMessageCommand,
         conversation_id: str,
         session_id: str,
-    ) -> ConversationInboundResult:
-        for handler in self.handlers:
-            result = await handler.handle(
-                command,
+    ) -> _ConversationTurnOutcome:
+        reminder_result = await self.reminder_handler.handle(
+            command,
+            conversation_id=conversation_id,
+            session_id=session_id,
+        )
+        if reminder_result is not None and reminder_result.handled:
+            return _ConversationTurnOutcome(
+                result=reminder_result,
+                assistant_turn_state={
+                    "dialogue_mode": "normal",
+                    "last_assistant_action": {
+                        "action_type": "reply_reminder",
+                        "success": True,
+                        "object_type": "reminder",
+                        "object_id": None,
+                        "summary": reminder_result.response_text or "提醒续执行已完成",
+                    },
+                },
+            )
+
+        turn_context = await self.turn_context_builder.build(
+            conversation_id=conversation_id,
+            session_id=session_id,
+            latest_user_text=command.text,
+        )
+        plan = await self.planner.plan(command, turn_context=turn_context)
+        execution_result = await self.executor.execute(
+            plan,
+            command=command,
+            turn_context=turn_context,
+        )
+        if execution_result is not None:
+            response_text = self.renderer.render(execution_result, turn_context=turn_context)
+            result = ConversationInboundResult(
+                handled=True,
                 conversation_id=conversation_id,
                 session_id=session_id,
+                handled_by=_handled_by_for_action(plan.action),
+                reason=_reason_for_result(
+                    plan.intent,
+                    plan.action,
+                    plan.reasoning,
+                    execution_result,
+                ),
+                response_text=response_text,
             )
-            if result is not None and result.handled:
-                return result
+            return _ConversationTurnOutcome(
+                result=result,
+                assistant_turn_state=_build_assistant_turn_state(
+                    plan_action=plan.action,
+                    execution_result=execution_result,
+                ),
+            )
 
         if self.fallback_responder is not None:
             fallback_reply = await self.fallback_responder.generate_reply(
@@ -222,26 +346,50 @@ class ConversationApplicationService:
                 session_id=session_id,
             )
             if fallback_reply is not None:
-                return ConversationInboundResult(
-                    handled=True,
-                    conversation_id=conversation_id,
-                    session_id=session_id,
-                    handled_by="conversation",
-                    reason="llm_fallback_replied",
-                    response_text=fallback_reply,
+                return _ConversationTurnOutcome(
+                    result=ConversationInboundResult(
+                        handled=True,
+                        conversation_id=conversation_id,
+                        session_id=session_id,
+                        handled_by="conversation",
+                        reason="llm_fallback_replied",
+                        response_text=fallback_reply,
+                    ),
+                    assistant_turn_state={
+                        "dialogue_mode": "normal",
+                        "last_assistant_action": {
+                            "action_type": "llm_fallback_reply",
+                            "success": True,
+                            "object_type": None,
+                            "object_id": None,
+                            "summary": fallback_reply,
+                        },
+                    },
                 )
 
-        return ConversationInboundResult(
-            handled=False,
-            conversation_id=conversation_id,
-            session_id=session_id,
-            handled_by=None,
-            reason="no_handler_accepted",
-            response_text=(
-                "我还没听懂这句话，但我可以帮你记提醒、建待办、记住信息，"
-                "也能帮你查看概览、提醒、待办和记忆。"
-                "你也可以直接问我“你可以帮我做什么”。"
+        return _ConversationTurnOutcome(
+            result=ConversationInboundResult(
+                handled=False,
+                conversation_id=conversation_id,
+                session_id=session_id,
+                handled_by=None,
+                reason="no_handler_accepted",
+                response_text=(
+                    "我还没听懂这句话，但我可以帮你记提醒、建待办、记住信息，"
+                    "也能帮你查看概览、提醒、待办和记忆。"
+                    "你也可以直接问我“你可以帮我做什么”。"
+                ),
             ),
+            assistant_turn_state={
+                "dialogue_mode": "normal",
+                "last_assistant_action": {
+                    "action_type": "default_guidance_reply",
+                    "success": True,
+                    "object_type": None,
+                    "object_id": None,
+                    "summary": "未命中能力，返回引导说明。",
+                },
+            },
         )
 
 
@@ -258,7 +406,16 @@ def _build_inbound_record(
     error_code: str | None,
     error_message: str | None,
     latency_ms: float,
+    assistant_turn_state: JSONObject | None,
 ) -> MessageEventRecord:
+    metadata: JSONObject = {
+        "handled": handled,
+        "handled_by": handled_by,
+        "reason": reason,
+        "response_text": response_text,
+    }
+    if assistant_turn_state is not None:
+        metadata["assistant_turn_state"] = assistant_turn_state
     return MessageEventRecord.create(
         direction="inbound",
         channel=command.channel,
@@ -280,12 +437,7 @@ def _build_inbound_record(
         error_code=error_code,
         error_message=error_message,
         raw_payload=command.raw_payload,
-        metadata={
-            "handled": handled,
-            "handled_by": handled_by,
-            "reason": reason,
-            "response_text": response_text,
-        },
+        metadata=metadata,
     )
 
 
@@ -335,3 +487,134 @@ def _parse_fallback_reply(content: str) -> str | None:
         return None
     cleaned = reply_text.strip()
     return cleaned or None
+
+
+def _handled_by_for_action(action: str | None) -> str | None:
+    if action in {"create_task", "list_tasks", "complete_task", "cancel_task"}:
+        return "task"
+    if action in {"create_reminder", "list_reminders", "cancel_reminder"}:
+        return "reminder"
+    if action in {"create_memory", "list_memories", "archive_memory"}:
+        return "memory"
+    if action in {"show_overview", "show_activity"}:
+        return "overview"
+    if action in {"reply_greeting", "show_help"}:
+        return "conversation"
+    return None
+
+
+def _reason_for_result(
+    intent: str,
+    action: str | None,
+    reasoning: str | None,
+    result: AssistantExecutionResult | AssistantDisambiguationResult | AssistantConfirmationResult,
+) -> str:
+    source = reasoning if reasoning in {"rules", "llm"} else "kernel"
+    if isinstance(result, AssistantDisambiguationResult):
+        return f"{action or 'conversation'}_needs_disambiguation"
+    if isinstance(result, AssistantConfirmationResult):
+        return f"{action or 'conversation'}_needs_confirmation"
+    if not result.success:
+        return f"{intent}_feedback"
+    action_reason_map = {
+        "reply_greeting": f"greeting_replied_via_{source}",
+        "show_help": f"help_shown_via_{source}",
+        "create_task": f"task_created_via_{source}",
+        "list_tasks": f"task_listed_via_{source}",
+        "complete_task": f"task_completed_via_{source}",
+        "cancel_task": f"task_canceled_via_{source}",
+        "create_reminder": f"reminder_created_via_{source}",
+        "cancel_reminder": f"reminder_canceled_via_{source}",
+        "list_reminders": f"reminder_listed_via_{source}",
+        "create_memory": f"memory_created_via_{source}",
+        "archive_memory": f"memory_archived_via_{source}",
+        "list_memories": f"memory_listed_via_{source}",
+        "show_overview": f"overview_shown_via_{source}",
+        "show_activity": f"activity_shown_via_{source}",
+    }
+    return action_reason_map.get(result.action, f"{intent}_handled")
+
+
+def _build_assistant_turn_state(
+    *,
+    plan_action: str | None,
+    execution_result: AssistantExecutionResult
+    | AssistantDisambiguationResult
+    | AssistantConfirmationResult,
+) -> JSONObject:
+    if isinstance(execution_result, AssistantDisambiguationResult):
+        return {
+            "dialogue_mode": "disambiguation",
+            "visible_candidates": [
+                {
+                    "object_type": candidate.get("object_type"),
+                    "object_id": candidate.get("object_id"),
+                    "title": candidate.get("title"),
+                    "score": 0.8,
+                }
+                for candidate in execution_result.candidates
+                if isinstance(candidate, dict)
+            ],
+            "last_assistant_action": {
+                "action_type": plan_action or "disambiguation",
+                "success": True,
+                "object_type": None,
+                "object_id": None,
+                "summary": execution_result.prompt,
+            },
+        }
+    if isinstance(execution_result, AssistantConfirmationResult):
+        return {
+            "dialogue_mode": "confirmation",
+            "last_assistant_action": {
+                "action_type": execution_result.confirm_action,
+                "success": True,
+                "object_type": None,
+                "object_id": None,
+                "summary": execution_result.preview_text or execution_result.prompt,
+            },
+        }
+
+    state: JSONObject = {
+        "dialogue_mode": "normal",
+        "last_assistant_action": {
+            "action_type": execution_result.action,
+            "success": execution_result.success,
+            "object_type": execution_result.object_type,
+            "object_id": execution_result.object_id,
+            "summary": execution_result.object_title or execution_result.message_hint,
+        },
+    }
+    if execution_result.object_type is not None and execution_result.object_id is not None:
+        state["focused_object"] = {
+            "object_type": execution_result.object_type,
+            "object_id": execution_result.object_id,
+            "title": execution_result.object_title,
+        }
+    visible_candidates = _extract_visible_candidates(execution_result)
+    if visible_candidates:
+        state["visible_candidates"] = cast(JSONValue, visible_candidates)
+    return state
+
+
+def _extract_visible_candidates(execution_result: AssistantExecutionResult) -> list[JSONObject]:
+    payload_items = execution_result.payload.get("items")
+    if not isinstance(payload_items, list):
+        return []
+    candidates: list[JSONObject] = []
+    for item in payload_items:
+        if not isinstance(item, dict):
+            continue
+        object_type = item.get("object_type")
+        object_id = item.get("object_id")
+        title = item.get("title")
+        if isinstance(object_type, str) and isinstance(object_id, str) and isinstance(title, str):
+            candidates.append(
+                {
+                    "object_type": object_type,
+                    "object_id": object_id,
+                    "title": title,
+                    "score": 0.9,
+                }
+            )
+    return candidates

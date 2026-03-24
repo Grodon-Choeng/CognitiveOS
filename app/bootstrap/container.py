@@ -7,6 +7,11 @@ from app.application.conversations.intent_handler import (
     IntentConversationHandler,
     LLMFirstConversationIntentClassifier,
 )
+from app.application.conversations.kernel.executor import AssistantExecutor
+from app.application.conversations.kernel.planner import AssistantActionPlanner
+from app.application.conversations.kernel.renderer import AssistantResponseRenderer
+from app.application.conversations.kernel.resolver import ReferenceResolver
+from app.application.conversations.kernel.state import AssistantTurnContextBuilder
 from app.application.conversations.service import (
     ConversationApplicationService,
     LLMConversationFallbackResponder,
@@ -299,16 +304,84 @@ class ApplicationProvider(Provider):
         )
 
     @provide(scope=Scope.APP)
+    def provide_reference_resolver(self) -> ReferenceResolver:
+        return ReferenceResolver()
+
+    @provide(scope=Scope.APP)
+    def provide_turn_context_builder(
+        self,
+        overview_service: OverviewApplicationService,
+        audit_service: AuditQueryService,
+    ) -> AssistantTurnContextBuilder:
+        return AssistantTurnContextBuilder(
+            overview_service=overview_service,
+            history_reader=audit_service,
+        )
+
+    @provide(scope=Scope.APP)
+    def provide_assistant_action_planner(
+        self,
+        conversation_intent_classifier: LLMFirstConversationIntentClassifier,
+    ) -> AssistantActionPlanner:
+        return AssistantActionPlanner(classifier=conversation_intent_classifier)
+
+    @provide(scope=Scope.APP)
+    def provide_assistant_executor(
+        self,
+        task_service: TaskApplicationService,
+        reminder_service: ReminderApplicationService,
+        memory_service: MemoryApplicationService,
+        overview_service: OverviewApplicationService,
+        reference_resolver: ReferenceResolver,
+    ) -> AssistantExecutor:
+        return AssistantExecutor(
+            task_service=task_service,
+            reminder_service=reminder_service,
+            memory_service=memory_service,
+            overview_service=overview_service,
+            resolver=reference_resolver,
+        )
+
+    @provide(scope=Scope.APP)
+    def provide_assistant_response_renderer(self) -> AssistantResponseRenderer:
+        return AssistantResponseRenderer()
+
+    @provide(scope=Scope.APP)
+    def provide_legacy_intent_handler(
+        self,
+        conversation_intent_classifier: LLMFirstConversationIntentClassifier,
+        task_service: TaskApplicationService,
+        memory_service: MemoryApplicationService,
+        reminder_service: ReminderApplicationService,
+        overview_service: OverviewApplicationService,
+        turn_context_builder: AssistantTurnContextBuilder,
+        assistant_action_planner: AssistantActionPlanner,
+        assistant_executor: AssistantExecutor,
+        assistant_response_renderer: AssistantResponseRenderer,
+    ) -> IntentConversationHandler:
+        return IntentConversationHandler(
+            classifier=conversation_intent_classifier,
+            task_service=task_service,
+            memory_service=memory_service,
+            reminder_service=reminder_service,
+            overview_service=overview_service,
+            turn_context_builder=turn_context_builder,
+            planner=assistant_action_planner,
+            executor=assistant_executor,
+            renderer=assistant_response_renderer,
+        )
+
+    @provide(scope=Scope.APP)
     def provide_conversation_service(
         self,
         conversation_context_resolver: SqlAlchemyConversationContextResolver,
         message_event_recorder: MultiMessageEventRecorder,
         audit_service: AuditQueryService,
         reminder_service: ReminderApplicationService,
-        conversation_intent_classifier: LLMFirstConversationIntentClassifier,
-        task_service: TaskApplicationService,
-        memory_service: MemoryApplicationService,
-        overview_service: OverviewApplicationService,
+        turn_context_builder: AssistantTurnContextBuilder,
+        assistant_action_planner: AssistantActionPlanner,
+        assistant_executor: AssistantExecutor,
+        assistant_response_renderer: AssistantResponseRenderer,
         settings: Settings,
         model_invocation_recorder: MultiModelInvocationRecorder,
     ) -> ConversationApplicationService:
@@ -319,16 +392,11 @@ class ApplicationProvider(Provider):
         return ConversationApplicationService(
             conversation_context_resolver=conversation_context_resolver,
             message_event_recorder=message_event_recorder,
-            handlers=[
-                ReminderConversationHandler(reminder_service),
-                IntentConversationHandler(
-                    classifier=conversation_intent_classifier,
-                    task_service=task_service,
-                    memory_service=memory_service,
-                    reminder_service=reminder_service,
-                    overview_service=overview_service,
-                ),
-            ],
+            reminder_handler=ReminderConversationHandler(reminder_service),
+            turn_context_builder=turn_context_builder,
+            planner=assistant_action_planner,
+            executor=assistant_executor,
+            renderer=assistant_response_renderer,
             fallback_responder=LLMConversationFallbackResponder(
                 llm_gateway=llm_gateway,
                 model=settings.conversation_intent_model,

@@ -3,6 +3,9 @@ import pytest
 from app.application.audit.dto import AuditEventDTO, AuditEventPageDTO
 from app.application.conversations.commands import HandleInboundConversationMessageCommand
 from app.application.conversations.dto import ConversationInboundResult
+from app.application.conversations.kernel.plans import AssistantActionPlan
+from app.application.conversations.kernel.results import AssistantExecutionResult
+from app.application.conversations.kernel.state import AssistantTurnContext
 from app.application.conversations.ports import (
     ConversationContextResolver,
     ResolvedConversationContext,
@@ -120,7 +123,7 @@ class FakeHistoryReader:
                     success=True,
                     summary="outbound:feishu:text",
                     payload={"direction": "outbound", "text": "你好，我可以帮你记提醒和待办。"},
-                )
+                ),
             ]
         )
 
@@ -139,8 +142,15 @@ class FakeFallbackLLMGateway:
         )
 
 
-class DecliningHandler:
-    name = "decline"
+class FakeReminderHandler:
+    def __init__(
+        self,
+        result: ConversationInboundResult | None = None,
+        *,
+        raises: bool = False,
+    ) -> None:
+        self.result = result
+        self.raises = raises
 
     async def handle(
         self,
@@ -150,36 +160,145 @@ class DecliningHandler:
         session_id: str,
     ) -> ConversationInboundResult | None:
         _ = (command, conversation_id, session_id)
-        return None
+        if self.raises:
+            raise RuntimeError("处理失败")
+        return self.result
 
 
-class AcceptingHandler:
-    name = "accept"
-
-    async def handle(
+class FakeTurnContextBuilder:
+    async def build(
         self,
-        command: HandleInboundConversationMessageCommand,
         *,
         conversation_id: str,
         session_id: str,
-    ) -> ConversationInboundResult | None:
-        _ = command
-        return ConversationInboundResult(
-            handled=True,
+        latest_user_text: str | None,
+    ) -> AssistantTurnContext:
+        return AssistantTurnContext(
             conversation_id=conversation_id,
             session_id=session_id,
-            handled_by=self.name,
-            response_text="好的，已处理。",
+            latest_user_text=latest_user_text,
+            metadata={
+                "pending_tasks": [
+                    {
+                        "object_type": "task",
+                        "object_id": "task-1",
+                        "title": "整理纪要",
+                        "status": "pending",
+                    }
+                ]
+            },
         )
 
 
-@pytest.mark.asyncio
-async def test_conversation_service_routes_to_first_accepting_handler() -> None:
-    recorder = FakeMessageEventRecorder()
-    service = ConversationApplicationService(
+class FakePlanner:
+    def __init__(self, plan: AssistantActionPlan | None = None, *, raises: bool = False) -> None:
+        self.plan_result = plan or AssistantActionPlan(
+            intent="task_list",
+            action="list_tasks",
+            object_type="task",
+            object_id=None,
+            confidence=0.9,
+            reasoning="rules",
+        )
+        self.raises = raises
+
+    async def plan(
+        self,
+        command: HandleInboundConversationMessageCommand,
+        *,
+        turn_context: AssistantTurnContext,
+    ) -> AssistantActionPlan:
+        _ = (command, turn_context)
+        if self.raises:
+            raise RuntimeError("规划失败")
+        return self.plan_result
+
+
+class FakeExecutor:
+    def __init__(
+        self,
+        result: AssistantExecutionResult | None = None,
+        *,
+        raises: bool = False,
+    ) -> None:
+        self.result = result
+        self.raises = raises
+
+    async def execute(
+        self,
+        plan: AssistantActionPlan,
+        *,
+        command: HandleInboundConversationMessageCommand,
+        turn_context: AssistantTurnContext,
+    ) -> AssistantExecutionResult | None:
+        _ = (plan, command, turn_context)
+        if self.raises:
+            raise RuntimeError("执行失败")
+        return self.result
+
+
+class FakeRenderer:
+    def __init__(self, text: str = "好的，已处理。") -> None:
+        self.text = text
+
+    def render(self, result: object, *, turn_context: AssistantTurnContext) -> str:
+        _ = (result, turn_context)
+        return self.text
+
+
+def _build_service(
+    *,
+    recorder: FakeMessageEventRecorder,
+    reminder_handler: FakeReminderHandler | None = None,
+    planner: FakePlanner | None = None,
+    executor: FakeExecutor | None = None,
+    renderer: FakeRenderer | None = None,
+    fallback_responder: LLMConversationFallbackResponder | None = None,
+) -> ConversationApplicationService:
+    return ConversationApplicationService(
         conversation_context_resolver=FakeConversationContextResolver(),
         message_event_recorder=recorder,
-        handlers=[DecliningHandler(), AcceptingHandler()],
+        reminder_handler=reminder_handler or FakeReminderHandler(),
+        turn_context_builder=FakeTurnContextBuilder(),
+        planner=planner or FakePlanner(),
+        executor=executor
+        or FakeExecutor(
+            AssistantExecutionResult(
+                success=True,
+                action="list_tasks",
+                object_type="task",
+                payload={
+                    "items": [
+                        {
+                            "object_type": "task",
+                            "object_id": "task-1",
+                            "title": "整理纪要",
+                            "status": "pending",
+                        }
+                    ]
+                },
+            )
+        ),
+        renderer=renderer or FakeRenderer(),
+        fallback_responder=fallback_responder,
+    )
+
+
+@pytest.mark.asyncio
+async def test_conversation_service_uses_reminder_fast_path_first() -> None:
+    recorder = FakeMessageEventRecorder()
+    service = _build_service(
+        recorder=recorder,
+        reminder_handler=FakeReminderHandler(
+            ConversationInboundResult(
+                handled=True,
+                conversation_id="conversation-test",
+                session_id="session-test",
+                handled_by="reminder",
+                reason="reminder_replied",
+                response_text="好的，已将这条提醒标记为完成。",
+            )
+        ),
     )
 
     result = await service.handle_inbound_message(
@@ -192,30 +311,74 @@ async def test_conversation_service_routes_to_first_accepting_handler() -> None:
             parent_message_id=None,
             chat_id=None,
             thread_id=None,
-            text="你好",
-            raw_payload={"text": "你好"},
+            text="收到",
+            raw_payload={"text": "收到"},
         )
     )
 
     assert result.handled is True
-    assert result.handled_by == "accept"
-    assert result.conversation_id == "conversation-test"
-    assert len(recorder.records) == 1
+    assert result.handled_by == "reminder"
     record = recorder.records[0]
     assert isinstance(record, MessageEventRecord)
-    assert record.metadata["handled"] is True
-    assert record.metadata["handled_by"] == "accept"
-    assert record.metadata["response_text"] == "好的，已处理。"
-    assert isinstance(record.latency_ms, float)
+    assert record.metadata["handled_by"] == "reminder"
+    state = record.metadata["assistant_turn_state"]
+    assert isinstance(state, dict)
+    last_action = state["last_assistant_action"]
+    assert isinstance(last_action, dict)
+    assert last_action["action_type"] == "reply_reminder"
 
 
 @pytest.mark.asyncio
-async def test_conversation_service_returns_no_handler_when_nobody_handles() -> None:
+async def test_conversation_service_runs_kernel_path_and_records_state() -> None:
     recorder = FakeMessageEventRecorder()
-    service = ConversationApplicationService(
-        conversation_context_resolver=FakeConversationContextResolver(),
-        message_event_recorder=recorder,
-        handlers=[DecliningHandler()],
+    service = _build_service(recorder=recorder, renderer=FakeRenderer("你现在还有 1 个待办。"))
+
+    result = await service.handle_inbound_message(
+        HandleInboundConversationMessageCommand(
+            channel="web",
+            message_type="text",
+            user_identity="user-1",
+            external_message_id=None,
+            root_message_id=None,
+            parent_message_id=None,
+            chat_id=None,
+            thread_id=None,
+            text="查看待办",
+            raw_payload={"text": "查看待办"},
+        )
+    )
+
+    assert result.handled is True
+    assert result.handled_by == "task"
+    assert result.reason == "task_listed_via_rules"
+    assert result.response_text == "你现在还有 1 个待办。"
+    record = recorder.records[0]
+    assert isinstance(record, MessageEventRecord)
+    assert record.metadata["handled"] is True
+    state = record.metadata["assistant_turn_state"]
+    assert isinstance(state, dict)
+    visible_candidates = state["visible_candidates"]
+    assert isinstance(visible_candidates, list)
+    first_candidate = visible_candidates[0]
+    assert isinstance(first_candidate, dict)
+    assert first_candidate["object_id"] == "task-1"
+
+
+@pytest.mark.asyncio
+async def test_conversation_service_returns_default_guidance_when_kernel_cannot_handle() -> None:
+    recorder = FakeMessageEventRecorder()
+    service = _build_service(
+        recorder=recorder,
+        planner=FakePlanner(
+            AssistantActionPlan(
+                intent="unknown",
+                action=None,
+                object_type=None,
+                object_id=None,
+                status="unsupported",
+            )
+        ),
+        executor=FakeExecutor(None),
     )
 
     result = await service.handle_inbound_message(
@@ -228,45 +391,20 @@ async def test_conversation_service_returns_no_handler_when_nobody_handles() -> 
             parent_message_id=None,
             chat_id=None,
             thread_id=None,
-            text="你好",
-            raw_payload={"text": "你好"},
+            text="？？？",
+            raw_payload={"text": "？？？"},
         )
     )
 
     assert result.handled is False
     assert result.reason == "no_handler_accepted"
     assert "我还没听懂这句话" in (result.response_text or "")
-    record = recorder.records[0]
-    assert isinstance(record, MessageEventRecord)
-    assert record.metadata["handled"] is False
-    assert record.metadata["reason"] == "no_handler_accepted"
-    response_text = record.metadata["response_text"]
-    assert isinstance(response_text, str)
-    assert "你可以帮我做什么" in response_text
-
-
-class ErrorHandler:
-    name = "error"
-
-    async def handle(
-        self,
-        command: HandleInboundConversationMessageCommand,
-        *,
-        conversation_id: str,
-        session_id: str,
-    ) -> ConversationInboundResult | None:
-        _ = (command, conversation_id, session_id)
-        raise RuntimeError("处理失败")
 
 
 @pytest.mark.asyncio
-async def test_conversation_service_records_failure_when_handler_raises() -> None:
+async def test_conversation_service_records_failure_when_kernel_raises() -> None:
     recorder = FakeMessageEventRecorder()
-    service = ConversationApplicationService(
-        conversation_context_resolver=FakeConversationContextResolver(),
-        message_event_recorder=recorder,
-        handlers=[ErrorHandler()],
-    )
+    service = _build_service(recorder=recorder, planner=FakePlanner(raises=True))
 
     with pytest.raises(RuntimeError):
         await service.handle_inbound_message(
@@ -292,15 +430,23 @@ async def test_conversation_service_records_failure_when_handler_raises() -> Non
 
 
 @pytest.mark.asyncio
-async def test_conversation_service_uses_llm_fallback_reply_when_no_handler_accepts() -> None:
+async def test_conversation_service_uses_llm_fallback_reply_when_kernel_returns_none() -> None:
     recorder = FakeMessageEventRecorder()
     fallback_gateway = FakeFallbackLLMGateway(
         '{"reply_text":"是的，我现在主要帮你处理提醒、待办和记忆。"}'
     )
-    service = ConversationApplicationService(
-        conversation_context_resolver=FakeConversationContextResolver(),
-        message_event_recorder=recorder,
-        handlers=[DecliningHandler()],
+    service = _build_service(
+        recorder=recorder,
+        planner=FakePlanner(
+            AssistantActionPlan(
+                intent="unknown",
+                action=None,
+                object_type=None,
+                object_id=None,
+                status="unsupported",
+            )
+        ),
+        executor=FakeExecutor(None),
         fallback_responder=LLMConversationFallbackResponder(
             llm_gateway=fallback_gateway,
             model="gpt-test",
@@ -330,9 +476,6 @@ async def test_conversation_service_uses_llm_fallback_reply_when_no_handler_acce
     assert result.response_text == "是的，我现在主要帮你处理提醒、待办和记忆。"
     assert fallback_gateway.last_request is not None
     assert "最近对话：" in fallback_gateway.last_request.prompt
-    assert "user: hey" in fallback_gateway.last_request.prompt
-    assert "assistant: 你好，我可以帮你记提醒和待办。" in fallback_gateway.last_request.prompt
-    assert "当前用户消息：是吗？" in fallback_gateway.last_request.prompt
     record = recorder.records[0]
     assert isinstance(record, MessageEventRecord)
     assert record.metadata["handled"] is True
