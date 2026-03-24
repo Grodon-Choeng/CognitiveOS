@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import DateTime, Index, String, func
+from sqlalchemy import Boolean, DateTime, Index, String, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.infrastructure.db.base import Base
@@ -16,6 +16,8 @@ class ReminderModel(Base):
             "dispatch_recipient_id",
         ),
         Index("ix_reminders_dispatch_message_id", "dispatch_message_id"),
+        Index("ix_reminders_linked_task_id", "linked_task_id"),
+        Index("ix_reminders_retryable_status", "retryable", "status"),
         Index(
             "ix_reminders_pending_conversation_lookup",
             "status",
@@ -54,6 +56,10 @@ class ReminderModel(Base):
     dispatch_thread_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     dispatch_message_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     last_user_reply: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    linked_task_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    failure_stage: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    failure_reason_code: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    retryable: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),

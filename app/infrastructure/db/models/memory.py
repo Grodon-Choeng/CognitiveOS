@@ -11,6 +11,8 @@ class MemoryModel(Base):
     __table_args__ = (
         Index("ix_memories_conversation_id", "conversation_id"),
         Index("ix_memories_session_id", "session_id"),
+        Index("ix_memories_scope_object", "scope_object_type", "scope_object_id"),
+        Index("ix_memories_memory_type", "memory_type"),
         Index("ix_memories_created_at", "created_at"),
         Index("ix_memories_status", "status"),
     )
@@ -18,8 +20,13 @@ class MemoryModel(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     content: Mapped[str] = mapped_column(Text, nullable=False)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="active")
+    memory_type: Mapped[str] = mapped_column(String(32), nullable=False, server_default="note")
     conversation_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     session_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    scope_object_type: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    scope_object_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    importance: Mapped[int] = mapped_column(nullable=False, server_default="3")
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

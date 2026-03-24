@@ -323,3 +323,28 @@ async def test_archive_matching_memory_uses_content_hint() -> None:
 
     assert archived.memory_id == first.memory_id
     assert repository.items[first.memory_id].status == MemoryStatus.ARCHIVED
+
+
+@pytest.mark.asyncio
+async def test_create_memory_persists_extended_fields() -> None:
+    repository = FakeMemoryRepository()
+    service = MemoryApplicationService(
+        unit_of_work_factory=create_fake_unit_of_work_factory(repository),
+        conversation_context_resolver=FakeConversationContextResolver(),
+    )
+
+    created = await service.create_memory(
+        CreateMemoryCommand(
+            content="任务背景：客户偏好邮件沟通",
+            memory_type="context",
+            scope_object_type="task",
+            scope_object_id="task-1",
+            importance=5,
+        )
+    )
+
+    saved = repository.items[created.memory_id]
+    assert saved.memory_type.value == "context"
+    assert saved.scope_object_type == "task"
+    assert saved.scope_object_id == "task-1"
+    assert saved.importance == 5

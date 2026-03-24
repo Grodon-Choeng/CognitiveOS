@@ -343,3 +343,40 @@ async def test_complete_matching_task_uses_title_hint() -> None:
 
     assert completed.task_id == first.task_id
     assert repository.items[first.task_id].status == TaskStatus.COMPLETED
+
+
+@pytest.mark.asyncio
+async def test_create_task_persists_link_fields() -> None:
+    repository = FakeTaskRepository()
+    service = TaskApplicationService(
+        unit_of_work_factory=create_fake_unit_of_work_factory(repository),
+        conversation_context_resolver=FakeConversationContextResolver(),
+    )
+
+    created = await service.create_task(
+        CreateTaskCommand(
+            title="由提醒转换的待办",
+            linked_reminder_id="r-1",
+            source_type="reminder",
+            source_id="r-1",
+        )
+    )
+
+    saved = repository.items[created.task_id]
+    assert saved.linked_reminder_id == "r-1"
+    assert saved.source_type == "reminder"
+    assert saved.source_id == "r-1"
+
+
+@pytest.mark.asyncio
+async def test_attach_reminder_updates_task_link() -> None:
+    repository = FakeTaskRepository()
+    service = TaskApplicationService(
+        unit_of_work_factory=create_fake_unit_of_work_factory(repository),
+        conversation_context_resolver=FakeConversationContextResolver(),
+    )
+    created = await service.create_task(CreateTaskCommand(title="整理周报"))
+
+    updated = await service.attach_reminder(task_id=created.task_id, reminder_id="r-2")
+
+    assert updated.linked_reminder_id == "r-2"

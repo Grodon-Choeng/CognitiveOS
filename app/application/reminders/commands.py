@@ -7,6 +7,7 @@ class CreateReminderCommand:
     text: str
     remind_at: datetime
     timezone: str
+    linked_task_id: str | None = None
     conversation_id: str | None = None
     session_id: str | None = None
     source_channel: str | None = None
@@ -27,6 +28,11 @@ class HandleReminderReplyCommand:
 
 @dataclass(slots=True, frozen=True)
 class CancelReminderCommand:
+    reminder_id: str
+
+
+@dataclass(slots=True, frozen=True)
+class RetryFailedReminderCommand:
     reminder_id: str
 
 

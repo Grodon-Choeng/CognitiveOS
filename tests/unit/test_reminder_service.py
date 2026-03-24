@@ -15,6 +15,7 @@ from app.application.reminders.commands import (
     HandleReminderInboundMessageCommand,
     HandleReminderReplyCommand,
     RescheduleReminderCommand,
+    RetryFailedReminderCommand,
 )
 from app.application.reminders.errors import (
     ReminderNotFoundError,
@@ -651,6 +652,63 @@ async def test_reschedule_reminder_marks_failed_when_restart_fails() -> None:
     assert "提醒工作流重新启动失败" in str(exc_info.value)
     assert saved.status == ReminderStatus.FAILED
     assert saved.workflow_id is None
+    assert saved.failure_stage == "workflow_start"
+    assert saved.failure_reason_code == "RuntimeError"
+
+
+@pytest.mark.asyncio
+async def test_retry_failed_reminder_restarts_workflow() -> None:
+    repository = FakeReminderRepository()
+    workflow_gateway = FakeReminderWorkflowGateway()
+    service = ReminderApplicationService(
+        unit_of_work_factory=create_fake_unit_of_work_factory(repository),
+        workflow_gateway=workflow_gateway,
+        conversation_context_resolver=FakeConversationContextResolver(),
+    )
+
+    created = await service.create_reminder(
+        CreateReminderCommand(
+            text="提醒我提交日报",
+            remind_at=datetime(2026, 3, 20, 9, 0, tzinfo=UTC),
+            timezone="Asia/Shanghai",
+        )
+    )
+    repository.items[created.reminder_id].status = ReminderStatus.FAILED
+    repository.items[created.reminder_id].workflow_id = None
+    repository.items[created.reminder_id].failure_stage = "workflow_start"
+    repository.items[created.reminder_id].failure_reason_code = "RuntimeError"
+
+    updated = await service.retry_failed_reminder(
+        RetryFailedReminderCommand(reminder_id=created.reminder_id)
+    )
+
+    saved = repository.items[created.reminder_id]
+    assert updated.status == "pending"
+    assert saved.failure_stage is None
+    assert saved.failure_reason_code is None
+    assert saved.workflow_id == f"reminder:{created.reminder_id}"
+
+
+@pytest.mark.asyncio
+async def test_link_task_updates_reminder_relation() -> None:
+    repository = FakeReminderRepository()
+    workflow_gateway = FakeReminderWorkflowGateway()
+    service = ReminderApplicationService(
+        unit_of_work_factory=create_fake_unit_of_work_factory(repository),
+        workflow_gateway=workflow_gateway,
+        conversation_context_resolver=FakeConversationContextResolver(),
+    )
+    created = await service.create_reminder(
+        CreateReminderCommand(
+            text="提醒我提交日报",
+            remind_at=datetime(2026, 3, 20, 9, 0, tzinfo=UTC),
+            timezone="Asia/Shanghai",
+        )
+    )
+
+    updated = await service.link_task(reminder_id=created.reminder_id, task_id="task-1")
+
+    assert updated.linked_task_id == "task-1"
 
 
 @pytest.mark.asyncio

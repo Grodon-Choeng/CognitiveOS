@@ -34,6 +34,9 @@ class TaskApplicationService:
             created_at=datetime.now(UTC),
             conversation_id=conversation_context.conversation_id,
             session_id=conversation_context.session_id,
+            linked_reminder_id=command.linked_reminder_id,
+            source_type=command.source_type,
+            source_id=command.source_id,
         )
 
         async with self.unit_of_work_factory() as unit_of_work:
@@ -63,6 +66,24 @@ class TaskApplicationService:
             )
 
         return TaskListDTO(items=[self._to_dto(task) for task in tasks])
+
+    async def find_candidates(
+        self,
+        *,
+        conversation_id: str,
+        session_id: str,
+        query: str | None = None,
+        limit: int = 5,
+    ) -> TaskListDTO:
+        return await self.list_tasks(
+            ListTasksQuery(
+                conversation_id=conversation_id,
+                session_id=session_id,
+                status=TaskStatus.PENDING.value,
+                query=query,
+                limit=limit,
+            )
+        )
 
     async def complete_task(self, command: CompleteTaskCommand) -> TaskDTO:
         parsed_task_id = TaskId.from_string(command.task_id)
@@ -179,6 +200,24 @@ class TaskApplicationService:
                 return await self.cancel_task(CancelTaskCommand(task_id=task.task_id))
         raise TaskNotFoundError(f"当前会话没有匹配“{title_hint}”的待办任务。")
 
+    async def attach_reminder(
+        self,
+        *,
+        task_id: str,
+        reminder_id: str,
+    ) -> TaskDTO:
+        parsed_task_id = TaskId.from_string(task_id)
+
+        async with self.unit_of_work_factory() as unit_of_work:
+            task = await unit_of_work.tasks.get(parsed_task_id)
+            if task is None:
+                raise TaskNotFoundError(f"任务不存在：{task_id}")
+            task.linked_reminder_id = reminder_id
+            await unit_of_work.tasks.update(task)
+            await unit_of_work.commit()
+
+        return self._to_dto(task)
+
     @staticmethod
     def _to_dto(task: Task) -> TaskDTO:
         return TaskDTO(
@@ -188,5 +227,8 @@ class TaskApplicationService:
             status=task.status.value,
             conversation_id=task.conversation_id,
             session_id=task.session_id,
+            linked_reminder_id=task.linked_reminder_id,
+            source_type=task.source_type,
+            source_id=task.source_id,
             completed_at=task.completed_at,
         )

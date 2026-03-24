@@ -147,6 +147,10 @@ class SQLAlchemyReminderRepository(ReminderRepository):
         model.dispatch_thread_id = reminder.dispatch_thread_id
         model.dispatch_message_id = reminder.dispatch_message_id
         model.last_user_reply = reminder.last_user_reply
+        model.linked_task_id = reminder.linked_task_id
+        model.failure_stage = reminder.failure_stage
+        model.failure_reason_code = reminder.failure_reason_code
+        model.retryable = reminder.retryable
 
     @staticmethod
     def _to_model(reminder: Reminder) -> ReminderModel:
@@ -165,6 +169,10 @@ class SQLAlchemyReminderRepository(ReminderRepository):
             dispatch_thread_id=reminder.dispatch_thread_id,
             dispatch_message_id=reminder.dispatch_message_id,
             last_user_reply=reminder.last_user_reply,
+            linked_task_id=reminder.linked_task_id,
+            failure_stage=reminder.failure_stage,
+            failure_reason_code=reminder.failure_reason_code,
+            retryable=reminder.retryable,
         )
 
     @staticmethod
@@ -186,4 +194,8 @@ class SQLAlchemyReminderRepository(ReminderRepository):
             dispatch_thread_id=model.dispatch_thread_id,
             dispatch_message_id=model.dispatch_message_id,
             last_user_reply=model.last_user_reply,
+            linked_task_id=model.linked_task_id,
+            failure_stage=model.failure_stage,
+            failure_reason_code=model.failure_reason_code,
+            retryable=model.retryable,
         )

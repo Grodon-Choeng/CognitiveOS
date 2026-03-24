@@ -1,5 +1,6 @@
-from datetime import datetime
+from datetime import datetime, tzinfo
 from typing import Protocol
+from zoneinfo import ZoneInfo
 
 from app.application.audit.dto import AuditEventPageDTO
 from app.application.memory.dto import MemoryListDTO
@@ -94,3 +95,40 @@ class OverviewApplicationService:
             active_memories=memory_list.items,
             recent_activity=activity_page.items,
         )
+
+    async def get_today_view(self, query: GetOverviewQuery) -> OverviewDTO:
+        overview = await self.get_overview(query)
+        now = datetime.now().astimezone()
+        today_reminders = [
+            reminder
+            for reminder in overview.pending_reminders
+            if _is_same_local_day(reminder.remind_at, reminder.timezone, now)
+        ]
+        return OverviewDTO(
+            conversation_id=overview.conversation_id,
+            session_id=overview.session_id,
+            pending_reminders=today_reminders,
+            pending_tasks=overview.pending_tasks,
+            active_memories=overview.active_memories,
+            recent_activity=overview.recent_activity,
+        )
+
+    async def get_working_set_view(self, query: GetOverviewQuery) -> OverviewDTO:
+        return await self.get_overview(query)
+
+
+def _is_same_local_day(
+    remind_at: datetime,
+    timezone: str,
+    now: datetime,
+) -> bool:
+    zone: tzinfo | None
+    try:
+        zone = ZoneInfo(timezone)
+    except Exception:
+        if now.tzinfo is None:
+            return remind_at.date() == now.date()
+        zone = now.tzinfo
+    if zone is None:
+        return remind_at.date() == now.date()
+    return remind_at.astimezone(zone).date() == now.astimezone(zone).date()

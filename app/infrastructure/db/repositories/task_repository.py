@@ -53,6 +53,9 @@ class SQLAlchemyTaskRepository(TaskRepository):
         model.status = task.status.value
         model.conversation_id = task.conversation_id
         model.session_id = task.session_id
+        model.linked_reminder_id = task.linked_reminder_id
+        model.source_type = task.source_type
+        model.source_id = task.source_id
         model.completed_at = task.completed_at
 
     @staticmethod
@@ -63,6 +66,9 @@ class SQLAlchemyTaskRepository(TaskRepository):
             status=task.status.value,
             conversation_id=task.conversation_id,
             session_id=task.session_id,
+            linked_reminder_id=task.linked_reminder_id,
+            source_type=task.source_type,
+            source_id=task.source_id,
             completed_at=task.completed_at,
             created_at=task.created_at,
         )
@@ -76,5 +82,8 @@ class SQLAlchemyTaskRepository(TaskRepository):
             status=TaskStatus(model.status),
             conversation_id=model.conversation_id,
             session_id=model.session_id,
+            linked_reminder_id=model.linked_reminder_id,
+            source_type=model.source_type,
+            source_id=model.source_id,
             completed_at=model.completed_at,
         )

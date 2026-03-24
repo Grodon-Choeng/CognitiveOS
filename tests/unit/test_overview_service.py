@@ -61,6 +61,7 @@ class FakeMemoryService:
                     content="用户喜欢早上九点提醒",
                     created_at=datetime(2026, 3, 22, 8, 0, tzinfo=UTC),
                     status="active",
+                    memory_type="note",
                     conversation_id="conversation-1",
                     session_id="session-1",
                     archived_at=None,
@@ -143,3 +144,23 @@ async def test_overview_service_aggregates_sections() -> None:
     assert result.pending_tasks[0].task_id == "t-1"
     assert result.active_memories[0].memory_id == "m-1"
     assert result.recent_activity[0].event_id == "evt-1"
+
+
+@pytest.mark.asyncio
+async def test_get_today_view_filters_reminders_by_local_day() -> None:
+    service = OverviewApplicationService(
+        reminder_service=FakeReminderService(),
+        task_service=FakeTaskService(),
+        memory_service=FakeMemoryService(),
+        audit_service=FakeAuditService(),
+    )
+
+    result = await service.get_today_view(
+        GetOverviewQuery(
+            conversation_id="conversation-1",
+            session_id="session-1",
+        )
+    )
+
+    assert result.pending_tasks[0].task_id == "t-1"
+    assert all(reminder.timezone == "Asia/Shanghai" for reminder in result.pending_reminders)

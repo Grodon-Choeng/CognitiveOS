@@ -6,7 +6,7 @@ from app.application.memory.dto import MemoryDTO, MemoryListDTO
 from app.application.memory.errors import MemoryNotFoundError, MemoryStateConflictError
 from app.application.memory.ports import MemoryUnitOfWorkFactory
 from app.application.memory.queries import ListMemoriesQuery
-from app.domain.memory.entities import MemoryEntry, MemoryStatus
+from app.domain.memory.entities import MemoryEntry, MemoryStatus, MemoryType
 from app.domain.memory.value_objects import MemoryId
 
 
@@ -32,8 +32,13 @@ class MemoryApplicationService:
             memory_id=MemoryId.new(),
             content=command.content,
             created_at=datetime.now(UTC),
+            memory_type=_resolve_memory_type(command.memory_type, command.content),
             conversation_id=conversation_context.conversation_id,
             session_id=conversation_context.session_id,
+            scope_object_type=command.scope_object_type,
+            scope_object_id=command.scope_object_id,
+            importance=_normalize_importance(command.importance),
+            expires_at=command.expires_at,
         )
 
         async with self.unit_of_work_factory() as unit_of_work:
@@ -63,6 +68,24 @@ class MemoryApplicationService:
             )
 
         return MemoryListDTO(items=[self._to_dto(memory) for memory in memories])
+
+    async def find_candidates(
+        self,
+        *,
+        conversation_id: str,
+        session_id: str,
+        query: str | None = None,
+        limit: int = 5,
+    ) -> MemoryListDTO:
+        return await self.list_memories(
+            ListMemoriesQuery(
+                conversation_id=conversation_id,
+                session_id=session_id,
+                status=MemoryStatus.ACTIVE.value,
+                query=query,
+                limit=limit,
+            )
+        )
 
     async def archive_memory(self, command: ArchiveMemoryCommand) -> MemoryDTO:
         parsed_memory_id = MemoryId.from_string(command.memory_id)
@@ -132,7 +155,37 @@ class MemoryApplicationService:
             content=memory.content,
             created_at=memory.created_at,
             status=memory.status.value,
+            memory_type=memory.memory_type.value,
             conversation_id=memory.conversation_id,
             session_id=memory.session_id,
+            scope_object_type=memory.scope_object_type,
+            scope_object_id=memory.scope_object_id,
+            importance=memory.importance,
+            expires_at=memory.expires_at,
             archived_at=memory.archived_at,
         )
+
+
+def _resolve_memory_type(memory_type: str | None, content: str) -> MemoryType:
+    if memory_type:
+        return MemoryType(memory_type)
+    normalized_content = content.casefold()
+    if "临时" in normalized_content:
+        return MemoryType.TEMPORARY
+    if (
+        "偏好" in normalized_content
+        or "喜欢" in normalized_content
+        or "不喜欢" in normalized_content
+    ):
+        return MemoryType.PREFERENCE
+    if "背景" in normalized_content:
+        return MemoryType.CONTEXT
+    return MemoryType.NOTE
+
+
+def _normalize_importance(importance: int) -> int:
+    if importance < 1:
+        return 1
+    if importance > 5:
+        return 5
+    return importance

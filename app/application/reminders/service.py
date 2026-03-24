@@ -5,6 +5,7 @@ from app.application.reminders.commands import (
     HandleReminderInboundMessageCommand,
     HandleReminderReplyCommand,
     RescheduleReminderCommand,
+    RetryFailedReminderCommand,
 )
 from app.application.reminders.dto import (
     ReminderDTO,
@@ -63,6 +64,7 @@ class ReminderApplicationService:
             dispatch_recipient_id=command.dispatch_recipient_id,
             dispatch_chat_id=command.dispatch_chat_id,
             dispatch_thread_id=command.dispatch_thread_id,
+            linked_task_id=command.linked_task_id,
         )
         reminder.workflow_id = _build_reminder_workflow_id(reminder.reminder_id)
 
@@ -137,6 +139,25 @@ class ReminderApplicationService:
 
         return ReminderListDTO(items=[self._to_dto(reminder) for reminder in reminders])
 
+    async def find_candidates(
+        self,
+        *,
+        conversation_id: str,
+        session_id: str,
+        query: str | None = None,
+        status: str = ReminderStatus.PENDING.value,
+        limit: int = 5,
+    ) -> ReminderListDTO:
+        return await self.list_reminders(
+            ListRemindersQuery(
+                conversation_id=conversation_id,
+                session_id=session_id,
+                status=status,
+                query=query,
+                limit=limit,
+            )
+        )
+
     async def reschedule_reminder(self, command: RescheduleReminderCommand) -> ReminderDTO:
         reminder_id = ReminderId.from_string(command.reminder_id)
 
@@ -162,6 +183,9 @@ class ReminderApplicationService:
             )
             reminder.status = ReminderStatus.PENDING
             reminder.last_user_reply = None
+            reminder.failure_stage = None
+            reminder.failure_reason_code = None
+            reminder.retryable = True
             reminder.workflow_id = reminder.workflow_id or _build_reminder_workflow_id(
                 reminder.reminder_id
             )
@@ -180,6 +204,43 @@ class ReminderApplicationService:
             await self._mark_workflow_start_failed(reminder, workflow_error)
             raise ReminderWorkflowStartError(
                 f"提醒工作流重新启动失败：{type(workflow_error).__name__}: {workflow_error}"
+            ) from workflow_error
+
+        return self._to_dto(reminder)
+
+    async def retry_failed_reminder(self, command: RetryFailedReminderCommand) -> ReminderDTO:
+        reminder_id = ReminderId.from_string(command.reminder_id)
+
+        async with self.unit_of_work_factory() as unit_of_work:
+            reminder = await unit_of_work.reminders.get(reminder_id)
+            if reminder is None:
+                raise ReminderNotFoundError(f"提醒不存在：{command.reminder_id}")
+            if reminder.status != ReminderStatus.FAILED:
+                raise ReminderStateConflictError("只有失败提醒才能重试。")
+            if not reminder.retryable:
+                raise ReminderStateConflictError("当前失败提醒不可重试。")
+
+            reminder.status = ReminderStatus.PENDING
+            reminder.failure_stage = None
+            reminder.failure_reason_code = None
+            reminder.workflow_id = reminder.workflow_id or _build_reminder_workflow_id(
+                reminder.reminder_id
+            )
+            await unit_of_work.reminders.update(reminder)
+            await unit_of_work.commit()
+
+        try:
+            await self.workflow_gateway.start_reminder(
+                reminder=reminder,
+                dispatch_target=ReminderDispatchTarget(
+                    channel=reminder.dispatch_channel or "console",
+                    recipient_id=reminder.dispatch_recipient_id or "local-user",
+                ),
+            )
+        except Exception as workflow_error:
+            await self._mark_workflow_start_failed(reminder, workflow_error)
+            raise ReminderWorkflowStartError(
+                f"失败提醒重试失败：{type(workflow_error).__name__}: {workflow_error}"
             ) from workflow_error
 
         return self._to_dto(reminder)
@@ -254,6 +315,24 @@ class ReminderApplicationService:
                 )
         raise ReminderNotFoundError(f"当前会话没有匹配“{text_hint}”的提醒。")
 
+    async def link_task(
+        self,
+        *,
+        reminder_id: str,
+        task_id: str,
+    ) -> ReminderDTO:
+        parsed_reminder_id = ReminderId.from_string(reminder_id)
+
+        async with self.unit_of_work_factory() as unit_of_work:
+            reminder = await unit_of_work.reminders.get(parsed_reminder_id)
+            if reminder is None:
+                raise ReminderNotFoundError(f"提醒不存在：{reminder_id}")
+            reminder.linked_task_id = task_id
+            await unit_of_work.reminders.update(reminder)
+            await unit_of_work.commit()
+
+        return self._to_dto(reminder)
+
     async def handle_inbound_message(
         self,
         command: HandleReminderInboundMessageCommand,
@@ -314,6 +393,10 @@ class ReminderApplicationService:
             remind_at=reminder.schedule.remind_at,
             timezone=reminder.schedule.timezone,
             status=reminder.status.value,
+            linked_task_id=reminder.linked_task_id,
+            failure_stage=reminder.failure_stage,
+            failure_reason_code=reminder.failure_reason_code,
+            retryable=reminder.retryable,
             conversation_id=reminder.conversation_id,
             session_id=reminder.session_id,
             workflow_id=reminder.workflow_id,
@@ -326,6 +409,9 @@ class ReminderApplicationService:
     ) -> None:
         reminder.status = ReminderStatus.FAILED
         reminder.workflow_id = None
+        reminder.failure_stage = "workflow_start"
+        reminder.failure_reason_code = type(workflow_error).__name__
+        reminder.retryable = True
 
         try:
             async with self.unit_of_work_factory() as unit_of_work:

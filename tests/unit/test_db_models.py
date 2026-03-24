@@ -2,10 +2,13 @@ from typing import cast
 
 from sqlalchemy import Table
 
+from app.infrastructure.db.models.assistant_turn_state import AssistantTurnStateModel
 from app.infrastructure.db.models.conversation_binding import ConversationBindingModel
+from app.infrastructure.db.models.memory import MemoryModel
 from app.infrastructure.db.models.message_event import MessageEventLogModel
 from app.infrastructure.db.models.model_invocation import ModelInvocationLogModel
 from app.infrastructure.db.models.reminder import ReminderModel
+from app.infrastructure.db.models.task import TaskModel
 from app.infrastructure.db.models.tool_invocation import ToolInvocationLogModel
 from app.infrastructure.db.models.workflow_event import WorkflowEventLogModel
 
@@ -45,3 +48,25 @@ def test_reminder_model_declares_lookup_indexes() -> None:
     assert "ix_reminders_pending_conversation_lookup" in reminder_index_names
     assert "ix_reminders_pending_dispatch_lookup" in reminder_index_names
     assert "ix_reminders_pending_dispatch_chat_lookup" in reminder_index_names
+    assert "ix_reminders_linked_task_id" in reminder_index_names
+    assert "ix_reminders_retryable_status" in reminder_index_names
+
+
+def test_task_and_memory_models_declare_link_indexes() -> None:
+    task_table = cast(Table, TaskModel.__table__)
+    memory_table = cast(Table, MemoryModel.__table__)
+
+    task_index_names = {str(index.name) for index in task_table.indexes}
+    memory_index_names = {str(index.name) for index in memory_table.indexes}
+
+    assert "ix_tasks_linked_reminder_id" in task_index_names
+    assert "ix_tasks_source_type_source_id" in task_index_names
+    assert "ix_memories_scope_object" in memory_index_names
+    assert "ix_memories_memory_type" in memory_index_names
+
+
+def test_assistant_turn_state_model_declares_update_index() -> None:
+    table = cast(Table, AssistantTurnStateModel.__table__)
+    index_names = {str(index.name) for index in table.indexes}
+
+    assert "ix_assistant_turn_states_updated_at" in index_names

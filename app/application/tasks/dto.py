@@ -10,6 +10,9 @@ class TaskDTO:
     status: str
     conversation_id: str | None = None
     session_id: str | None = None
+    linked_reminder_id: str | None = None
+    source_type: str | None = None
+    source_id: str | None = None
     completed_at: datetime | None = None
 
 

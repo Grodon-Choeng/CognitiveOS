@@ -26,3 +26,7 @@ class Reminder:
     dispatch_thread_id: str | None = None
     dispatch_message_id: str | None = None
     last_user_reply: str | None = None
+    linked_task_id: str | None = None
+    failure_stage: str | None = None
+    failure_reason_code: str | None = None
+    retryable: bool = True

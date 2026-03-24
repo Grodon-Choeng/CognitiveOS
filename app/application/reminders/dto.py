@@ -9,6 +9,10 @@ class ReminderDTO:
     remind_at: datetime
     timezone: str
     status: str
+    linked_task_id: str | None = None
+    failure_stage: str | None = None
+    failure_reason_code: str | None = None
+    retryable: bool = True
     conversation_id: str | None = None
     session_id: str | None = None
     workflow_id: str | None = None

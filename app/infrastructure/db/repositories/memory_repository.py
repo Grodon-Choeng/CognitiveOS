@@ -1,7 +1,7 @@
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.domain.memory.entities import MemoryEntry, MemoryStatus
+from app.domain.memory.entities import MemoryEntry, MemoryStatus, MemoryType
 from app.domain.memory.repository import MemoryRepository
 from app.domain.memory.value_objects import MemoryId
 from app.infrastructure.db.models.memory import MemoryModel
@@ -51,8 +51,13 @@ class SQLAlchemyMemoryRepository(MemoryRepository):
 
         model.content = memory.content
         model.status = memory.status.value
+        model.memory_type = memory.memory_type.value
         model.conversation_id = memory.conversation_id
         model.session_id = memory.session_id
+        model.scope_object_type = memory.scope_object_type
+        model.scope_object_id = memory.scope_object_id
+        model.importance = memory.importance
+        model.expires_at = memory.expires_at
         model.archived_at = memory.archived_at
 
     @staticmethod
@@ -61,8 +66,13 @@ class SQLAlchemyMemoryRepository(MemoryRepository):
             id=str(memory.memory_id.value),
             content=memory.content,
             status=memory.status.value,
+            memory_type=memory.memory_type.value,
             conversation_id=memory.conversation_id,
             session_id=memory.session_id,
+            scope_object_type=memory.scope_object_type,
+            scope_object_id=memory.scope_object_id,
+            importance=memory.importance,
+            expires_at=memory.expires_at,
             archived_at=memory.archived_at,
             created_at=memory.created_at,
         )
@@ -74,7 +84,12 @@ class SQLAlchemyMemoryRepository(MemoryRepository):
             content=model.content,
             created_at=model.created_at,
             status=MemoryStatus(model.status),
+            memory_type=MemoryType(model.memory_type),
             conversation_id=model.conversation_id,
             session_id=model.session_id,
+            scope_object_type=model.scope_object_type,
+            scope_object_id=model.scope_object_id,
+            importance=model.importance,
+            expires_at=model.expires_at,
             archived_at=model.archived_at,
         )

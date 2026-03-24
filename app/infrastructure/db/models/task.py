@@ -11,6 +11,8 @@ class TaskModel(Base):
     __table_args__ = (
         Index("ix_tasks_conversation_id", "conversation_id"),
         Index("ix_tasks_session_id", "session_id"),
+        Index("ix_tasks_linked_reminder_id", "linked_reminder_id"),
+        Index("ix_tasks_source_type_source_id", "source_type", "source_id"),
         Index("ix_tasks_created_at", "created_at"),
         Index("ix_tasks_status", "status"),
     )
@@ -20,6 +22,9 @@ class TaskModel(Base):
     status: Mapped[str] = mapped_column(String(32), nullable=False)
     conversation_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     session_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    linked_reminder_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    source_type: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    source_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

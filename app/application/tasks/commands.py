@@ -4,6 +4,9 @@ from dataclasses import dataclass
 @dataclass(slots=True, frozen=True)
 class CreateTaskCommand:
     title: str
+    linked_reminder_id: str | None = None
+    source_type: str | None = None
+    source_id: str | None = None
     conversation_id: str | None = None
     session_id: str | None = None
     source_channel: str | None = None

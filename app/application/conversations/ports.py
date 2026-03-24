@@ -1,6 +1,8 @@
 from dataclasses import dataclass
 from typing import Protocol
 
+from app.infrastructure.types import JSONObject
+
 
 @dataclass(slots=True, frozen=True)
 class ResolvedConversationContext:
@@ -28,3 +30,20 @@ class ConversationContextResolver(Protocol):
         source_chat_id: str | None,
         source_thread_id: str | None,
     ) -> ResolvedConversationContext: ...
+
+
+class AssistantTurnStateStore(Protocol):
+    async def load(
+        self,
+        *,
+        conversation_id: str,
+        session_id: str,
+    ) -> JSONObject | None: ...
+
+    async def save(
+        self,
+        *,
+        conversation_id: str,
+        session_id: str,
+        state: JSONObject,
+    ) -> None: ...
