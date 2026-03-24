@@ -205,20 +205,26 @@ class FakeTaskService:
 class FakeMemoryService:
     def __init__(self) -> None:
         self.created_contents: list[str] = []
+        self.created_commands: list[CreateMemoryCommand] = []
         self.archived_latest_calls: list[tuple[str, str]] = []
         self.list_queries: list[ListMemoriesQuery] = []
 
     async def create_memory(self, command: CreateMemoryCommand) -> MemoryDTO:
         content = command.content
+        self.created_commands.append(command)
         self.created_contents.append(content)
         return MemoryDTO(
             memory_id="00000000-0000-0000-0000-000000000001",
             content=content,
             created_at=datetime(2026, 3, 22, 9, 0, tzinfo=UTC),
             status="active",
-            memory_type="note",
+            memory_type=command.memory_type or "note",
             conversation_id="conversation-1",
             session_id="session-1",
+            scope_object_type=command.scope_object_type,
+            scope_object_id=command.scope_object_id,
+            importance=command.importance,
+            expires_at=command.expires_at,
             archived_at=None,
         )
 
@@ -1934,3 +1940,119 @@ async def test_intent_handler_reschedules_reminder() -> None:
     assert result.reason == "reminder_rescheduled_via_llm"
     assert reminder_service.reschedule_commands
     assert "改时间" in (result.response_text or "")
+
+
+@pytest.mark.asyncio
+async def test_intent_handler_creates_preference_memory() -> None:
+    memory_service = FakeMemoryService()
+    handler = IntentConversationHandler(
+        classifier=LLMFirstConversationIntentClassifier(
+            llm_gateway=FailingLLMGateway(),
+            model="gpt-test",
+            api_key_suffix="90abcdef",
+        ),
+        task_service=FakeTaskService(),
+        memory_service=memory_service,
+        reminder_service=FakeReminderService(),
+        overview_service=FakeOverviewService(),
+    )
+
+    result = await handler.handle(
+        HandleInboundConversationMessageCommand(
+            channel="web",
+            message_type="text",
+            user_identity="user-1",
+            external_message_id=None,
+            root_message_id=None,
+            parent_message_id=None,
+            chat_id=None,
+            thread_id=None,
+            text="记一下我不喜欢早上八点前提醒",
+            raw_payload={"text": "记一下我不喜欢早上八点前提醒"},
+        ),
+        conversation_id="conversation-1",
+        session_id="session-1",
+    )
+
+    assert result is not None
+    assert result.handled_by == "memory"
+    assert memory_service.created_commands[-1].memory_type == "preference"
+    assert "偏好" in (result.response_text or "")
+
+
+@pytest.mark.asyncio
+async def test_intent_handler_creates_scoped_context_memory() -> None:
+    memory_service = FakeMemoryService()
+    handler = IntentConversationHandler(
+        classifier=LLMFirstConversationIntentClassifier(
+            llm_gateway=FailingLLMGateway(),
+            model="gpt-test",
+            api_key_suffix="90abcdef",
+        ),
+        task_service=FakeTaskService(),
+        memory_service=memory_service,
+        reminder_service=FakeReminderService(),
+        overview_service=FakeOverviewService(),
+    )
+
+    result = await handler.handle(
+        HandleInboundConversationMessageCommand(
+            channel="web",
+            message_type="text",
+            user_identity="user-1",
+            external_message_id=None,
+            root_message_id=None,
+            parent_message_id=None,
+            chat_id=None,
+            thread_id=None,
+            text="把这个背景记到任务里",
+            raw_payload={"text": "把这个背景记到任务里"},
+        ),
+        conversation_id="conversation-1",
+        session_id="session-1",
+    )
+
+    assert result is not None
+    assert result.handled_by == "memory"
+    command = memory_service.created_commands[-1]
+    assert command.memory_type == "context"
+    assert command.scope_object_type == "task"
+    assert command.scope_object_id == "t-1"
+    assert "记到这个待办里了" in (result.response_text or "")
+
+
+@pytest.mark.asyncio
+async def test_intent_handler_shows_working_set_view() -> None:
+    handler = IntentConversationHandler(
+        classifier=LLMFirstConversationIntentClassifier(
+            llm_gateway=FailingLLMGateway(),
+            model="gpt-test",
+            api_key_suffix="90abcdef",
+        ),
+        task_service=FakeTaskService(),
+        memory_service=FakeMemoryService(),
+        reminder_service=FakeReminderService(),
+        overview_service=FakeOverviewService(),
+    )
+
+    result = await handler.handle(
+        HandleInboundConversationMessageCommand(
+            channel="web",
+            message_type="text",
+            user_identity="user-1",
+            external_message_id=None,
+            root_message_id=None,
+            parent_message_id=None,
+            chat_id=None,
+            thread_id=None,
+            text="这会话里最近在处理什么",
+            raw_payload={"text": "这会话里最近在处理什么"},
+        ),
+        conversation_id="conversation-1",
+        session_id="session-1",
+    )
+
+    assert result is not None
+    assert result.handled_by == "overview"
+    assert result.reason == "overview_shown_via_rules"
+    assert "最近我主要在处理这些" in (result.response_text or "")

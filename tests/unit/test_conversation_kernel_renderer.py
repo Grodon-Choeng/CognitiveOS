@@ -77,3 +77,45 @@ def test_renderer_formats_disambiguation_choices() -> None:
     assert "1. 买药" in text
     assert "2. 买水果" in text
     assert "第一个" in text
+
+
+def test_renderer_formats_working_set_view() -> None:
+    renderer = AssistantResponseRenderer()
+    result = AssistantExecutionResult(
+        success=True,
+        action="show_overview",
+        payload={
+            "view": "working_set",
+            "pending_tasks": [{"object_type": "task", "object_id": "t-1", "title": "整理周报"}],
+            "pending_reminders": [
+                {"object_type": "reminder", "object_id": "r-1", "title": "买药提醒"}
+            ],
+            "active_memories": [{"object_type": "memory", "object_id": "m-1", "title": "提醒偏好"}],
+            "focused_object": {"object_type": "task", "object_id": "t-1", "title": "整理周报"},
+            "last_assistant_action": {"action_type": "list_tasks", "summary": "刚给你列出待办"},
+        },
+    )
+
+    text = renderer.render(result, turn_context=_empty_turn_context())
+
+    assert "最近我主要在处理这些" in text
+    assert "当前焦点：整理周报" in text
+
+
+def test_renderer_formats_scoped_memory_reply() -> None:
+    renderer = AssistantResponseRenderer()
+    result = AssistantExecutionResult(
+        success=True,
+        action="create_memory",
+        object_type="memory",
+        object_id="m-1",
+        object_title="客户偏好邮件沟通",
+        payload={
+            "memory_type": "context",
+            "scope_object_type": "task",
+        },
+    )
+
+    text = renderer.render(result, turn_context=_empty_turn_context())
+
+    assert "背景记到这个待办里了" in text

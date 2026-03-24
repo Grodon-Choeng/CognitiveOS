@@ -100,3 +100,53 @@ async def test_planner_maps_another_to_second_candidate() -> None:
 
     assert plan.action == "complete_task"
     assert plan.args["reference_text"] == "第二个"
+
+
+@pytest.mark.asyncio
+async def test_planner_builds_working_set_overview_rule() -> None:
+    planner = AssistantActionPlanner(classifier=FailingClassifier())
+
+    plan = await planner.plan(
+        HandleInboundConversationMessageCommand(
+            channel="web",
+            message_type="text",
+            user_identity="user-1",
+            external_message_id=None,
+            root_message_id=None,
+            parent_message_id=None,
+            chat_id=None,
+            thread_id=None,
+            text="这会话里最近在处理什么",
+            raw_payload={"text": "这会话里最近在处理什么"},
+        ),
+        turn_context=_build_disambiguation_context(),
+    )
+
+    assert plan.action == "show_overview"
+    assert plan.args["view"] == "working_set"
+
+
+@pytest.mark.asyncio
+async def test_planner_builds_scoped_context_memory_rule() -> None:
+    planner = AssistantActionPlanner(classifier=FailingClassifier())
+
+    plan = await planner.plan(
+        HandleInboundConversationMessageCommand(
+            channel="web",
+            message_type="text",
+            user_identity="user-1",
+            external_message_id=None,
+            root_message_id=None,
+            parent_message_id=None,
+            chat_id=None,
+            thread_id=None,
+            text="把这个背景记到任务里",
+            raw_payload={"text": "把这个背景记到任务里"},
+        ),
+        turn_context=_build_disambiguation_context(),
+    )
+
+    assert plan.action == "create_memory"
+    assert plan.object_type == "task"
+    assert plan.args["memory_type"] == "context"
+    assert plan.args["scope_reference_text"] == "这个"
