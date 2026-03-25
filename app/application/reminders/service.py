@@ -30,6 +30,36 @@ from app.application.reminders.queries import ListRemindersQuery
 from app.domain.reminders.entities import Reminder, ReminderStatus
 from app.domain.reminders.value_objects import ReminderId, ReminderSchedule
 
+_REMINDER_REPLY_COMMAND_KEYWORDS = (
+    "查看",
+    "列出",
+    "哪些",
+    "几个",
+    "现在都",
+    "还有什么",
+    "取消",
+    "改到",
+    "改成",
+    "改期",
+    "重试",
+    "提醒我",
+    "待办",
+    "任务",
+    "记忆",
+    "概览",
+)
+_REMINDER_REPLY_ACK_PHRASES = (
+    "收到",
+    "收到提醒",
+    "知道了",
+    "我知道了",
+    "完成了",
+    "已完成",
+    "处理好了",
+    "已处理",
+    "done",
+)
+
 
 class ReminderApplicationService:
     def __init__(
@@ -337,6 +367,11 @@ class ReminderApplicationService:
         self,
         command: HandleReminderInboundMessageCommand,
     ) -> ReminderInboundMessageResult:
+        if not _should_handle_as_reminder_reply(command.text):
+            return ReminderInboundMessageResult(
+                handled=False,
+                reason="not_reminder_reply",
+            )
         conversation_context = await self.conversation_context_resolver.resolve_for_inbound(
             source_channel=command.channel,
             source_user_id=command.sender_id,
@@ -423,6 +458,19 @@ class ReminderApplicationService:
                 f"{type(workflow_error).__name__}: {workflow_error}；"
                 f"{type(persist_error).__name__}: {persist_error}"
             ) from persist_error
+
+
+def _should_handle_as_reminder_reply(text: str) -> bool:
+    normalized = text.strip().casefold()
+    if not normalized:
+        return False
+    if any(keyword in normalized for keyword in _REMINDER_REPLY_COMMAND_KEYWORDS):
+        return False
+    if normalized in _REMINDER_REPLY_ACK_PHRASES:
+        return True
+    if normalized.startswith(("我已经", "已经", "已")):
+        return True
+    return normalized.endswith("了")
 
 
 def _build_reminder_workflow_id(reminder_id: ReminderId) -> str:

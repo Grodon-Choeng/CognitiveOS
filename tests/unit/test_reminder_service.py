@@ -802,6 +802,52 @@ async def test_handle_inbound_message_matches_latest_pending_reminder() -> None:
 
 
 @pytest.mark.asyncio
+async def test_handle_inbound_message_ignores_reminder_query_text() -> None:
+    repository = FakeReminderRepository()
+    workflow_gateway = FakeReminderWorkflowGateway()
+    service = ReminderApplicationService(
+        unit_of_work_factory=create_fake_unit_of_work_factory(repository),
+        workflow_gateway=workflow_gateway,
+        conversation_context_resolver=FakeConversationContextResolver(),
+    )
+
+    created = await service.create_reminder(
+        CreateReminderCommand(
+            text="今晚 9 点提醒我打卡",
+            remind_at=datetime(2026, 3, 20, 13, 0, tzinfo=UTC),
+            timezone="Asia/Shanghai",
+            conversation_id="conversation-test",
+            dispatch_channel="feishu",
+            dispatch_recipient_id="ou_123",
+            dispatch_chat_id="oc_123",
+            dispatch_thread_id="ot_123",
+        )
+    )
+
+    result = await service.handle_inbound_message(
+        HandleReminderInboundMessageCommand(
+            conversation_id=None,
+            session_id=None,
+            channel="feishu",
+            sender_id="ou_123",
+            message_id="om_query_1",
+            root_message_id=None,
+            parent_message_id=None,
+            chat_id="oc_123",
+            thread_id="ot_123",
+            text="现在都有哪些提醒",
+        )
+    )
+
+    saved = repository.items[created.reminder_id]
+    assert result.handled is False
+    assert result.reason == "not_reminder_reply"
+    assert saved.status.value == "pending"
+    assert saved.last_user_reply is None
+    assert workflow_gateway.recorded_replies == []
+
+
+@pytest.mark.asyncio
 async def test_handle_inbound_message_returns_not_handled_when_no_pending_reminder() -> None:
     repository = FakeReminderRepository()
     workflow_gateway = FakeReminderWorkflowGateway()
@@ -828,6 +874,51 @@ async def test_handle_inbound_message_returns_not_handled_when_no_pending_remind
 
     assert result.handled is False
     assert result.reason == "no_pending_reminder"
+
+
+@pytest.mark.asyncio
+async def test_handle_inbound_message_keeps_command_text_out_of_reply_fast_path() -> None:
+    repository = FakeReminderRepository()
+    workflow_gateway = FakeReminderWorkflowGateway()
+    service = ReminderApplicationService(
+        unit_of_work_factory=create_fake_unit_of_work_factory(repository),
+        workflow_gateway=workflow_gateway,
+        conversation_context_resolver=FakeConversationContextResolver(),
+    )
+
+    created = await service.create_reminder(
+        CreateReminderCommand(
+            text="提醒我买药",
+            remind_at=datetime(2026, 3, 20, 9, 0, tzinfo=UTC),
+            timezone="Asia/Shanghai",
+            conversation_id="conversation-test",
+            dispatch_channel="feishu",
+            dispatch_recipient_id="ou_123",
+            dispatch_chat_id="oc_123",
+            dispatch_thread_id="ot_123",
+        )
+    )
+
+    result = await service.handle_inbound_message(
+        HandleReminderInboundMessageCommand(
+            conversation_id=None,
+            session_id=None,
+            channel="feishu",
+            sender_id="ou_123",
+            message_id="om_reply_1",
+            root_message_id=None,
+            parent_message_id=repository.items[created.reminder_id].dispatch_message_id,
+            chat_id="oc_123",
+            thread_id="ot_123",
+            text="查看提醒",
+        )
+    )
+
+    saved = repository.items[created.reminder_id]
+    assert result.handled is False
+    assert result.reason == "not_reminder_reply"
+    assert saved.status.value == "pending"
+    assert workflow_gateway.recorded_replies == []
 
 
 @pytest.mark.asyncio
@@ -879,7 +970,7 @@ async def test_handle_inbound_message_prefers_exact_dispatch_message_match() -> 
             parent_message_id="om_parent_1",
             chat_id="oc_123",
             thread_id="ot_1",
-            text="我回复的是第一个提醒",
+            text="我已经处理第一个提醒了",
         )
     )
 
@@ -937,7 +1028,7 @@ async def test_handle_inbound_message_matches_same_chat_and_thread_before_fallba
             parent_message_id=None,
             chat_id="oc_group",
             thread_id="ot_thread_a",
-            text="线程 A 回复",
+            text="线程 A 已处理了",
         )
     )
 
@@ -995,7 +1086,7 @@ async def test_handle_inbound_message_uses_conversation_before_chat_fallback() -
             parent_message_id=None,
             chat_id="oc_feishu",
             thread_id="ot_feishu",
-            text="conversation 优先匹配",
+            text="我已经处理了",
         )
     )
 
