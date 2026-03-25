@@ -219,6 +219,8 @@ workflows, activities, signals, queries, updates, timers, retries, durable execu
 - 当前本地编排默认包含 `PostgreSQL`、`Redis`、`Temporal server` 与 `Temporal UI`；变更这些基础设施时，必须同步更新 `compose.yaml` 与 `README.md`。
 - Temporal 若依赖动态配置文件，配置文件本身也必须放在仓库内并纳入编排，而不是只依赖容器内默认状态。
 - 常用本地开发命令应优先沉淀到 `Makefile`，避免在 README 和协作过程中散落多个不一致的命令版本。
+- 当前统一服务启动/停止/状态查看优先使用 `make services-up`、`make services-stop`、`make services-status`、`make services-restart`；若只运行单个组件，再退回 `make api` / `make worker` / `make feishu-longconn`。
+- 服务编排器会把常驻服务状态与日志写到仓库内 `.runtime/services/`；该目录属于本地运行产物，不纳入版本控制。
 - 应用 settings 默认应支持从项目根目录 `.env` 读取本地配置；若变更读取方式，必须同步更新 `README.md` 与 `.env.example`。
 - 新增环境变量、启动方式或基础设施依赖时，必须同步更新 `README.md` 与本文件。
 - 当前若启用 conversation 的 LLM 优先意图识别，至少需要配置 `COGNITIVE_OS_CONVERSATION_INTENT_MODEL`；使用 `openai` provider 时还需要 `COGNITIVE_OS_OPENAI_API_KEY`，使用 `local` provider 时需要 `COGNITIVE_OS_LOCAL_LLM_BASE_URL`；未配置时必须自动退回规则兜底，而不是直接报错中断主流程。

@@ -40,6 +40,7 @@ from app.application.tasks.queries import ListTasksQuery
 from app.domain.reminders.entities import ReminderStatus
 from app.infrastructure.llm.gateway import LLMGateway
 from app.infrastructure.llm.models import GenerateRequest
+from app.observability.context import current_trace_fields
 
 TASK_PREFIXES = ("待办", "todo", "task")
 MEMORY_PREFIXES = ("记住", "记一下", "记下", "memo")
@@ -246,6 +247,7 @@ class LLMFirstConversationIntentClassifier:
             return None
 
         try:
+            trace_id, chain_id, request_id = current_trace_fields()
             result = await self.llm_gateway.generate(
                 GenerateRequest(
                     prompt=_build_intent_prompt(command.text, context_text),
@@ -255,6 +257,9 @@ class LLMFirstConversationIntentClassifier:
                     api_key_suffix=self.api_key_suffix,
                     conversation_id=conversation_id,
                     session_id=session_id,
+                    trace_id=trace_id,
+                    chain_id=chain_id,
+                    request_id=request_id,
                     metadata={"component": "conversation_intent_classifier"},
                 )
             )

@@ -74,6 +74,9 @@ async def test_conversation_inbound_processor_sends_response_message() -> None:
     assert messaging_adapter.sent_messages[0][0].recipient_id == "debug-user"
     assert messaging_adapter.sent_messages[0][1].metadata["parent_message_id"] == "dbgmsg_1"
     assert messaging_adapter.sent_messages[0][1].metadata["root_message_id"] == "dbgroot_1"
+    assert messaging_adapter.sent_messages[0][1].metadata["trace_id"]
+    assert messaging_adapter.sent_messages[0][1].metadata["chain_id"]
+    assert messaging_adapter.sent_messages[0][1].metadata["request_id"]
 
 
 @pytest.mark.asyncio

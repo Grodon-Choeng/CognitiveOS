@@ -211,6 +211,7 @@ __marimo__/
 .idea/
 .vscode/
 logs/
+.runtime/
 *.out
 *.err
 *.pid.lock

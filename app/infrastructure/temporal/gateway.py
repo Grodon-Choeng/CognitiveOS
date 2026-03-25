@@ -14,6 +14,7 @@ from app.infrastructure.temporal.workflows.reminder_workflow import (
     RECORD_USER_REPLY_SIGNAL,
     ReminderWorkflowInput,
 )
+from app.observability.context import current_trace_fields
 from app.observability.workflow_events import WorkflowEventRecord, WorkflowEventRecorder
 
 
@@ -36,6 +37,7 @@ class TemporalReminderWorkflowGateway(ReminderWorkflowGateway):
         client = await self._get_client()
         workflow_id = reminder.workflow_id or _build_workflow_id(reminder)
         start_delay = self._build_start_delay(reminder.schedule.remind_at)
+        trace_id, chain_id, request_id = current_trace_fields()
 
         try:
             await client.start_workflow(
@@ -47,6 +49,9 @@ class TemporalReminderWorkflowGateway(ReminderWorkflowGateway):
                     timezone=reminder.schedule.timezone,
                     conversation_id=reminder.conversation_id,
                     session_id=reminder.session_id,
+                    trace_id=trace_id,
+                    chain_id=chain_id,
+                    request_id=request_id,
                     dispatch_channel=dispatch_target.channel,
                     dispatch_recipient_id=dispatch_target.recipient_id,
                     dispatch_chat_id=reminder.dispatch_chat_id,
@@ -64,9 +69,9 @@ class TemporalReminderWorkflowGateway(ReminderWorkflowGateway):
                     event_type="workflow_start_failed",
                     conversation_id=reminder.conversation_id,
                     session_id=reminder.session_id,
-                    trace_id=None,
-                    chain_id=None,
-                    request_id=None,
+                    trace_id=trace_id,
+                    chain_id=chain_id,
+                    request_id=request_id,
                     success=False,
                     message="提醒工作流启动失败。",
                     payload={
@@ -84,9 +89,9 @@ class TemporalReminderWorkflowGateway(ReminderWorkflowGateway):
                 event_type="workflow_started",
                 conversation_id=reminder.conversation_id,
                 session_id=reminder.session_id,
-                trace_id=None,
-                chain_id=None,
-                request_id=None,
+                trace_id=trace_id,
+                chain_id=chain_id,
+                request_id=request_id,
                 message="提醒工作流已启动。",
                 payload={"reminder_id": str(reminder.reminder_id.value)},
             )
@@ -97,6 +102,7 @@ class TemporalReminderWorkflowGateway(ReminderWorkflowGateway):
         client = await self._get_client()
         handle = client.get_workflow_handle(workflow_id)
         await handle.signal(RECORD_USER_REPLY_SIGNAL, reply_text)
+        trace_id, chain_id, request_id = current_trace_fields()
         await self.workflow_event_recorder.record(
             WorkflowEventRecord.create(
                 workflow_id=workflow_id,
@@ -104,9 +110,9 @@ class TemporalReminderWorkflowGateway(ReminderWorkflowGateway):
                 event_type="reply_signal_sent",
                 conversation_id=None,
                 session_id=None,
-                trace_id=None,
-                chain_id=None,
-                request_id=None,
+                trace_id=trace_id,
+                chain_id=chain_id,
+                request_id=request_id,
                 message="已向工作流发送回复信号。",
                 payload={"reply_text": reply_text},
             )
@@ -116,6 +122,7 @@ class TemporalReminderWorkflowGateway(ReminderWorkflowGateway):
         client = await self._get_client()
         handle = client.get_workflow_handle(workflow_id)
         await handle.cancel()
+        trace_id, chain_id, request_id = current_trace_fields()
         await self.workflow_event_recorder.record(
             WorkflowEventRecord.create(
                 workflow_id=workflow_id,
@@ -123,9 +130,9 @@ class TemporalReminderWorkflowGateway(ReminderWorkflowGateway):
                 event_type="workflow_cancel_requested",
                 conversation_id=None,
                 session_id=None,
-                trace_id=None,
-                chain_id=None,
-                request_id=None,
+                trace_id=trace_id,
+                chain_id=chain_id,
+                request_id=request_id,
                 message="已向工作流发送取消请求。",
                 payload={},
             )

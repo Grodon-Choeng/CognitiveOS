@@ -32,6 +32,10 @@ make help
 常用目标包括：
 
 - `make install`
+- `make services-up`
+- `make services-status`
+- `make services-stop`
+- `make services-restart`
 - `make infra-up`
 - `make migrate`
 - `make api`
@@ -94,7 +98,37 @@ make worker
 make feishu-longconn
 ```
 
-### 8. Temporal 前置条件
+### 8. 使用统一服务编排命令
+
+如果你希望把 `infra`、`migrate`、`api`、`worker` 串起来统一启动，推荐直接使用：
+
+```bash
+make services-up
+```
+
+默认会按顺序执行：
+
+`infra -> migrate -> api -> worker`
+
+常见用法示例：
+
+```bash
+make services-status
+make services-stop
+make services-restart
+make services-up SERVICES=api,worker API_RELOAD=1
+make services-up SERVICES=infra,migrate,api
+```
+
+说明：
+
+- `SERVICES` 支持 `all` 或逗号分隔列表，可选值包括：`infra`、`migrate`、`api`、`worker`、`feishu-longconn`
+- `API_RELOAD=1` 当前只对 `api` 生效，会以 `uvicorn --reload` 启动
+- 服务编排器会把常驻服务状态与分进程日志写到 `.runtime/services/`
+- 日志按进程拆分保存，例如 `.runtime/services/logs/api.log`、`.runtime/services/logs/worker.log`
+- API / worker / 长连接进程日志会统一带上 `trace_id`、`chain_id`、`request_id`、`service_run_id`，便于串联完整处理链路
+
+### 9. Temporal 前置条件
 
 - 当前仓库已接入真实的 Temporal client / workflow signal 链路。
 - 默认本地编排已经提供 Temporal server 与 Temporal UI。
@@ -160,6 +194,9 @@ tests/
 - 飞书已作为可选 IM 发送入口接入，当前通过 `MessagingAdapter` 边界统一发送。
 - 飞书事件订阅回调入口为 `POST /api/v1/integrations/feishu/events`。
 - 飞书也支持通过长连接接收入站事件，入口命令为 `make feishu-longconn`。
+- 现已提供统一服务编排命令：`make services-up` / `make services-stop` / `make services-status` / `make services-restart`，便于串联启动 `infra`、`migrate`、`api`、`worker` 等服务。
+- 服务编排器当前会把常驻服务 PID 状态与分进程日志写到 `.runtime/services/`，用于检测服务是否已在运行、停止与重启。
+- 这些进程日志默认会带上统一链路标识，便于结合 `message/model/tool/workflow` 审计记录回溯一条请求在不同进程中的执行过程。
 - 内部统一消息入口为 `POST /api/v1/conversations/messages`，用于让 Web 与飞书共用同一条 conversation 处理链路。
 - 现已新增 `debug_im` 调试渠道：`POST /api/v1/debug/im/messages` 可模拟用户发消息，`GET /api/v1/debug/im/messages` / `GET /api/v1/debug/im/sessions` 可查看最近消息与会话。
 - `WS /api/v1/debug/im/ws?user_identity=...` 可订阅调试 IM 会话的实时消息；连接后会先收到最近历史，再持续收到新消息推送。

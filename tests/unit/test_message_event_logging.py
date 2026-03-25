@@ -73,6 +73,9 @@ async def test_recording_messaging_adapter_records_outbound_success(tmp_path: Pa
                 "session_id": "session-1",
                 "chat_id": "oc_123",
                 "thread_id": "ot_123",
+                "trace_id": "trace-1",
+                "chain_id": "chain-1",
+                "request_id": "request-1",
             },
         ),
     )
@@ -84,6 +87,9 @@ async def test_recording_messaging_adapter_records_outbound_success(tmp_path: Pa
     assert record["external_message_id"] == "om_sent_1"
     assert record["conversation_id"] == "conversation-1"
     assert record["session_id"] == "session-1"
+    assert record["trace_id"] == "trace-1"
+    assert record["chain_id"] == "chain-1"
+    assert record["request_id"] == "request-1"
     assert isinstance(record["latency_ms"], float)
 
 

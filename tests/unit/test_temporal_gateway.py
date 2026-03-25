@@ -10,6 +10,8 @@ from app.config.settings import Settings
 from app.domain.reminders.entities import Reminder
 from app.domain.reminders.value_objects import ReminderId, ReminderSchedule
 from app.infrastructure.temporal.gateway import TemporalReminderWorkflowGateway
+from app.infrastructure.temporal.workflows.reminder_workflow import ReminderWorkflowInput
+from app.observability.context import bind_observability_context, reset_observability_context
 from app.observability.workflow_events import WorkflowEventRecord
 
 
@@ -93,16 +95,29 @@ async def test_temporal_gateway_uses_precomputed_workflow_id_and_records_success
     client = FakeTemporalClient()
     gateway = TemporalReminderWorkflowGateway(Settings(), recorder)
     gateway._client = cast(Client, client)
-
-    workflow_id = await gateway.start_reminder(
-        reminder=build_reminder(workflow_id="reminder:00000000-0000-0000-0000-000000000001"),
-        dispatch_target=ReminderDispatchTarget(channel="console", recipient_id="user-1"),
+    token = bind_observability_context(
+        trace_id="trace-test-1",
+        chain_id="chain-test-1",
+        request_id="request-test-1",
     )
+
+    try:
+        workflow_id = await gateway.start_reminder(
+            reminder=build_reminder(workflow_id="reminder:00000000-0000-0000-0000-000000000001"),
+            dispatch_target=ReminderDispatchTarget(channel="console", recipient_id="user-1"),
+        )
+    finally:
+        reset_observability_context(token)
 
     assert workflow_id == "reminder:00000000-0000-0000-0000-000000000001"
     assert client.started_calls[0].workflow_id == workflow_id
+    workflow_input = cast(ReminderWorkflowInput, client.started_calls[0].workflow_input)
+    assert workflow_input.trace_id == "trace-test-1"
+    assert workflow_input.chain_id == "chain-test-1"
+    assert workflow_input.request_id == "request-test-1"
     assert recorder.records[0].event_type == "workflow_started"
     assert recorder.records[0].success is True
+    assert recorder.records[0].trace_id == "trace-test-1"
 
 
 @pytest.mark.asyncio

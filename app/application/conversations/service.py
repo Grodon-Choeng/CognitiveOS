@@ -19,6 +19,7 @@ from app.application.conversations.ports import AssistantTurnStateStore, Convers
 from app.infrastructure.llm.gateway import LLMGateway
 from app.infrastructure.llm.models import GenerateRequest
 from app.infrastructure.types import JSONObject, JSONValue
+from app.observability.context import current_trace_fields
 from app.observability.message_events import MessageEventRecord, MessageEventRecorder
 
 logger = logging.getLogger(__name__)
@@ -137,6 +138,7 @@ class LLMConversationFallbackResponder:
             session_id=session_id,
         )
         try:
+            trace_id, chain_id, request_id = current_trace_fields()
             result = await self.llm_gateway.generate(
                 GenerateRequest(
                     prompt=_build_fallback_prompt(
@@ -149,6 +151,9 @@ class LLMConversationFallbackResponder:
                     api_key_suffix=self.api_key_suffix,
                     conversation_id=conversation_id,
                     session_id=session_id,
+                    trace_id=trace_id,
+                    chain_id=chain_id,
+                    request_id=request_id,
                     metadata={"component": "conversation_fallback_responder"},
                 )
             )
@@ -447,6 +452,7 @@ def _build_inbound_record(
     }
     if assistant_turn_state is not None:
         metadata["assistant_turn_state"] = assistant_turn_state
+    trace_id, chain_id, request_id = current_trace_fields()
     return MessageEventRecord.create(
         direction="inbound",
         channel=command.channel,
@@ -459,9 +465,9 @@ def _build_inbound_record(
         thread_id=command.thread_id,
         conversation_id=conversation_id,
         session_id=session_id,
-        trace_id=None,
-        chain_id=None,
-        request_id=None,
+        trace_id=trace_id,
+        chain_id=chain_id,
+        request_id=request_id,
         latency_ms=latency_ms,
         text=command.text,
         success=success,
