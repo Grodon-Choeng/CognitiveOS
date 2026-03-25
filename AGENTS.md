@@ -221,6 +221,8 @@ workflows, activities, signals, queries, updates, timers, retries, durable execu
 - 常用本地开发命令应优先沉淀到 `Makefile`，避免在 README 和协作过程中散落多个不一致的命令版本。
 - 当前统一服务启动/停止/状态查看优先使用 `make services-up`、`make services-stop`、`make services-status`、`make services-restart`；若只运行单个组件，再退回 `make api` / `make worker` / `make feishu-longconn`。
 - 服务编排器会把常驻服务状态与日志写到仓库内 `.runtime/services/`；该目录属于本地运行产物，不纳入版本控制。
+- 当前镜像构建与容器运行优先使用 `make image-build`、`make image-migrate`、`make image-up`、`make image-down`、`make image-logs`；如果修改了容器化运行方式，必须同步更新 `compose.yaml`、`Dockerfile`、`README.md` 与本文件。
+- 容器化运行时，应用日志文件与各类 jsonl 必须继续映射回宿主机，避免只留在容器层里难以排查。
 - 应用 settings 默认应支持从项目根目录 `.env` 读取本地配置；若变更读取方式，必须同步更新 `README.md` 与 `.env.example`。
 - 新增环境变量、启动方式或基础设施依赖时，必须同步更新 `README.md` 与本文件。
 - 当前 LLM 配置应优先通过“默认兜底配置 + conversation 覆盖配置”表达：默认层至少包括 `COGNITIVE_OS_LLM_DEFAULT_PROVIDER`、`COGNITIVE_OS_LLM_DEFAULT_ENDPOINT`、`COGNITIVE_OS_LLM_DEFAULT_API_KEY`、`COGNITIVE_OS_LLM_DEFAULT_SMALL_MODEL`、`COGNITIVE_OS_LLM_DEFAULT_LARGE_MODEL`；conversation 层可再通过 `COGNITIVE_OS_CONVERSATION_LLM_PROVIDER`、`COGNITIVE_OS_CONVERSATION_LLM_ENDPOINT`、`COGNITIVE_OS_CONVERSATION_LLM_API_KEY`、`COGNITIVE_OS_CONVERSATION_INTENT_MODEL` 覆盖。

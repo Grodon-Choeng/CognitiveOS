@@ -36,6 +36,10 @@ make help
 - `make services-status`
 - `make services-stop`
 - `make services-restart`
+- `make image-build`
+- `make image-up`
+- `make image-down`
+- `make image-logs`
 - `make infra-up`
 - `make migrate`
 - `make api`
@@ -78,6 +82,7 @@ cp .env.example .env
 - conversation 层如果显式提供自己的 provider / endpoint / key / model，会优先覆盖默认配置
 - 本地 `local` provider 仍允许不配置 key
 - 外部 `openai` / OpenAI-compatible provider 通常需要同时配置 endpoint、key、model
+- 进程日志默认会额外写入 `COGNITIVE_OS_LOG_DIR`，文件名按 `process_role` 拆分，例如 `logs/api.log`、`logs/worker.log`
 
 ### 3. 启动本地基础设施
 
@@ -150,7 +155,37 @@ make services-up SERVICES=infra,migrate,api
 - 日志按进程拆分保存，例如 `.runtime/services/logs/api.log`、`.runtime/services/logs/worker.log`
 - API / worker / 长连接进程日志会统一带上 `trace_id`、`chain_id`、`request_id`、`service_run_id`，便于串联完整处理链路
 
-### 9. Temporal 前置条件
+### 9. 构建镜像并在容器中运行
+
+如需把当前应用打包成镜像并在容器中运行，可使用：
+
+```bash
+make image-build
+make image-up
+```
+
+常见命令：
+
+```bash
+make image-build APP_IMAGE=cognitiveos-app:latest
+make image-migrate
+make image-up IMAGE_SERVICES="app-api app-worker"
+make image-up IMAGE_SERVICES="app-api app-worker app-feishu-longconn"
+make image-logs
+make image-down
+```
+
+说明：
+
+- `image-up` 会自动拉起基础设施、构建镜像、执行 migration，再启动容器化服务
+- 默认容器服务为 `app-api` 与 `app-worker`
+- 同一个镜像会被 `app-api`、`app-worker`、`app-feishu-longconn`、`app-migrate` 复用
+- `./logs:/app/logs` 会挂载到容器内，因此应用日志文件、`message/model/tool/workflow` 的 jsonl 都会保存在宿主机 `logs/` 目录
+- Docker 自身 stdout/stderr 日志也仍可通过 `docker compose logs` 或 `make image-logs` 查看
+- `.dockerignore` 已排除 `.venv`、`tests`、`.runtime`、`logs` 等本地运行产物，避免镜像上下文膨胀
+- 若容器内仍使用 `local` provider，注意 `localhost` 指向容器自身；需要把 `COGNITIVE_OS_LOCAL_LLM_BASE_URL` 或默认 LLM endpoint 改成容器内可达的地址
+
+### 10. Temporal 前置条件
 
 - 当前仓库已接入真实的 Temporal client / workflow signal 链路。
 - 默认本地编排已经提供 Temporal server 与 Temporal UI。
@@ -219,6 +254,7 @@ tests/
 - 现已提供统一服务编排命令：`make services-up` / `make services-stop` / `make services-status` / `make services-restart`，便于串联启动 `infra`、`migrate`、`api`、`worker` 等服务。
 - 服务编排器当前会把常驻服务 PID 状态与分进程日志写到 `.runtime/services/`，用于检测服务是否已在运行、停止与重启。
 - 这些进程日志默认会带上统一链路标识，便于结合 `message/model/tool/workflow` 审计记录回溯一条请求在不同进程中的执行过程。
+- 现已支持通过 `Dockerfile` + `compose.yaml` 构建单镜像并启动 `app-api` / `app-worker` / `app-feishu-longconn` / `app-migrate`；容器内 `logs/` 目录默认映射回宿主机。
 - 内部统一消息入口为 `POST /api/v1/conversations/messages`，用于让 Web 与飞书共用同一条 conversation 处理链路。
 - 现已新增 `debug_im` 调试渠道：`POST /api/v1/debug/im/messages` 可模拟用户发消息，`GET /api/v1/debug/im/messages` / `GET /api/v1/debug/im/sessions` 可查看最近消息与会话。
 - `WS /api/v1/debug/im/ws?user_identity=...` 可订阅调试 IM 会话的实时消息；连接后会先收到最近历史，再持续收到新消息推送。

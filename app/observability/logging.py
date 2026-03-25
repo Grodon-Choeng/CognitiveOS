@@ -1,6 +1,7 @@
 import logging
 from logging import Filter, LogRecord
 from logging.config import dictConfig
+from pathlib import Path
 
 from app.config.settings import Settings
 from app.observability.context import get_observability_context
@@ -22,6 +23,27 @@ class ObservabilityContextFilter(Filter):
 
 
 def configure_logging(settings: Settings) -> None:
+    handlers: dict[str, dict[str, object]] = {
+        "console": {
+            "class": "logging.StreamHandler",
+            "formatter": "default",
+            "filters": ["observability_context"],
+        },
+    }
+    root_handlers = ["console"]
+    if settings.log_file_enabled:
+        process_role = get_observability_context().process_role or "manual"
+        log_dir = Path(settings.log_dir)
+        log_dir.mkdir(parents=True, exist_ok=True)
+        handlers["file"] = {
+            "class": "logging.FileHandler",
+            "formatter": "default",
+            "filters": ["observability_context"],
+            "filename": str(log_dir / f"{process_role}.log"),
+            "encoding": "utf-8",
+        }
+        root_handlers.append("file")
+
     dictConfig(
         {
             "version": 1,
@@ -41,15 +63,9 @@ def configure_logging(settings: Settings) -> None:
                     ),
                 },
             },
-            "handlers": {
-                "console": {
-                    "class": "logging.StreamHandler",
-                    "formatter": "default",
-                    "filters": ["observability_context"],
-                },
-            },
+            "handlers": handlers,
             "root": {
-                "handlers": ["console"],
+                "handlers": root_handlers,
                 "level": "DEBUG" if settings.debug else "INFO",
             },
         }

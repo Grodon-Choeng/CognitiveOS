@@ -58,6 +58,86 @@ services:
     ports:
       - "8080:8080"
 
+  app-migrate:
+    image: ${COGNITIVEOS_APP_IMAGE:-cognitiveos-app:latest}
+    container_name: cognitiveos-app-migrate
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      COGNITIVE_OS_DATABASE_URL: postgresql+asyncpg://cognitiveos:cognitiveos@postgres:5432/cognitiveos
+      COGNITIVE_OS_REDIS_URL: redis://redis:6379/0
+      COGNITIVE_OS_TEMPORAL_HOST: temporal:7233
+      COGNITIVE_OS_PROCESS_ROLE: migrate
+    volumes:
+      - ./logs:/app/logs
+    command: ["uv", "run", "alembic", "upgrade", "head"]
+    restart: "no"
+
+  app-api:
+    image: ${COGNITIVEOS_APP_IMAGE:-cognitiveos-app:latest}
+    container_name: cognitiveos-app-api
+    depends_on:
+      postgres:
+        condition: service_healthy
+      temporal:
+        condition: service_started
+    env_file:
+      - .env
+    environment:
+      COGNITIVE_OS_DATABASE_URL: postgresql+asyncpg://cognitiveos:cognitiveos@postgres:5432/cognitiveos
+      COGNITIVE_OS_REDIS_URL: redis://redis:6379/0
+      COGNITIVE_OS_TEMPORAL_HOST: temporal:7233
+      COGNITIVE_OS_PROCESS_ROLE: api
+    volumes:
+      - ./logs:/app/logs
+    ports:
+      - "8000:8000"
+    command: ["uv", "run", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    restart: unless-stopped
+
+  app-worker:
+    image: ${COGNITIVEOS_APP_IMAGE:-cognitiveos-app:latest}
+    container_name: cognitiveos-app-worker
+    depends_on:
+      postgres:
+        condition: service_healthy
+      temporal:
+        condition: service_started
+    env_file:
+      - .env
+    environment:
+      COGNITIVE_OS_DATABASE_URL: postgresql+asyncpg://cognitiveos:cognitiveos@postgres:5432/cognitiveos
+      COGNITIVE_OS_REDIS_URL: redis://redis:6379/0
+      COGNITIVE_OS_TEMPORAL_HOST: temporal:7233
+      COGNITIVE_OS_PROCESS_ROLE: worker
+    volumes:
+      - ./logs:/app/logs
+    command: ["uv", "run", "python", "-m", "app.bootstrap.temporal"]
+    restart: unless-stopped
+
+  app-feishu-longconn:
+    image: ${COGNITIVEOS_APP_IMAGE:-cognitiveos-app:latest}
+    container_name: cognitiveos-app-feishu-longconn
+    depends_on:
+      postgres:
+        condition: service_healthy
+      temporal:
+        condition: service_started
+    env_file:
+      - .env
+    environment:
+      COGNITIVE_OS_DATABASE_URL: postgresql+asyncpg://cognitiveos:cognitiveos@postgres:5432/cognitiveos
+      COGNITIVE_OS_REDIS_URL: redis://redis:6379/0
+      COGNITIVE_OS_TEMPORAL_HOST: temporal:7233
+      COGNITIVE_OS_PROCESS_ROLE: feishu-longconn
+    volumes:
+      - ./logs:/app/logs
+    command: ["uv", "run", "python", "-m", "app.bootstrap.feishu_long_connection"]
+    restart: unless-stopped
+
 volumes:
   postgres-data:
   redis-data:

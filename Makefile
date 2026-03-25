@@ -4,8 +4,10 @@ COMPOSE_SERVICES := postgres redis temporal temporal-ui
 
 SERVICES ?= all
 API_RELOAD ?= 1
+APP_IMAGE ?= cognitiveos-app:latest
+IMAGE_SERVICES ?= app-api app-worker
 
-.PHONY: help install infra-up infra-down infra-logs migrate api worker feishu-longconn services-up services-stop services-status services-restart fmt lint test typecheck check compose-config
+.PHONY: help install infra-up infra-down infra-logs migrate api worker feishu-longconn services-up services-stop services-status services-restart image-build image-migrate image-up image-down image-logs fmt lint test typecheck check compose-config
 
 help:
 	@echo "可用命令："
@@ -21,6 +23,11 @@ help:
 	@echo "  make services-stop   按编排停止本地服务"
 	@echo "  make services-status 查看本地服务状态"
 	@echo "  make services-restart 按编排重启本地服务"
+	@echo "  make image-build     构建当前应用镜像"
+	@echo "  make image-migrate   使用镜像执行数据库 migration"
+	@echo "  make image-up        使用镜像启动应用容器"
+	@echo "  make image-down      停止镜像运行的应用容器"
+	@echo "  make image-logs      查看镜像运行容器日志"
 	@echo "  make fmt             自动修复并格式化代码"
 	@echo "  make lint            执行 Ruff 检查"
 	@echo "  make test            执行测试"
@@ -44,13 +51,13 @@ migrate:
 	$(UV) run alembic upgrade head
 
 api:
-	$(UV) run uvicorn app.main:app --reload
+	COGNITIVE_OS_PROCESS_ROLE=api $(UV) run uvicorn app.main:app --reload
 
 worker:
-	$(UV) run python -m app.bootstrap.temporal
+	COGNITIVE_OS_PROCESS_ROLE=worker $(UV) run python -m app.bootstrap.temporal
 
 feishu-longconn:
-	$(UV) run python -m app.bootstrap.feishu_long_connection
+	COGNITIVE_OS_PROCESS_ROLE=feishu-longconn $(UV) run python -m app.bootstrap.feishu_long_connection
 
 services-up:
 	$(UV) run python -m app.bootstrap.services up --services "$(SERVICES)" $(if $(filter 1 true TRUE yes YES,$(API_RELOAD)),--reload,)
@@ -63,6 +70,25 @@ services-status:
 
 services-restart:
 	$(UV) run python -m app.bootstrap.services restart --services "$(SERVICES)" $(if $(filter 1 true TRUE yes YES,$(API_RELOAD)),--reload,)
+
+image-build:
+	COGNITIVEOS_APP_IMAGE=$(APP_IMAGE) docker build -t $(APP_IMAGE) .
+
+image-migrate:
+	COGNITIVEOS_APP_IMAGE=$(APP_IMAGE) $(DOCKER_COMPOSE) up -d $(COMPOSE_SERVICES)
+	COGNITIVEOS_APP_IMAGE=$(APP_IMAGE) $(DOCKER_COMPOSE) run --rm app-migrate
+
+image-up:
+	COGNITIVEOS_APP_IMAGE=$(APP_IMAGE) $(DOCKER_COMPOSE) up -d $(COMPOSE_SERVICES)
+	COGNITIVEOS_APP_IMAGE=$(APP_IMAGE) docker build -t $(APP_IMAGE) .
+	COGNITIVEOS_APP_IMAGE=$(APP_IMAGE) $(DOCKER_COMPOSE) run --rm app-migrate
+	COGNITIVEOS_APP_IMAGE=$(APP_IMAGE) $(DOCKER_COMPOSE) up -d $(IMAGE_SERVICES)
+
+image-down:
+	COGNITIVEOS_APP_IMAGE=$(APP_IMAGE) $(DOCKER_COMPOSE) stop $(IMAGE_SERVICES)
+
+image-logs:
+	COGNITIVEOS_APP_IMAGE=$(APP_IMAGE) $(DOCKER_COMPOSE) logs -f --tail=200 $(IMAGE_SERVICES)
 
 fmt:
 	$(UV) run ruff check --fix app tests

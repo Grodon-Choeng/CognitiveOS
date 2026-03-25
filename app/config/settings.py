@@ -30,6 +30,8 @@ class Settings(BaseSettings):
     tool_invocation_jsonl_enabled: bool = True
     tool_invocation_jsonl_path: str = "logs/tool_invocations.jsonl"
     tool_invocation_db_enabled: bool = True
+    log_file_enabled: bool = True
+    log_dir: str = "logs"
     temporal_host: str = "localhost:7233"
     temporal_namespace: str = "default"
     temporal_task_queue: str = "cognitiveos-reminders"
