@@ -51,14 +51,18 @@ _REMINDER_REPLY_COMMAND_KEYWORDS = (
 _REMINDER_REPLY_ACK_PHRASES = (
     "收到",
     "收到提醒",
+    "好的",
+    "好",
     "知道了",
     "我知道了",
+    "完成",
     "完成了",
     "已完成",
     "处理好了",
     "已处理",
     "done",
 )
+_REMINDER_REPLY_REJECT_PHRASES = ("不是这个", "先不用", "不用了", "不相关")
 
 
 class ReminderApplicationService:
@@ -120,6 +124,15 @@ class ReminderApplicationService:
 
     async def handle_reply(self, command: HandleReminderReplyCommand) -> ReminderReplyDTO:
         reminder_id = ReminderId.from_string(command.reminder_id)
+        reply_semantics = _classify_reminder_reply_semantics(command.reply_text)
+
+        if reply_semantics != "acknowledge":
+            return ReminderReplyDTO(
+                reminder_id=command.reminder_id,
+                reply_text=command.reply_text,
+                accepted=False,
+                status=ReminderStatus.PENDING.value,
+            )
 
         async with self.unit_of_work_factory() as unit_of_work:
             reminder = await unit_of_work.reminders.get(reminder_id)
@@ -308,6 +321,7 @@ class ReminderApplicationService:
         conversation_id: str,
         session_id: str,
     ) -> ReminderDTO:
+        # Deprecated: conversation 自然语言引用已统一收口到 resolver。
         reminder_list = await self.list_reminders(
             ListRemindersQuery(
                 conversation_id=conversation_id,
@@ -329,6 +343,7 @@ class ReminderApplicationService:
         session_id: str,
         text_hint: str,
     ) -> ReminderDTO:
+        # Deprecated: conversation 自然语言引用已统一收口到 resolver。
         reminder_list = await self.list_reminders(
             ListRemindersQuery(
                 conversation_id=conversation_id,
@@ -367,10 +382,12 @@ class ReminderApplicationService:
         self,
         command: HandleReminderInboundMessageCommand,
     ) -> ReminderInboundMessageResult:
-        if not _should_handle_as_reminder_reply(command.text):
+        reply_semantics = _classify_reminder_reply_semantics(command.text)
+        if reply_semantics != "acknowledge":
             return ReminderInboundMessageResult(
                 handled=False,
                 reason="not_reminder_reply",
+                decision="pass_to_kernel",
             )
         conversation_context = await self.conversation_context_resolver.resolve_for_inbound(
             source_channel=command.channel,
@@ -392,11 +409,24 @@ class ReminderApplicationService:
         )
         async with self.unit_of_work_factory() as unit_of_work:
             matcher = ReminderInboundMatcher(unit_of_work.reminders)
-            reminder = await matcher.match(command)
-            if reminder is None:
+            matched = await matcher.match(command)
+            if matched is None:
                 return ReminderInboundMessageResult(
                     handled=False,
                     reason="no_pending_reminder",
+                    decision="pass_to_kernel",
+                )
+
+            reminder = matched.reminder
+            fast_path_decision = _decide_fast_path_action(match_source=matched.source)
+            if fast_path_decision == "needs_confirmation":
+                return ReminderInboundMessageResult(
+                    handled=False,
+                    reminder_id=str(reminder.reminder_id.value),
+                    reason="reminder_needs_confirmation",
+                    response_text="我理解成你在回复最近这条提醒，先帮你确认一下：如果是这条，请直接说“是这条提醒”或告诉我要怎么改。",
+                    decision="needs_confirmation",
+                    match_source=matched.source,
                 )
 
             if reminder.workflow_id is None:
@@ -404,6 +434,8 @@ class ReminderApplicationService:
                     handled=False,
                     reminder_id=str(reminder.reminder_id.value),
                     reason="workflow_not_started",
+                    decision="pass_to_kernel",
+                    match_source=matched.source,
                 )
 
             await self.workflow_gateway.record_user_reply(
@@ -418,6 +450,10 @@ class ReminderApplicationService:
         return ReminderInboundMessageResult(
             handled=True,
             reminder_id=str(reminder.reminder_id.value),
+            reason="reminder_replied",
+            response_text="好的，这条提醒我帮你记为已收到。",
+            decision="completed",
+            match_source=matched.source,
         )
 
     @staticmethod
@@ -460,17 +496,25 @@ class ReminderApplicationService:
             ) from persist_error
 
 
-def _should_handle_as_reminder_reply(text: str) -> bool:
+def _classify_reminder_reply_semantics(text: str) -> str:
     normalized = text.strip().casefold()
     if not normalized:
-        return False
+        return "pass_to_kernel"
     if any(keyword in normalized for keyword in _REMINDER_REPLY_COMMAND_KEYWORDS):
-        return False
+        return "defer_or_reschedule"
+    if any(phrase in normalized for phrase in _REMINDER_REPLY_REJECT_PHRASES):
+        return "reject_or_not_related"
     if normalized in _REMINDER_REPLY_ACK_PHRASES:
-        return True
+        return "acknowledge"
     if normalized.startswith(("我已经", "已经", "已")):
-        return True
-    return normalized.endswith("了")
+        return "acknowledge"
+    return "reject_or_not_related"
+
+
+def _decide_fast_path_action(*, match_source: str) -> str:
+    if match_source in {"exact_message_relation", "same_thread_recent_dispatch"}:
+        return "completed"
+    return "needs_confirmation"
 
 
 def _build_reminder_workflow_id(reminder_id: ReminderId) -> str:

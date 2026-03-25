@@ -1,6 +1,14 @@
+from dataclasses import dataclass
+
 from app.application.reminders.commands import HandleReminderInboundMessageCommand
 from app.domain.reminders.entities import Reminder, ReminderStatus
 from app.domain.reminders.repository import ReminderRepository
+
+
+@dataclass(slots=True, frozen=True)
+class ReminderInboundMatch:
+    reminder: Reminder
+    source: str
 
 
 class ReminderInboundMatcher:
@@ -10,27 +18,30 @@ class ReminderInboundMatcher:
     async def match(
         self,
         command: HandleReminderInboundMessageCommand,
-    ) -> Reminder | None:
+    ) -> ReminderInboundMatch | None:
         reminder = await self._match_by_exact_message_relation(command)
         if reminder is not None:
-            return reminder
+            return ReminderInboundMatch(reminder=reminder, source="exact_message_relation")
 
         reminder = await self._match_by_conversation(command)
         if reminder is not None:
-            return reminder
+            return ReminderInboundMatch(reminder=reminder, source="same_conversation_pending")
 
         reminder = await self._match_by_chat_and_thread(command)
         if reminder is not None:
-            return reminder
+            return ReminderInboundMatch(reminder=reminder, source="same_thread_recent_dispatch")
 
         reminder = await self._match_by_chat(command)
         if reminder is not None:
-            return reminder
+            return ReminderInboundMatch(reminder=reminder, source="same_chat_recent_dispatch")
 
-        return await self.repository.get_latest_pending_by_dispatch(
+        reminder = await self.repository.get_latest_pending_by_dispatch(
             channel=command.channel,
             recipient_id=command.sender_id,
         )
+        if reminder is None:
+            return None
+        return ReminderInboundMatch(reminder=reminder, source="latest_pending_by_dispatch")
 
     async def _match_by_conversation(
         self,

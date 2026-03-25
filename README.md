@@ -2,13 +2,11 @@
 
 CognitiveOS 是一个面向个人助理场景的 AI-native 模块化单体后端。
 
-当前仓库处于第一阶段骨架期，优先服务 reminder 垂直切片：
+当前仓库的真实形态已经不是“第一阶段骨架期”，而是一个正在收口中的 kernel 过渡态：
 
-`reminder creation` → `persistence` → `Temporal workflow bootstrap` → `message sending adapter contract` → `user reply continuation path`
-
-当前 conversation 主链路已升级为 assistant execution kernel：
-
-`resolve context` → `build turn state` → `plan` → `resolve target` → `execute` → `render` → `record`
+- 当前实现：`resolve context` → `reminder fast path` → `build turn state` → `plan` → `execute` → `render` → `record / persist`
+- 当前稳定垂直切片：`reminder creation` → `persistence` → `Temporal workflow bootstrap` → `message sending adapter contract` → `user reply continuation path`
+- 目标方向：继续把 conversation 主链路收口成更完整的 assistant kernel，逐步消化迁移期兼容入口和旧 shortcut
 
 ## 当前技术基线
 
@@ -169,8 +167,8 @@ make image-up
 ```bash
 make image-build APP_IMAGE=cognitiveos-app:latest
 make image-migrate
-make image-up IMAGE_SERVICES="app-api app-worker"
 make image-up IMAGE_SERVICES="app-api app-worker app-feishu-longconn"
+make image-up IMAGE_SERVICES="app-api app-worker"
 make image-logs
 make image-down
 ```
@@ -178,7 +176,8 @@ make image-down
 说明：
 
 - `image-up` 会自动拉起基础设施、构建镜像、执行 migration，再启动容器化服务
-- 默认容器服务为 `app-api` 与 `app-worker`
+- 默认容器服务为 `app-api`、`app-worker` 与 `app-feishu-longconn`
+- 如果只想启动部分容器，可通过 `IMAGE_SERVICES` 覆盖默认值
 - 同一个镜像会被 `app-api`、`app-worker`、`app-feishu-longconn`、`app-migrate` 复用
 - `./logs:/app/logs` 会挂载到容器内，因此应用日志文件、`message/model/tool/workflow` 的 jsonl 都会保存在宿主机 `logs/` 目录
 - Docker 自身 stdout/stderr 日志也仍可通过 `docker compose logs` 或 `make image-logs` 查看
@@ -235,10 +234,25 @@ tests/
 
 ### 当前范围说明
 
-- reminder reply continuation 仍保留优先快路径
+- reminder reply continuation 仍保留优先快路径，但现在只处理高置信 acknowledge；其余输入交回 kernel
 - 当前 turn state 已持久化到 `assistant_turn_states`
 - 已支持 task/reminder 双向转换、失败提醒重试和 conversation debug 返回
 - memory 已支持 `memory_type`、`scope_object_type`、`scope_object_id`、`importance`、`expires_at`
+
+### 当前主链路与迁移期术语
+
+- canonical path：`ConversationApplicationService` + `ConversationKernelFacade`
+- legacy adapter：`IntentConversationHandler`
+- deprecated shortcuts：service 层 conversation-era `latest / matching` 方法，当前只保留兼容，不作为 kernel 正常路径
+- 当前 `ConversationApplicationService._handle_with_kernel()` 的真实顺序是：
+  - `resolve context`
+  - `reminder fast path`
+  - `build turn state`
+  - `plan`
+  - `execute`
+  - `render`
+  - `record / persist assistant_turn_state`
+- `resolve target` 当前仍属于 executor / resolver 内部职责，不再作为顶层阶段单列
 
 ## 说明
 

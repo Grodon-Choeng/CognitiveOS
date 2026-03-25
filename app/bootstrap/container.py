@@ -9,6 +9,7 @@ from app.application.conversations.intent_handler import (
     LLMFirstConversationIntentClassifier,
 )
 from app.application.conversations.kernel.executor import AssistantExecutor
+from app.application.conversations.kernel.facade import ConversationKernelFacade
 from app.application.conversations.kernel.planner import AssistantActionPlanner
 from app.application.conversations.kernel.renderer import AssistantResponseRenderer
 from app.application.conversations.kernel.resolver import ReferenceResolver
@@ -373,29 +374,26 @@ class ApplicationProvider(Provider):
         return AssistantResponseRenderer()
 
     @provide(scope=Scope.APP)
-    def provide_legacy_intent_handler(
+    def provide_conversation_kernel_facade(
         self,
-        conversation_intent_classifier: LLMFirstConversationIntentClassifier,
-        task_service: TaskApplicationService,
-        memory_service: MemoryApplicationService,
-        reminder_service: ReminderApplicationService,
-        overview_service: OverviewApplicationService,
         turn_context_builder: AssistantTurnContextBuilder,
         assistant_action_planner: AssistantActionPlanner,
         assistant_executor: AssistantExecutor,
         assistant_response_renderer: AssistantResponseRenderer,
-    ) -> IntentConversationHandler:
-        return IntentConversationHandler(
-            classifier=conversation_intent_classifier,
-            task_service=task_service,
-            memory_service=memory_service,
-            reminder_service=reminder_service,
-            overview_service=overview_service,
+    ) -> ConversationKernelFacade:
+        return ConversationKernelFacade(
             turn_context_builder=turn_context_builder,
             planner=assistant_action_planner,
             executor=assistant_executor,
             renderer=assistant_response_renderer,
         )
+
+    @provide(scope=Scope.APP)
+    def provide_legacy_intent_handler(
+        self,
+        conversation_kernel_facade: ConversationKernelFacade,
+    ) -> IntentConversationHandler:
+        return IntentConversationHandler(kernel_facade=conversation_kernel_facade)
 
     @provide(scope=Scope.APP)
     def provide_conversation_service(
@@ -404,11 +402,8 @@ class ApplicationProvider(Provider):
         message_event_recorder: MultiMessageEventRecorder,
         audit_service: AuditQueryService,
         reminder_service: ReminderApplicationService,
-        turn_context_builder: AssistantTurnContextBuilder,
+        conversation_kernel_facade: ConversationKernelFacade,
         assistant_turn_state_store: AssistantTurnStateStore,
-        assistant_action_planner: AssistantActionPlanner,
-        assistant_executor: AssistantExecutor,
-        assistant_response_renderer: AssistantResponseRenderer,
         settings: Settings,
         model_invocation_recorder: MultiModelInvocationRecorder,
     ) -> ConversationApplicationService:
@@ -420,11 +415,8 @@ class ApplicationProvider(Provider):
             conversation_context_resolver=conversation_context_resolver,
             message_event_recorder=message_event_recorder,
             reminder_handler=ReminderConversationHandler(reminder_service),
-            turn_context_builder=turn_context_builder,
+            kernel_facade=conversation_kernel_facade,
             turn_state_store=assistant_turn_state_store,
-            planner=assistant_action_planner,
-            executor=assistant_executor,
-            renderer=assistant_response_renderer,
             fallback_responder=LLMConversationFallbackResponder(
                 llm_gateway=llm_gateway,
                 model=settings.effective_conversation_intent_model,

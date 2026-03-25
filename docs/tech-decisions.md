@@ -220,13 +220,14 @@ AI 系统最怕“看起来做了事，但不知道为什么这么做”。
 - 在 `app/application/conversations/kernel/` 内建立 assistant execution kernel
 - conversation 主链路采用：
   - `resolve context`
+  - `reminder fast path`
   - `build turn state`
   - `plan`
-  - `resolve target`
   - `execute`
   - `render`
-  - `record`
-- reminder continuation 继续保留优先快路径
+  - `record / persist`
+- `resolve target` 作为 executor / resolver 内部职责，不再作为顶层阶段单列
+- reminder continuation 继续保留优先快路径，但只处理高置信 acknowledge
 
 #### 选择理由
 

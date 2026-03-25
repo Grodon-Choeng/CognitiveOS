@@ -78,19 +78,6 @@ class ReminderExecutorService(Protocol):
     async def create_reminder(self, command: CreateReminderCommand) -> ReminderDTO: ...
     async def get_reminder(self, reminder_id: str) -> ReminderDTO: ...
     async def cancel_reminder(self, command: CancelReminderCommand) -> ReminderDTO: ...
-    async def cancel_latest_reminder(
-        self,
-        *,
-        conversation_id: str,
-        session_id: str,
-    ) -> ReminderDTO: ...
-    async def cancel_matching_reminder(
-        self,
-        *,
-        conversation_id: str,
-        session_id: str,
-        text_hint: str,
-    ) -> ReminderDTO: ...
     async def link_task(
         self,
         *,
@@ -648,18 +635,6 @@ class AssistantExecutor:
         *,
         turn_context: AssistantTurnContext,
     ) -> ReminderDTO:
-        reference_text = _optional_str(plan.args.get("reference_text"))
-        if reference_text and hasattr(self.reminder_service, "cancel_matching_reminder"):
-            return await self.reminder_service.cancel_matching_reminder(
-                conversation_id=turn_context.conversation_id,
-                session_id=turn_context.session_id,
-                text_hint=reference_text,
-            )
-        if reference_text is None and hasattr(self.reminder_service, "cancel_latest_reminder"):
-            return await self.reminder_service.cancel_latest_reminder(
-                conversation_id=turn_context.conversation_id,
-                session_id=turn_context.session_id,
-            )
         assert plan.object_id is not None
         return await self.reminder_service.cancel_reminder(
             CancelReminderCommand(reminder_id=plan.object_id)

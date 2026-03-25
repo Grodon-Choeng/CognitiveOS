@@ -19,6 +19,9 @@ _ORDINAL_HINTS = {
     "第二个": 1,
     "第二项": 1,
     "第2个": 1,
+    "第三个": 2,
+    "第三项": 2,
+    "第3个": 2,
 }
 
 
@@ -134,15 +137,29 @@ class ReferenceResolver:
 
         if reference_text in _ORDINAL_HINTS:
             index = _ORDINAL_HINTS[reference_text]
-            ordered_candidates = visible_candidates or working_candidates
-            if index < len(ordered_candidates):
-                return self._apply_confirmation_policy(plan, ordered_candidates[index])
+            if index < len(visible_candidates):
+                return self._apply_confirmation_policy(plan, visible_candidates[index])
             return ReferenceResolution(status="not_found")
 
         if reference_text in {"最后一个", "最后一项"}:
-            ordered_candidates = visible_candidates or working_candidates
-            if ordered_candidates:
-                return self._apply_confirmation_policy(plan, ordered_candidates[-1])
+            if visible_candidates:
+                return self._apply_confirmation_policy(plan, visible_candidates[-1])
+            return ReferenceResolution(status="not_found")
+
+        if reference_text in {"倒数第二个", "倒数第二项"}:
+            if len(visible_candidates) >= 2:
+                return self._apply_confirmation_policy(plan, visible_candidates[-2])
+            return ReferenceResolution(status="not_found")
+
+        if reference_text in {"上一个", "前一个"}:
+            if turn_context.focused_object is None or not visible_candidates:
+                return ReferenceResolution(status="not_found")
+            for index, candidate in enumerate(visible_candidates):
+                if candidate.object_id != turn_context.focused_object.object_id:
+                    continue
+                if index > 0:
+                    return self._apply_confirmation_policy(plan, visible_candidates[index - 1])
+                return ReferenceResolution(status="not_found")
             return ReferenceResolution(status="not_found")
 
         filtered_candidates = _match_candidates_by_keyword(

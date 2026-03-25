@@ -13,20 +13,19 @@ application -> infrastructure (通过协议 / 实现边界)
 
 ## 当前核心链路
 
-第一阶段主链路聚焦在 assistant conversation kernel：
+当前 canonical path 聚焦在 `ConversationApplicationService -> reminder fast path decision -> ConversationKernelFacade`：
 
 ```mermaid
 flowchart LR
     A["Inbound Message"] --> B["Resolve Conversation Context"]
     B --> C{"Reminder Reply Fast Path"}
-    C -->|Handled| D["Record"]
+    C -->|Completed / Needs Confirmation| D["Record / Persist Turn State"]
     C -->|Not handled| E["Build Turn State"]
     E --> F["Plan"]
-    F --> G["Resolve Target"]
-    G --> H["Execute"]
-    H --> I["Render"]
-    I --> D["Record"]
-    H --> J["Fallback Reply"]
+    F --> G["Execute (Includes Resolver)"]
+    G --> H["Render"]
+    H --> D
+    G --> J["Fallback Reply"]
     J --> D
 ```
 
@@ -34,27 +33,30 @@ flowchart LR
 
 - `Resolve Conversation Context`：只负责 `conversation_id / session_id` 绑定与解析。
 - `Reminder Reply Fast Path`：保留 reminder continuation 的优先链路，避免影响已稳定的 Temporal 续执行闭环。
+- 该 fast path 现在只处理高置信 acknowledge；需要改期、拒绝或不相关输入会交还 kernel。
 - `Build Turn State`：构建当前回合的执行态，不承载长期记忆。
 - `Plan`：把用户输入归一成 `AssistantActionPlan`。
-- `Resolve Target`：处理“这个 / 那个 / 第二个 / 买药那个”这类对象引用。
-- `Execute`：把计划落到 application service，不直接在这里重写业务规则。
+- `Execute`：把计划落到 application service，并在内部完成“这个 / 那个 / 第二个 / 买药那个”这类对象引用解析。
 - `Render`：统一生成对用户友好的自然回复。
-- `Record`：继续写入消息审计，并附带结构化 turn state，供下一回合复用。
+- `Record / Persist Turn State`：继续写入消息审计，并持久化结构化 turn state，供下一回合复用。
 
 ## Assistant Execution Kernel
 
 `app/application/conversations/kernel/` 是当前会话执行内核：
 
+- `facade.py`
+  - `ConversationKernelFacade`
+  - 统一串联 `build turn state -> plan -> execute -> render`
 - `state.py`
   - `AssistantTurnContext`
   - `AssistantTurnContextBuilder`
   - 聚合最近消息、overview working set、上一回合结构化状态
 - `planner.py`
-  - 规则快路径
-  - 复用现有 `LLMFirstConversationIntentClassifier`
-  - 输出统一 `AssistantActionPlan`
+  - orchestration only
+  - 规则实现拆到 `followup_rules.py` / `referential_rules.py` / `temporal_parsing.py` / `decision_normalizer.py`
 - `resolver.py`
   - 解析焦点对象、可见候选、顺序引用与关键词提示
+  - 序号引用只对最近显式候选列表生效
 - `executor.py`
   - 统一调用 reminder / task / memory / overview application service
   - 返回结构化执行结果，而不是直接拼回复
@@ -63,6 +65,9 @@ flowchart LR
 
 ## 当前边界约束
 
+- `ConversationApplicationService` 是唯一 canonical path。
+- `IntentConversationHandler` 明确是 transitional / legacy adapter，只负责兼容旧调用方。
+- reminder / task / memory service 中的 `latest / matching` conversation shortcut 不再是 kernel 的正统入口；其中 reminder 已优先收口到 resolver-first。
 - conversation binding 仍放在 `app/infrastructure/conversations/resolver.py`。
 - “这个 / 那个 / 第二个” 这类对象级解析 **只放 application kernel**，不继续往 infrastructure 下沉。
 - reminder workflow、LLM gateway、messaging adapter 维持既有设计，本轮不扩到新的基础设施抽象。
@@ -112,8 +117,7 @@ assistant kernel 现在会把以下状态写入 `assistant_turn_states`：
 
 ## 当前明确不做
 
-- 不引入 `assistant_turn_states` 表
-- 不做 task/reminder 双向转换
-- 不做 memory schema 扩展
-- 不动 Temporal / LLM / Messaging 基础接入层
-- 不新增 conversation debug route
+- 不做复杂多智能体图编排
+- 不围绕 Temporal 再造一层伪通用 workflow engine
+- 不让 legacy adapter 承载新增业务能力
+- 不把自然语言引用再散回各个 service shortcut

@@ -2,9 +2,9 @@
 
 ## 当前目标
 
-第一阶段优先把 assistant 主链路做稳，而不是扩能力面。
+当前目标不是继续维持“骨架期”表述，而是把已经存在的 `reminder fast path + assistant kernel pipeline` 收口稳定。
 
-当前默认垂直切片是：
+当前默认垂直切片仍然是：
 
 ```text
 reminder creation
@@ -14,11 +14,11 @@ reminder creation
 -> user reply continuation path
 ```
 
-在这条链路稳定的基础上，conversation 层新增 assistant execution kernel，用来统一 task / reminder / memory / overview 的执行体验。
+在这条链路稳定的基础上，conversation 层已经引入 assistant execution kernel，用来统一 task / reminder / memory / overview 的执行体验。
 
 ## P0
 
-P0 目标：把当前会话入口升级成 `state -> plan -> resolve -> execute -> render`
+P0 当前形态：`resolve context -> reminder fast path -> build turn state -> plan -> execute -> render -> record/persist`
 
 ### P0 支持动作
 
@@ -38,14 +38,14 @@ P0 目标：把当前会话入口升级成 `state -> plan -> resolve -> execute 
 ### P0 支持的引用方式
 
 - 指代词：`这个` / `那个` / `刚才那个`
-- 顺序词：`第一个` / `第二个` / `最后一个`
+- 顺序词：`第一个` / `第二个` / `第三个` / `最后一个` / `倒数第二个` / `上一个`
 - 关键词：`买药那个提醒`
 
 ### P0 验收重点
 
 - 对话入口能统一返回自然回复，而不是每个 service 自己拼一条接口式文案
-- 列表回复后，下一轮能解析“第二个”“那个”
-- reminder reply continuation 快路径不回退
+- 列表回复后，下一轮能解析“第二个”“那个”“第三个”“最后一个”
+- reminder reply continuation 快路径只处理高置信 acknowledge，不吞掉改期或拒绝语义
 - 消息审计保留，并带上结构化 turn state
 - 当前这些能力已经落地完成
 
@@ -60,7 +60,7 @@ P1 目标：把“助手感”做出来
 
 ### 当前进度
 
-- 已支持 `这个 / 那个 / 刚才那个 / 第一个 / 第二个 / 最后一个 / 另一个`
+- 已支持 `这个 / 那个 / 刚才那个 / 第一个 / 第二个 / 第三个 / 最后一个 / 倒数第二个 / 上一个 / 另一个`
 - 已支持 `convert_task_to_reminder` / `convert_reminder_to_task`
 - 已支持最小 confirmation / disambiguation 持久化
 

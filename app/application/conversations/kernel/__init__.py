@@ -4,6 +4,10 @@ from app.application.conversations.kernel.errors import (
     AssistantResolutionError,
 )
 from app.application.conversations.kernel.executor import AssistantExecutor
+from app.application.conversations.kernel.facade import (
+    ConversationKernelFacade,
+    ConversationKernelOutcome,
+)
 from app.application.conversations.kernel.planner import AssistantActionPlanner
 from app.application.conversations.kernel.plans import (
     AssistantActionPlan,
@@ -40,6 +44,8 @@ __all__ = [
     "AssistantTurnContextBuilder",
     "CandidateObjectRef",
     "CandidateRef",
+    "ConversationKernelFacade",
+    "ConversationKernelOutcome",
     "FocusedObjectRef",
     "LastAssistantAction",
     "ReferenceResolver",

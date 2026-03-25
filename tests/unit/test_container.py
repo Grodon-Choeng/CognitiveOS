@@ -1,6 +1,7 @@
 import pytest
 
 from app.application.audit.service import AuditQueryService
+from app.application.conversations.intent_handler import IntentConversationHandler
 from app.application.conversations.service import ConversationApplicationService
 from app.application.debug_im.service import DebugIMApplicationService
 from app.application.overview.service import OverviewApplicationService
@@ -27,6 +28,7 @@ async def test_runtime_container_reuses_app_scoped_singletons() -> None:
         overview_service = await container.get(OverviewApplicationService)
         message_event_recorder = await container.get(MultiMessageEventRecorder)
         messaging_adapter = await container.get(MessagingAdapter)
+        legacy_intent_handler = await container.get(IntentConversationHandler)
 
         assert reminder_service is await container.get(ReminderApplicationService)
         assert conversation_service is await container.get(ConversationApplicationService)
@@ -35,12 +37,15 @@ async def test_runtime_container_reuses_app_scoped_singletons() -> None:
         assert overview_service is await container.get(OverviewApplicationService)
         assert message_event_recorder is await container.get(MultiMessageEventRecorder)
         assert messaging_adapter is await container.get(MessagingAdapter)
+        assert legacy_intent_handler is await container.get(IntentConversationHandler)
         assert conversation_service.reminder_handler is not None
+        assert conversation_service.kernel_facade is not None
         assert conversation_service.turn_context_builder is not None
         assert conversation_service.turn_state_store is not None
         assert conversation_service.planner is not None
         assert conversation_service.executor is not None
         assert conversation_service.renderer is not None
+        assert legacy_intent_handler.kernel_facade is conversation_service.kernel_facade
     finally:
         await container.close()
 

@@ -794,7 +794,7 @@ async def test_handle_reply_raises_when_reminder_not_found() -> None:
 
 
 @pytest.mark.asyncio
-async def test_handle_inbound_message_matches_latest_pending_reminder() -> None:
+async def test_handle_inbound_message_requires_confirmation_for_conversation_fallback() -> None:
     repository = FakeReminderRepository()
     workflow_gateway = FakeReminderWorkflowGateway()
     service = ReminderApplicationService(
@@ -832,11 +832,13 @@ async def test_handle_inbound_message_matches_latest_pending_reminder() -> None:
     )
 
     saved = repository.items[created.reminder_id]
-    assert result.handled is True
+    assert result.handled is False
     assert result.reminder_id == created.reminder_id
-    assert saved.last_user_reply == "我已经喝了"
-    assert saved.status.value == "completed"
-    assert workflow_gateway.recorded_replies == [(created.workflow_id or "", "我已经喝了")]
+    assert result.decision == "needs_confirmation"
+    assert result.match_source == "same_conversation_pending"
+    assert saved.last_user_reply is None
+    assert saved.status.value == "pending"
+    assert workflow_gateway.recorded_replies == []
 
 
 @pytest.mark.asyncio
@@ -880,6 +882,7 @@ async def test_handle_inbound_message_ignores_reminder_query_text() -> None:
     saved = repository.items[created.reminder_id]
     assert result.handled is False
     assert result.reason == "not_reminder_reply"
+    assert result.decision == "pass_to_kernel"
     assert saved.status.value == "pending"
     assert saved.last_user_reply is None
     assert workflow_gateway.recorded_replies == []
@@ -912,6 +915,7 @@ async def test_handle_inbound_message_returns_not_handled_when_no_pending_remind
 
     assert result.handled is False
     assert result.reason == "no_pending_reminder"
+    assert result.decision == "pass_to_kernel"
 
 
 @pytest.mark.asyncio
@@ -955,6 +959,7 @@ async def test_handle_inbound_message_keeps_command_text_out_of_reply_fast_path(
     saved = repository.items[created.reminder_id]
     assert result.handled is False
     assert result.reason == "not_reminder_reply"
+    assert result.decision == "pass_to_kernel"
     assert saved.status.value == "pending"
     assert workflow_gateway.recorded_replies == []
 
@@ -1016,6 +1021,7 @@ async def test_handle_inbound_message_prefers_exact_dispatch_message_match() -> 
     second_saved = repository.items[second.reminder_id]
     assert result.handled is True
     assert result.reminder_id == first.reminder_id
+    assert result.match_source == "exact_message_relation"
     assert first_saved.status.value == "completed"
     assert second_saved.status.value == "pending"
 
@@ -1066,7 +1072,7 @@ async def test_handle_inbound_message_matches_same_chat_and_thread_before_fallba
             parent_message_id=None,
             chat_id="oc_group",
             thread_id="ot_thread_a",
-            text="线程 A 已处理了",
+            text="已处理",
         )
     )
 
@@ -1074,6 +1080,7 @@ async def test_handle_inbound_message_matches_same_chat_and_thread_before_fallba
     second_saved = repository.items[second.reminder_id]
     assert result.handled is True
     assert result.reminder_id == first.reminder_id
+    assert result.match_source == "same_thread_recent_dispatch"
     assert first_saved.status.value == "completed"
     assert second_saved.status.value == "pending"
 
@@ -1130,7 +1137,9 @@ async def test_handle_inbound_message_uses_conversation_before_chat_fallback() -
 
     first_saved = repository.items[first.reminder_id]
     second_saved = repository.items[second.reminder_id]
-    assert result.handled is True
+    assert result.handled is False
     assert result.reminder_id == first.reminder_id
-    assert first_saved.status.value == "completed"
+    assert result.decision == "needs_confirmation"
+    assert result.match_source == "same_conversation_pending"
+    assert first_saved.status.value == "pending"
     assert second_saved.status.value == "pending"

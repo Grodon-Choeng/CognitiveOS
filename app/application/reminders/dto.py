@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from datetime import datetime
+from typing import Literal
 
 
 @dataclass(slots=True, frozen=True)
@@ -36,3 +37,6 @@ class ReminderInboundMessageResult:
     handled: bool
     reminder_id: str | None = None
     reason: str | None = None
+    response_text: str | None = None
+    decision: Literal["completed", "needs_confirmation", "pass_to_kernel"] = "pass_to_kernel"
+    match_source: str | None = None

@@ -8,16 +8,12 @@ from typing import Protocol
 from app.application.audit.dto import AuditEventPageDTO
 from app.application.conversations.commands import HandleInboundConversationMessageCommand
 from app.application.conversations.dto import ConversationInboundResult
-from app.application.conversations.kernel.executor import AssistantExecutor
-from app.application.conversations.kernel.planner import AssistantActionPlanner
-from app.application.conversations.kernel.renderer import AssistantResponseRenderer
-from app.application.conversations.kernel.resolver import ReferenceResolver
+from app.application.conversations.kernel.facade import ConversationKernelFacade
 from app.application.conversations.kernel.results import (
     AssistantConfirmationResult,
     AssistantDisambiguationResult,
     AssistantExecutionResult,
 )
-from app.application.conversations.kernel.state import AssistantTurnContextBuilder
 from app.application.memory.commands import ArchiveMemoryCommand, CreateMemoryCommand
 from app.application.memory.dto import MemoryDTO, MemoryListDTO
 from app.application.memory.errors import MemoryApplicationError
@@ -284,35 +280,10 @@ class IntentConversationHandler:
     def __init__(
         self,
         *,
-        classifier: LLMFirstConversationIntentClassifier,
-    task_service: TaskCreator,
-    memory_service: MemoryCreator,
-    reminder_service: ReminderCreator,
-        overview_service: OverviewReader,
-        turn_context_builder: AssistantTurnContextBuilder | None = None,
-        planner: AssistantActionPlanner | None = None,
-        executor: AssistantExecutor | None = None,
-        renderer: AssistantResponseRenderer | None = None,
+        kernel_facade: ConversationKernelFacade,
     ) -> None:
-        self.classifier = classifier
-        self.task_service = task_service
-        self.memory_service = memory_service
-        self.reminder_service = reminder_service
-        self.overview_service = overview_service
-        self.turn_context_builder = turn_context_builder or AssistantTurnContextBuilder(
-            overview_service=overview_service,
-            history_reader=_EmptyHistoryReader(),
-            reminder_reader=reminder_service,
-        )
-        self.planner = planner or AssistantActionPlanner(classifier=classifier)
-        self.executor = executor or AssistantExecutor(
-            task_service=task_service,
-            reminder_service=reminder_service,
-            memory_service=memory_service,
-            overview_service=overview_service,
-            resolver=ReferenceResolver(),
-        )
-        self.renderer = renderer or AssistantResponseRenderer()
+        # 兼容旧入口的 transitional adapter，不承载新的业务编排逻辑。
+        self.kernel_facade = kernel_facade
 
     async def handle(
         self,
@@ -321,20 +292,20 @@ class IntentConversationHandler:
         conversation_id: str,
         session_id: str,
     ) -> ConversationInboundResult | None:
-        turn_context = await self.turn_context_builder.build(
-            conversation_id=conversation_id,
-            session_id=session_id,
-            latest_user_text=command.text,
-        )
-        plan = await self.planner.plan(command, turn_context=turn_context)
         try:
-            execution_result = await self.executor.execute(
-                plan,
-                command=command,
-                turn_context=turn_context,
+            kernel_outcome = await self.kernel_facade.handle(
+                command,
+                conversation_id=conversation_id,
+                session_id=session_id,
             )
         except (TaskApplicationError, MemoryApplicationError, ReminderApplicationError) as exc:
-            handled_by = _handled_by_for_action(plan.action)
+            handled_by = None
+            if isinstance(exc, TaskApplicationError):
+                handled_by = "task"
+            elif isinstance(exc, MemoryApplicationError):
+                handled_by = "memory"
+            elif isinstance(exc, ReminderApplicationError):
+                handled_by = "reminder"
             if handled_by is None:
                 raise
             return ConversationInboundResult(
@@ -342,19 +313,20 @@ class IntentConversationHandler:
                 conversation_id=conversation_id,
                 session_id=session_id,
                 handled_by=handled_by,
-                reason=f"{plan.intent}_feedback",
+                reason="legacy_kernel_feedback",
                 response_text=str(exc),
             )
 
-        if execution_result is None:
+        execution_result = kernel_outcome.execution_result
+        if execution_result is None or kernel_outcome.response_text is None:
             return None
         return ConversationInboundResult(
             handled=True,
             conversation_id=conversation_id,
             session_id=session_id,
-            handled_by=_handled_by_for_action(plan.action),
-            reason=_reason_for_result(plan.intent, plan.action, plan.reasoning, execution_result),
-            response_text=self.renderer.render(execution_result, turn_context=turn_context),
+            handled_by=kernel_outcome.handled_by,
+            reason=kernel_outcome.reason,
+            response_text=kernel_outcome.response_text,
         )
 
 
