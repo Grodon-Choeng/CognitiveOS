@@ -7,6 +7,7 @@ from app.application.conversations.commands import HandleInboundConversationMess
 from app.application.conversations.kernel.executor import AssistantExecutor
 from app.application.conversations.kernel.planner import AssistantActionPlanner
 from app.application.conversations.kernel.plans import AssistantActionPlan
+from app.application.conversations.kernel.renderer import AssistantResponseRenderer
 from app.application.conversations.kernel.resolver import ReferenceResolver
 from app.application.conversations.kernel.state import (
     AssistantTurnContext,
@@ -77,6 +78,7 @@ def _build_command(text: str) -> HandleInboundConversationMessageCommand:
 class RecordingTaskService:
     def __init__(self) -> None:
         self.completed_task_ids: list[str] = []
+        self.titles_by_id: dict[str, str] = {}
 
     async def create_task(self, command):  # noqa: ANN001
         raise AssertionError
@@ -84,7 +86,7 @@ class RecordingTaskService:
     async def get_task(self, task_id: str) -> TaskDTO:
         return TaskDTO(
             task_id=task_id,
-            title=f"任务 {task_id}",
+            title=self.titles_by_id.get(task_id, f"任务 {task_id}"),
             created_at=datetime(2026, 3, 25, 9, 0, tzinfo=ZoneInfo("UTC")),
             status="pending",
         )
@@ -93,7 +95,7 @@ class RecordingTaskService:
         self.completed_task_ids.append(command.task_id)
         return TaskDTO(
             task_id=command.task_id,
-            title=f"任务 {command.task_id}",
+            title=self.titles_by_id.get(command.task_id, f"任务 {command.task_id}"),
             created_at=datetime(2026, 3, 25, 9, 0, tzinfo=ZoneInfo("UTC")),
             status="completed",
         )
@@ -111,6 +113,9 @@ class RecordingTaskService:
 class RecordingReminderService:
     def __init__(self) -> None:
         self.canceled_reminder_ids: list[str] = []
+        self.rescheduled_reminder_ids: list[str] = []
+        self.last_reschedule_when: datetime | None = None
+        self.titles_by_id: dict[str, str] = {}
 
     async def create_reminder(self, command):  # noqa: ANN001
         raise AssertionError
@@ -118,7 +123,7 @@ class RecordingReminderService:
     async def get_reminder(self, reminder_id: str) -> ReminderDTO:
         return ReminderDTO(
             reminder_id=reminder_id,
-            text=f"提醒 {reminder_id}",
+            text=self.titles_by_id.get(reminder_id, f"提醒 {reminder_id}"),
             remind_at=datetime(2026, 3, 26, 6, 0, tzinfo=ZoneInfo("UTC")),
             timezone="Asia/Shanghai",
             status="pending",
@@ -128,7 +133,7 @@ class RecordingReminderService:
         self.canceled_reminder_ids.append(command.reminder_id)
         return ReminderDTO(
             reminder_id=command.reminder_id,
-            text=f"提醒 {command.reminder_id}",
+            text=self.titles_by_id.get(command.reminder_id, f"提醒 {command.reminder_id}"),
             remind_at=datetime(2026, 3, 26, 6, 0, tzinfo=ZoneInfo("UTC")),
             timezone="Asia/Shanghai",
             status="canceled",
@@ -140,8 +145,16 @@ class RecordingReminderService:
     async def retry_failed_reminder(self, command):  # noqa: ANN001
         raise AssertionError
 
-    async def reschedule_reminder(self, command):  # noqa: ANN001
-        raise AssertionError
+    async def reschedule_reminder(self, command) -> ReminderDTO:  # noqa: ANN001
+        self.rescheduled_reminder_ids.append(command.reminder_id)
+        self.last_reschedule_when = command.remind_at
+        return ReminderDTO(
+            reminder_id=command.reminder_id,
+            text=self.titles_by_id.get(command.reminder_id, f"提醒 {command.reminder_id}"),
+            remind_at=command.remind_at,
+            timezone=command.timezone,
+            status="pending",
+        )
 
     async def list_reminders(self, query):  # noqa: ANN001
         raise AssertionError
@@ -183,42 +196,138 @@ def _build_executor(
     )
 
 
+async def _run_kernel_turn(
+    *,
+    text: str,
+    turn_context: AssistantTurnContext,
+    task_service: RecordingTaskService | None = None,
+    reminder_service: RecordingReminderService | None = None,
+) -> tuple[AssistantActionPlan, object, str | None]:
+    planner = _build_planner()
+    executor = _build_executor(
+        task_service=task_service,
+        reminder_service=reminder_service,
+    )
+    renderer = AssistantResponseRenderer()
+    command = _build_command(text)
+    plan = await planner.plan(command, turn_context=turn_context)
+    result = await executor.execute(
+        plan=plan,
+        command=command,
+        turn_context=turn_context,
+    )
+    response_text = None if result is None else renderer.render(result, turn_context=turn_context)
+    return plan, result, response_text
+
+
 @pytest.mark.asyncio
 async def test_不是这个_是另一个_仍然走_followup_规则() -> None:
-    planner = _build_planner()
+    task_service = RecordingTaskService()
+    task_service.titles_by_id = {
+        "t-1": "第一个任务",
+        "t-2": "第二个任务",
+        "t-3": "第三个任务",
+    }
 
-    plan = await planner.plan(_build_command("不是这个，是另一个"), turn_context=_build_context())
+    plan, result, response_text = await _run_kernel_turn(
+        text="不是这个，是另一个",
+        turn_context=_build_context(),
+        task_service=task_service,
+    )
 
     assert plan.action == "complete_task"
     assert plan.args["reference_text"] == "第二个"
+    assert task_service.completed_task_ids == ["t-2"]
+    assert getattr(result, "object_id", None) == "t-2"
+    assert response_text is not None
+    assert "第二个任务" in response_text
 
 
 @pytest.mark.asyncio
 async def test_改成明天下午_生成_reminder_改期计划() -> None:
-    planner = _build_planner()
+    reminder_service = RecordingReminderService()
+    reminder_service.titles_by_id = {
+        "r-1": "第一个提醒",
+        "r-2": "第二个提醒",
+        "r-3": "第三个提醒",
+    }
     turn_context = AssistantTurnContext(
         conversation_id="conversation-1",
         session_id="session-1",
         latest_user_text="把倒数第二个改成明天下午",
+        visible_candidates=[
+            CandidateObjectRef(
+                object_type="reminder",
+                object_id="r-1",
+                title="第一个提醒",
+                score=0.95,
+            ),
+            CandidateObjectRef(
+                object_type="reminder",
+                object_id="r-2",
+                title="第二个提醒",
+                score=0.9,
+            ),
+            CandidateObjectRef(
+                object_type="reminder",
+                object_id="r-3",
+                title="第三个提醒",
+                score=0.85,
+            ),
+        ],
         last_assistant_action=LastAssistantAction(
             action_type="list_reminders",
             success=True,
             object_type="reminder",
             summary="刚列出提醒列表",
         ),
+        metadata={
+            "pending_reminders": [
+                {
+                    "object_type": "reminder",
+                    "object_id": "r-1",
+                    "title": "第一个提醒",
+                    "status": "pending",
+                },
+                {
+                    "object_type": "reminder",
+                    "object_id": "r-2",
+                    "title": "第二个提醒",
+                    "status": "pending",
+                },
+                {
+                    "object_type": "reminder",
+                    "object_id": "r-3",
+                    "title": "第三个提醒",
+                    "status": "pending",
+                },
+            ]
+        },
     )
 
-    plan = await planner.plan(_build_command("把倒数第二个改成明天下午"), turn_context=turn_context)
+    plan, result, response_text = await _run_kernel_turn(
+        text="把倒数第二个改成明天下午",
+        turn_context=turn_context,
+        reminder_service=reminder_service,
+    )
 
     assert plan.action == "reschedule_reminder"
     assert plan.args["reference_text"] == "倒数第二个"
     assert plan.args["timezone"] == "Asia/Shanghai"
+    assert reminder_service.rescheduled_reminder_ids == ["r-2"]
+    assert result is not None
+    assert getattr(result, "object_id", None) == "r-2"
+    assert response_text is not None
+    assert "已经帮你改时间了" in response_text
 
 
 @pytest.mark.asyncio
 async def test_完成第二个_会完成第二条待办() -> None:
     task_service = RecordingTaskService()
-    executor = _build_executor(task_service=task_service)
+    task_service.titles_by_id = {
+        "t-1": "第一个任务",
+        "t-2": "第二个任务",
+    }
     turn_context = AssistantTurnContext(
         conversation_id="conversation-1",
         session_id="session-1",
@@ -245,29 +354,27 @@ async def test_完成第二个_会完成第二条待办() -> None:
         },
     )
 
-    result = await executor.execute(
-        plan=AssistantActionPlan(
-            intent="task_complete",
-            action="complete_task",
-            object_type="task",
-            object_id=None,
-            args={"reference_text": "第二个"},
-            confidence=0.95,
-            reasoning="rules",
-        ),
-        command=_build_command("完成第二个"),
+    plan, result, response_text = await _run_kernel_turn(
+        text="完成第二个",
         turn_context=turn_context,
+        task_service=task_service,
     )
 
+    assert plan.status == "ready"
     assert task_service.completed_task_ids == ["t-2"]
     assert result is not None
     assert result.object_id == "t-2"
+    assert response_text is not None
+    assert "已经帮你完成这个待办了" in response_text
 
 
 @pytest.mark.asyncio
 async def test_取消刚才那个_会取消聚焦提醒() -> None:
     reminder_service = RecordingReminderService()
-    executor = _build_executor(reminder_service=reminder_service)
+    reminder_service.titles_by_id = {
+        "r-1": "取快递提醒",
+        "r-2": "买药提醒",
+    }
     turn_context = AssistantTurnContext(
         conversation_id="conversation-1",
         session_id="session-1",
@@ -309,20 +416,78 @@ async def test_取消刚才那个_会取消聚焦提醒() -> None:
         },
     )
 
-    result = await executor.execute(
-        plan=AssistantActionPlan(
-            intent="reminder_cancel",
-            action="cancel_reminder",
-            object_type="reminder",
-            object_id=None,
-            args={"reference_text": "刚才那个"},
-            confidence=0.95,
-            reasoning="rules",
-        ),
-        command=_build_command("取消刚才那个"),
+    plan, result, response_text = await _run_kernel_turn(
+        text="取消刚才那个",
         turn_context=turn_context,
+        reminder_service=reminder_service,
     )
 
+    assert plan.status == "ready"
     assert reminder_service.canceled_reminder_ids == ["r-2"]
     assert result is not None
     assert result.object_id == "r-2"
+    assert response_text is not None
+    assert "这条提醒我已经取消了" in response_text
+
+
+@pytest.mark.asyncio
+async def test_列表展示后的_取消第二个_优先命中_visible_candidates() -> None:
+    reminder_service = RecordingReminderService()
+    reminder_service.titles_by_id = {
+        "r-1": "买药提醒",
+        "r-2": "交房租提醒",
+    }
+    turn_context = AssistantTurnContext(
+        conversation_id="conversation-1",
+        session_id="session-1",
+        latest_user_text="取消第二个",
+        visible_candidates=[
+            CandidateObjectRef(
+                object_type="reminder",
+                object_id="r-1",
+                title="买药提醒",
+                score=0.95,
+            ),
+            CandidateObjectRef(
+                object_type="reminder",
+                object_id="r-2",
+                title="交房租提醒",
+                score=0.9,
+            ),
+        ],
+        last_assistant_action=LastAssistantAction(
+            action_type="list_reminders",
+            success=True,
+            object_type="reminder",
+            summary="刚列出提醒列表",
+        ),
+        metadata={
+            "pending_reminders": [
+                {
+                    "object_type": "reminder",
+                    "object_id": "r-9",
+                    "title": "旧的最近提醒",
+                    "status": "pending",
+                },
+                {
+                    "object_type": "reminder",
+                    "object_id": "r-8",
+                    "title": "更旧的提醒",
+                    "status": "pending",
+                },
+            ]
+        },
+    )
+
+    plan, result, response_text = await _run_kernel_turn(
+        text="取消第二个",
+        turn_context=turn_context,
+        reminder_service=reminder_service,
+    )
+
+    assert plan.action == "cancel_reminder"
+    assert reminder_service.canceled_reminder_ids == ["r-2"]
+    assert result is not None
+    assert getattr(result, "object_id", None) == "r-2"
+    assert response_text is not None
+    assert "交房租提醒" in response_text

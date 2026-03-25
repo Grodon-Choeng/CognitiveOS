@@ -2,11 +2,34 @@
 
 CognitiveOS 是一个面向个人助理场景的 AI-native 模块化单体后端。
 
-当前仓库不是“第一阶段骨架期”，而是 reminder 垂直切片已闭环、conversation 主链路进入 assistant kernel 过渡态的收口阶段：
+## 当前状态
 
-- 当前实现：`resolve context` → `reminder fast path` → `build turn state` → `plan` → `execute` → `render` → `record / persist`
-- 当前稳定垂直切片：`reminder creation` → `persistence` → `Temporal workflow bootstrap` → `message sending adapter contract` → `user reply continuation path`
-- 下一阶段目标：继续把 conversation 主链路收口成更完整的 assistant kernel，逐步消化迁移期兼容入口和旧 shortcut，而不是提前宣称已经达到终态
+当前仓库已经不是“第一阶段骨架期”。更准确的状态是：
+
+- `reminder` 垂直切片已经闭环，能完成创建、持久化、Temporal 启动、发送、用户回复续跑。
+- `conversation` 主链路已经切到 assistant kernel pipeline，但仍处于收敛期，而不是最终完成态。
+- 仓库里仍保留少量过渡性兼容路径，例如 reminder reply fast path 和 legacy conversation adapter；这些路径的目标是兼容旧入口，不是继续承接新能力。
+
+### 当前真实实现
+
+当前 canonical path 由 `ConversationApplicationService` + `ConversationKernelFacade` 驱动，处理顺序是：
+
+`resolve context` → `reminder fast path` → `build turn state` → `plan` → `execute` → `render` → `record / persist`
+
+当前稳定可工作的纵向链路是：
+
+`reminder creation` → `persistence` → `Temporal workflow bootstrap` → `message sending adapter contract` → `user reply continuation path`
+
+### 当前收敛中的过渡点
+
+- `ReminderConversationHandler` 仍会在高置信 reminder reply 上优先 shortcut，但低置信、拒绝、改期等情况会回到 kernel 主流程。
+- `LegacyIntentConversationHandler` 仍保留旧入口兼容，但它只是转发到 kernel facade 的 adapter，不是系统的能力增长点。
+- 对象解析正在统一收口到 kernel resolver；service 层不再作为自然语言引用的主入口。
+
+### 下一阶段目标
+
+- 继续收口 conversation 主路径，让 assistant kernel 成为更完整、可稳定回归的唯一行为规范。
+- 继续清理迁移期 compatibility path / shortcut，而不是提前宣称“所有终态都已完成”。
 
 ## 当前技术基线
 
@@ -243,7 +266,7 @@ tests/
 
 - canonical path：`ConversationApplicationService` + `ConversationKernelFacade`
 - legacy adapter：`LegacyIntentConversationHandler`（保留 `IntentConversationHandler` 兼容别名）
-- deprecated shortcuts：service 层 conversation-era `latest / matching` 方法，当前只保留兼容，不作为 kernel 正常路径
+- object resolution：自然语言对象解析以 kernel resolver 为主入口；service 层只保留中性查询能力与少量待迁移兼容接口
 - 当前 `ConversationApplicationService._handle_with_kernel()` 的真实顺序是：
   - `resolve context`
   - `reminder fast path`

@@ -1,9 +1,20 @@
+"""Legacy conversation intent module.
+
+当前 conversation 主链路已经收口到 `ConversationApplicationService` +
+`ConversationKernelFacade`。本模块只保留两类职责：
+
+- 旧版 intent classifier，供 planner 过渡期复用
+- 旧入口 `LegacyIntentConversationHandler`，作为兼容 adapter 转发到 kernel facade
+
+这里不是新增 conversation 能力的主入口。新的用户可见行为应直接落到
+kernel pipeline，而不是继续堆在这个 legacy 模块里。
+"""
+
 import json
 import logging
 from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
-from typing import Protocol
 
 from app.application.audit.dto import AuditEventPageDTO
 from app.application.conversations.commands import HandleInboundConversationMessageCommand
@@ -14,25 +25,13 @@ from app.application.conversations.kernel.results import (
     AssistantDisambiguationResult,
     AssistantExecutionResult,
 )
-from app.application.memory.commands import ArchiveMemoryCommand, CreateMemoryCommand
-from app.application.memory.dto import MemoryDTO, MemoryListDTO
+from app.application.memory.dto import MemoryListDTO
 from app.application.memory.errors import MemoryApplicationError
-from app.application.memory.queries import ListMemoriesQuery
 from app.application.overview.dto import OverviewDTO
-from app.application.overview.queries import GetOverviewQuery
-from app.application.reminders.commands import (
-    CancelReminderCommand,
-    CreateReminderCommand,
-    RescheduleReminderCommand,
-    RetryFailedReminderCommand,
-)
-from app.application.reminders.dto import ReminderDTO, ReminderListDTO
+from app.application.reminders.dto import ReminderListDTO
 from app.application.reminders.errors import ReminderApplicationError
-from app.application.reminders.queries import ListRemindersQuery
-from app.application.tasks.commands import CancelTaskCommand, CompleteTaskCommand, CreateTaskCommand
-from app.application.tasks.dto import TaskDTO, TaskListDTO
+from app.application.tasks.dto import TaskListDTO
 from app.application.tasks.errors import TaskApplicationError
-from app.application.tasks.queries import ListTasksQuery
 from app.domain.reminders.entities import ReminderStatus
 from app.infrastructure.llm.gateway import LLMGateway
 from app.infrastructure.llm.models import GenerateRequest
@@ -73,114 +72,6 @@ class ConversationIntentDecision:
     remind_at: datetime | None
     timezone: str | None
     source: str
-
-
-class TaskCreator(Protocol):
-    async def create_task(self, command: CreateTaskCommand) -> TaskDTO: ...
-    async def get_task(self, task_id: str) -> TaskDTO: ...
-
-    async def complete_task(self, command: CompleteTaskCommand) -> TaskDTO: ...
-
-    async def cancel_task(self, command: CancelTaskCommand) -> TaskDTO: ...
-
-    async def complete_latest_task(
-        self,
-        *,
-        conversation_id: str,
-        session_id: str,
-    ) -> TaskDTO: ...
-
-    async def cancel_latest_task(
-        self,
-        *,
-        conversation_id: str,
-        session_id: str,
-    ) -> TaskDTO: ...
-
-    async def complete_matching_task(
-        self,
-        *,
-        conversation_id: str,
-        session_id: str,
-        title_hint: str,
-    ) -> TaskDTO: ...
-    async def attach_reminder(
-        self,
-        *,
-        task_id: str,
-        reminder_id: str,
-    ) -> TaskDTO: ...
-
-    async def cancel_matching_task(
-        self,
-        *,
-        conversation_id: str,
-        session_id: str,
-        title_hint: str,
-    ) -> TaskDTO: ...
-
-    async def list_tasks(self, query: ListTasksQuery) -> TaskListDTO: ...
-
-
-class MemoryCreator(Protocol):
-    async def create_memory(self, command: CreateMemoryCommand) -> MemoryDTO: ...
-
-    async def archive_memory(self, command: ArchiveMemoryCommand) -> MemoryDTO: ...
-
-    async def archive_latest_memory(
-        self,
-        *,
-        conversation_id: str,
-        session_id: str,
-    ) -> MemoryDTO: ...
-
-    async def archive_matching_memory(
-        self,
-        *,
-        conversation_id: str,
-        session_id: str,
-        content_hint: str,
-    ) -> MemoryDTO: ...
-
-    async def list_memories(self, query: ListMemoriesQuery) -> MemoryListDTO: ...
-
-
-class ReminderCreator(Protocol):
-    async def create_reminder(self, command: CreateReminderCommand) -> ReminderDTO: ...
-    async def get_reminder(self, reminder_id: str) -> ReminderDTO: ...
-
-    async def cancel_reminder(self, command: CancelReminderCommand) -> ReminderDTO: ...
-
-    async def cancel_latest_reminder(
-        self,
-        *,
-        conversation_id: str,
-        session_id: str,
-    ) -> ReminderDTO: ...
-
-    async def cancel_matching_reminder(
-        self,
-        *,
-        conversation_id: str,
-        session_id: str,
-        text_hint: str,
-    ) -> ReminderDTO: ...
-    async def link_task(
-        self,
-        *,
-        reminder_id: str,
-        task_id: str,
-    ) -> ReminderDTO: ...
-    async def retry_failed_reminder(self, command: RetryFailedReminderCommand) -> ReminderDTO: ...
-    async def reschedule_reminder(self, command: RescheduleReminderCommand) -> ReminderDTO: ...
-
-    async def list_reminders(self, query: ListRemindersQuery) -> ReminderListDTO: ...
-
-
-class OverviewReader(Protocol):
-    async def get_overview(self, query: GetOverviewQuery) -> OverviewDTO: ...
-    async def get_today_view(self, query: GetOverviewQuery) -> OverviewDTO: ...
-    async def get_working_set_view(self, query: GetOverviewQuery) -> OverviewDTO: ...
 
 
 class LLMFirstConversationIntentClassifier:
@@ -275,6 +166,8 @@ class LLMFirstConversationIntentClassifier:
 
 
 class LegacyIntentConversationHandler:
+    """兼容旧调用方式的 adapter，不承接新的 conversation 能力。"""
+
     name = "intent"
 
     def __init__(
@@ -282,8 +175,8 @@ class LegacyIntentConversationHandler:
         *,
         kernel_facade: ConversationKernelFacade,
     ) -> None:
-        # 仅兼容旧入口的 legacy adapter。
-        # 新的 conversation 能力应直接进入 kernel facade，而不是继续堆到这里。
+        # 仅兼容旧入口。
+        # 新能力统一进入 kernel facade，避免这个 adapter 再次长成 God object。
         self.kernel_facade = kernel_facade
 
     async def handle(

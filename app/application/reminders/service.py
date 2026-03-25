@@ -1,5 +1,3 @@
-import warnings
-
 from app.application.conversations.ports import ConversationContextResolver
 from app.application.reminders.commands import (
     CancelReminderCommand,
@@ -210,6 +208,21 @@ class ReminderApplicationService:
             )
         )
 
+    async def list_recent_pending(
+        self,
+        *,
+        conversation_id: str,
+        session_id: str,
+        limit: int = 5,
+    ) -> ReminderListDTO:
+        """提供中性 working set 查询，供 resolver / turn context 读取。"""
+        return await self.find_candidates(
+            conversation_id=conversation_id,
+            session_id=session_id,
+            status=ReminderStatus.PENDING.value,
+            limit=limit,
+        )
+
     async def reschedule_reminder(self, command: RescheduleReminderCommand) -> ReminderDTO:
         reminder_id = ReminderId.from_string(command.reminder_id)
 
@@ -323,59 +336,6 @@ class ReminderApplicationService:
             await unit_of_work.commit()
 
         return self._to_dto(reminder)
-
-    async def cancel_latest_reminder(
-        self,
-        *,
-        conversation_id: str,
-        session_id: str,
-    ) -> ReminderDTO:
-        warnings.warn(
-            "cancel_latest_reminder 已废弃；conversation 自然语言引用应统一走 resolver。",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        reminder_list = await self.list_reminders(
-            ListRemindersQuery(
-                conversation_id=conversation_id,
-                session_id=session_id,
-                status=ReminderStatus.PENDING.value,
-                limit=1,
-            )
-        )
-        if not reminder_list.items:
-            raise ReminderNotFoundError("当前会话没有可取消的提醒。")
-        return await self.cancel_reminder(
-            CancelReminderCommand(reminder_id=reminder_list.items[0].reminder_id)
-        )
-
-    async def cancel_matching_reminder(
-        self,
-        *,
-        conversation_id: str,
-        session_id: str,
-        text_hint: str,
-    ) -> ReminderDTO:
-        warnings.warn(
-            "cancel_matching_reminder 已废弃；conversation 自然语言引用应统一走 resolver。",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        reminder_list = await self.list_reminders(
-            ListRemindersQuery(
-                conversation_id=conversation_id,
-                session_id=session_id,
-                status=ReminderStatus.PENDING.value,
-                limit=20,
-            )
-        )
-        normalized_hint = text_hint.casefold()
-        for reminder in reminder_list.items:
-            if normalized_hint in reminder.text.casefold():
-                return await self.cancel_reminder(
-                    CancelReminderCommand(reminder_id=reminder.reminder_id)
-                )
-        raise ReminderNotFoundError(f"当前会话没有匹配“{text_hint}”的提醒。")
 
     async def link_task(
         self,

@@ -3,6 +3,7 @@ import pytest
 from app.application.conversations.commands import HandleInboundConversationMessageCommand
 from app.application.conversations.kernel.executor import AssistantExecutor
 from app.application.conversations.kernel.plans import AssistantActionPlan
+from app.application.conversations.kernel.renderer import AssistantResponseRenderer
 from app.application.conversations.kernel.resolver import ReferenceResolver
 from app.application.conversations.kernel.results import (
     AssistantConfirmationResult,
@@ -112,6 +113,14 @@ def _build_executor() -> AssistantExecutor:
     )
 
 
+def _render_result(
+    result: AssistantConfirmationResult | AssistantDisambiguationResult,
+    *,
+    turn_context: AssistantTurnContext,
+) -> str:
+    return AssistantResponseRenderer().render(result, turn_context=turn_context)
+
+
 def _build_command(text: str) -> HandleInboundConversationMessageCommand:
     return HandleInboundConversationMessageCommand(
         channel="web",
@@ -151,6 +160,7 @@ def _build_turn_context() -> AssistantTurnContext:
 @pytest.mark.asyncio
 async def test_我找到几个可能的对象_你想操作哪一个() -> None:
     executor = _build_executor()
+    turn_context = _build_turn_context()
     result = await executor.execute(
         AssistantActionPlan(
             intent="reminder_cancel",
@@ -162,16 +172,20 @@ async def test_我找到几个可能的对象_你想操作哪一个() -> None:
             reasoning="rules",
         ),
         command=_build_command("取消刚才那个"),
-        turn_context=_build_turn_context(),
+        turn_context=turn_context,
     )
 
     assert isinstance(result, AssistantDisambiguationResult)
     assert result.prompt == "我找到几个可能的对象，你想操作哪一个？"
+    response_text = _render_result(result, turn_context=turn_context)
+    assert "1. 买药提醒" in response_text
+    assert "2. 买咖啡提醒" in response_text
 
 
 @pytest.mark.asyncio
 async def test_我理解成你要操作这条记录_先帮你确认一下() -> None:
     executor = _build_executor()
+    turn_context = _build_turn_context()
     result = await executor.execute(
         AssistantActionPlan(
             intent="reminder_cancel",
@@ -183,8 +197,57 @@ async def test_我理解成你要操作这条记录_先帮你确认一下() -> N
             reasoning="rules",
         ),
         command=_build_command("取消刚才那个"),
-        turn_context=_build_turn_context(),
+        turn_context=turn_context,
     )
 
     assert isinstance(result, AssistantConfirmationResult)
     assert result.prompt == "我理解成你要操作这条记录，先帮你确认一下。"
+    response_text = _render_result(result, turn_context=turn_context)
+    assert "买药提醒" in response_text
+    assert "回复“是的”" in response_text
+
+
+@pytest.mark.asyncio
+async def test_当对象不唯一时_进入_needs_disambiguation() -> None:
+    executor = _build_executor()
+    turn_context = _build_turn_context()
+
+    result = await executor.execute(
+        AssistantActionPlan(
+            intent="reminder_cancel",
+            action="cancel_reminder",
+            object_type="reminder",
+            object_id=None,
+            args={"reference_text": "买"},
+            confidence=0.95,
+            reasoning="rules",
+        ),
+        command=_build_command("取消买那个"),
+        turn_context=turn_context,
+    )
+
+    assert isinstance(result, AssistantDisambiguationResult)
+    assert len(result.candidates) == 2
+
+
+@pytest.mark.asyncio
+async def test_当置信不足但可猜时_进入_needs_confirmation() -> None:
+    executor = _build_executor()
+    turn_context = _build_turn_context()
+
+    result = await executor.execute(
+        AssistantActionPlan(
+            intent="reminder_cancel",
+            action="cancel_reminder",
+            object_type="reminder",
+            object_id=None,
+            args={"reference_text": "刚才那个"},
+            confidence=0.7,
+            reasoning="rules",
+        ),
+        command=_build_command("取消刚才那个"),
+        turn_context=turn_context,
+    )
+
+    assert isinstance(result, AssistantConfirmationResult)
+    assert result.preview_text == "买药提醒"

@@ -162,3 +162,61 @@ def test_没有最近候选列表时_最后一个不回退到_working_set_猜测
     resolved = resolver.resolve(plan, turn_context=turn_context)
 
     assert resolved.status == "unsupported"
+
+
+def test_focused_object_与_visible_candidates_冲突时_这个优先命中_focused_object() -> None:
+    resolver = ReferenceResolver()
+    turn_context = AssistantTurnContext(
+        conversation_id="conversation-1",
+        session_id="session-1",
+        latest_user_text="取消这个",
+        focused_object=FocusedObjectRef(
+            object_type="reminder",
+            object_id="r-focused",
+            title="刚刚讨论的提醒",
+        ),
+        visible_candidates=[
+            CandidateObjectRef(
+                object_type="reminder",
+                object_id="r-1",
+                title="列表里的第一个提醒",
+                score=0.95,
+            ),
+            CandidateObjectRef(
+                object_type="reminder",
+                object_id="r-2",
+                title="列表里的第二个提醒",
+                score=0.9,
+            ),
+        ],
+        metadata={
+            "pending_reminders": [
+                {
+                    "object_type": "reminder",
+                    "object_id": "r-focused",
+                    "title": "刚刚讨论的提醒",
+                    "status": "pending",
+                },
+                {
+                    "object_type": "reminder",
+                    "object_id": "r-1",
+                    "title": "列表里的第一个提醒",
+                    "status": "pending",
+                },
+            ]
+        },
+    )
+    plan = AssistantActionPlan(
+        intent="reminder_cancel",
+        action="cancel_reminder",
+        object_type="reminder",
+        object_id=None,
+        args={"reference_text": "这个"},
+        confidence=0.95,
+        reasoning="rules",
+    )
+
+    resolved = resolver.resolve(plan, turn_context=turn_context)
+
+    assert resolved.status == "ready"
+    assert resolved.object_id == "r-focused"

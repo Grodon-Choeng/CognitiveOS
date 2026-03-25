@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.application.audit.service import AuditQueryService
 from app.application.conversations.inbound_processor import ConversationInboundProcessor
 from app.application.conversations.intent_handler import (
-    IntentConversationHandler,
+    LegacyIntentConversationHandler,
     LLMFirstConversationIntentClassifier,
 )
 from app.application.conversations.kernel.executor import AssistantExecutor
@@ -392,8 +392,8 @@ class ApplicationProvider(Provider):
     def provide_legacy_intent_handler(
         self,
         conversation_kernel_facade: ConversationKernelFacade,
-    ) -> IntentConversationHandler:
-        return IntentConversationHandler(kernel_facade=conversation_kernel_facade)
+    ) -> LegacyIntentConversationHandler:
+        return LegacyIntentConversationHandler(kernel_facade=conversation_kernel_facade)
 
     @provide(scope=Scope.APP)
     def provide_conversation_service(
