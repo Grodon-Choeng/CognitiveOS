@@ -1,3 +1,6 @@
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
 import pytest
 
 from app.application.conversations.commands import HandleInboundConversationMessageCommand
@@ -52,9 +55,16 @@ def _build_disambiguation_context() -> AssistantTurnContext:
     )
 
 
+def _build_planner() -> AssistantActionPlanner:
+    return AssistantActionPlanner(
+        classifier=FailingClassifier(),
+        now_provider=lambda: datetime(2026, 3, 25, 9, 0, tzinfo=ZoneInfo("Asia/Shanghai")),
+    )
+
+
 @pytest.mark.asyncio
 async def test_planner_uses_dialogue_state_for_second_candidate() -> None:
-    planner = AssistantActionPlanner(classifier=FailingClassifier())
+    planner = _build_planner()
 
     plan = await planner.plan(
         HandleInboundConversationMessageCommand(
@@ -80,7 +90,7 @@ async def test_planner_uses_dialogue_state_for_second_candidate() -> None:
 
 @pytest.mark.asyncio
 async def test_planner_maps_another_to_second_candidate() -> None:
-    planner = AssistantActionPlanner(classifier=FailingClassifier())
+    planner = _build_planner()
 
     plan = await planner.plan(
         HandleInboundConversationMessageCommand(
@@ -104,7 +114,7 @@ async def test_planner_maps_another_to_second_candidate() -> None:
 
 @pytest.mark.asyncio
 async def test_planner_builds_working_set_overview_rule() -> None:
-    planner = AssistantActionPlanner(classifier=FailingClassifier())
+    planner = _build_planner()
 
     plan = await planner.plan(
         HandleInboundConversationMessageCommand(
@@ -128,7 +138,7 @@ async def test_planner_builds_working_set_overview_rule() -> None:
 
 @pytest.mark.asyncio
 async def test_planner_builds_scoped_context_memory_rule() -> None:
-    planner = AssistantActionPlanner(classifier=FailingClassifier())
+    planner = _build_planner()
 
     plan = await planner.plan(
         HandleInboundConversationMessageCommand(
@@ -150,3 +160,105 @@ async def test_planner_builds_scoped_context_memory_rule() -> None:
     assert plan.object_type == "task"
     assert plan.args["memory_type"] == "context"
     assert plan.args["scope_reference_text"] == "这个"
+
+
+@pytest.mark.asyncio
+async def test_planner_builds_natural_reminder_create_rule() -> None:
+    planner = _build_planner()
+
+    plan = await planner.plan(
+        HandleInboundConversationMessageCommand(
+            channel="web",
+            message_type="text",
+            user_identity="user-1",
+            external_message_id=None,
+            root_message_id=None,
+            parent_message_id=None,
+            chat_id=None,
+            thread_id=None,
+            text="明天提醒我买药",
+            raw_payload={"text": "明天提醒我买药"},
+        ),
+        turn_context=_build_disambiguation_context(),
+    )
+
+    assert plan.action == "create_reminder"
+    assert plan.args["text"] == "买药"
+    assert plan.args["timezone"] == "Asia/Shanghai"
+    assert plan.args["remind_at"] == datetime(2026, 3, 26, 9, 0, tzinfo=ZoneInfo("Asia/Shanghai"))
+
+
+@pytest.mark.asyncio
+async def test_planner_builds_task_to_reminder_rule() -> None:
+    planner = _build_planner()
+    turn_context = _build_disambiguation_context()
+    turn_context = AssistantTurnContext(
+        conversation_id=turn_context.conversation_id,
+        session_id=turn_context.session_id,
+        latest_user_text="这个待办明早提醒我",
+        visible_candidates=[],
+        focused_object=None,
+        dialogue_mode="normal",
+        last_assistant_action=LastAssistantAction(
+            action_type="list_tasks",
+            success=True,
+            object_type="task",
+            summary="刚列出待办",
+        ),
+    )
+
+    plan = await planner.plan(
+        HandleInboundConversationMessageCommand(
+            channel="web",
+            message_type="text",
+            user_identity="user-1",
+            external_message_id=None,
+            root_message_id=None,
+            parent_message_id=None,
+            chat_id=None,
+            thread_id=None,
+            text="这个待办明早提醒我",
+            raw_payload={"text": "这个待办明早提醒我"},
+        ),
+        turn_context=turn_context,
+    )
+
+    assert plan.action == "convert_task_to_reminder"
+    assert plan.args["timezone"] == "Asia/Shanghai"
+    assert plan.args["remind_at"] == datetime(2026, 3, 26, 9, 0, tzinfo=ZoneInfo("Asia/Shanghai"))
+
+
+@pytest.mark.asyncio
+async def test_planner_builds_reminder_reschedule_rule() -> None:
+    planner = _build_planner()
+    turn_context = AssistantTurnContext(
+        conversation_id="conversation-1",
+        session_id="session-1",
+        latest_user_text="把这个提醒改到后天下午三点",
+        dialogue_mode="normal",
+        last_assistant_action=LastAssistantAction(
+            action_type="list_reminders",
+            success=True,
+            object_type="reminder",
+            summary="刚列出提醒",
+        ),
+    )
+
+    plan = await planner.plan(
+        HandleInboundConversationMessageCommand(
+            channel="web",
+            message_type="text",
+            user_identity="user-1",
+            external_message_id=None,
+            root_message_id=None,
+            parent_message_id=None,
+            chat_id=None,
+            thread_id=None,
+            text="把这个提醒改到后天下午三点",
+            raw_payload={"text": "把这个提醒改到后天下午三点"},
+        ),
+        turn_context=turn_context,
+    )
+
+    assert plan.action == "reschedule_reminder"
+    assert plan.args["remind_at"] == datetime(2026, 3, 27, 15, 0, tzinfo=ZoneInfo("Asia/Shanghai"))

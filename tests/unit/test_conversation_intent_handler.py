@@ -1,5 +1,6 @@
 from datetime import UTC, datetime
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -1014,7 +1015,7 @@ async def test_intent_handler_dispatches_to_reminder_service() -> None:
 
     assert result is not None
     assert result.handled_by == "reminder"
-    assert result.reason == "reminder_created_via_llm"
+    assert result.reason == "reminder_created_via_rules"
     assert reminder_service.created_requests[0][0] == "打卡"
     assert task_service.created_titles == []
     assert memory_service.created_contents == []
@@ -1815,7 +1816,7 @@ async def test_intent_handler_converts_task_to_reminder() -> None:
 
     assert result is not None
     assert result.handled_by == "reminder"
-    assert result.reason == "task_converted_to_reminder_via_llm"
+    assert result.reason == "task_converted_to_reminder_via_rules"
     assert task_service.attached_reminders == [
         ("t-1", "00000000-0000-0000-0000-000000000001")
     ]
@@ -1937,7 +1938,7 @@ async def test_intent_handler_reschedules_reminder() -> None:
 
     assert result is not None
     assert result.handled_by == "reminder"
-    assert result.reason == "reminder_rescheduled_via_llm"
+    assert result.reason == "reminder_rescheduled_via_rules"
     assert reminder_service.reschedule_commands
     assert "改时间" in (result.response_text or "")
 
@@ -2056,3 +2057,135 @@ async def test_intent_handler_shows_working_set_view() -> None:
     assert result.handled_by == "overview"
     assert result.reason == "overview_shown_via_rules"
     assert "最近我主要在处理这些" in (result.response_text or "")
+
+
+@pytest.mark.asyncio
+async def test_intent_handler_handles_natural_reminder_create_rule() -> None:
+    reminder_service = FakeReminderService()
+    handler = IntentConversationHandler(
+        classifier=LLMFirstConversationIntentClassifier(
+            llm_gateway=FailingLLMGateway(),
+            model="gpt-test",
+            api_key_suffix="90abcdef",
+        ),
+        task_service=FakeTaskService(),
+        memory_service=FakeMemoryService(),
+        reminder_service=reminder_service,
+        overview_service=FakeOverviewService(),
+    )
+
+    result = await handler.handle(
+        HandleInboundConversationMessageCommand(
+            channel="web",
+            message_type="text",
+            user_identity="user-1",
+            external_message_id=None,
+            root_message_id=None,
+            parent_message_id=None,
+            chat_id=None,
+            thread_id=None,
+            text="明天提醒我买药",
+            raw_payload={"text": "明天提醒我买药"},
+        ),
+        conversation_id="conversation-1",
+        session_id="session-1",
+    )
+
+    assert result is not None
+    assert result.handled_by == "reminder"
+    assert result.reason == "reminder_created_via_rules"
+    assert reminder_service.created_requests[-1][0] == "买药"
+    assert reminder_service.created_requests[-1][1] == datetime(
+        2026,
+        3,
+        26,
+        9,
+        0,
+        tzinfo=ZoneInfo("Asia/Shanghai"),
+    )
+
+
+@pytest.mark.asyncio
+async def test_intent_handler_handles_natural_task_to_reminder_rule() -> None:
+    task_service = FakeTaskService()
+    reminder_service = FakeReminderService()
+    handler = IntentConversationHandler(
+        classifier=LLMFirstConversationIntentClassifier(
+            llm_gateway=FailingLLMGateway(),
+            model="gpt-test",
+            api_key_suffix="90abcdef",
+        ),
+        task_service=task_service,
+        memory_service=FakeMemoryService(),
+        reminder_service=reminder_service,
+        overview_service=FakeOverviewService(),
+    )
+
+    result = await handler.handle(
+        HandleInboundConversationMessageCommand(
+            channel="web",
+            message_type="text",
+            user_identity="user-1",
+            external_message_id=None,
+            root_message_id=None,
+            parent_message_id=None,
+            chat_id=None,
+            thread_id=None,
+            text="这个待办明早提醒我",
+            raw_payload={"text": "这个待办明早提醒我"},
+        ),
+        conversation_id="conversation-1",
+        session_id="session-1",
+    )
+
+    assert result is not None
+    assert result.handled_by == "reminder"
+    assert result.reason == "task_converted_to_reminder_via_rules"
+    assert task_service.attached_reminders == [
+        ("t-1", "00000000-0000-0000-0000-000000000001")
+    ]
+
+
+@pytest.mark.asyncio
+async def test_intent_handler_handles_natural_reminder_reschedule_rule() -> None:
+    reminder_service = FakeReminderService()
+    handler = IntentConversationHandler(
+        classifier=LLMFirstConversationIntentClassifier(
+            llm_gateway=FailingLLMGateway(),
+            model="gpt-test",
+            api_key_suffix="90abcdef",
+        ),
+        task_service=FakeTaskService(),
+        memory_service=FakeMemoryService(),
+        reminder_service=reminder_service,
+        overview_service=FakeOverviewService(),
+    )
+
+    result = await handler.handle(
+        HandleInboundConversationMessageCommand(
+            channel="web",
+            message_type="text",
+            user_identity="user-1",
+            external_message_id=None,
+            root_message_id=None,
+            parent_message_id=None,
+            chat_id=None,
+            thread_id=None,
+            text="把这个提醒改到后天下午三点",
+            raw_payload={"text": "把这个提醒改到后天下午三点"},
+        ),
+        conversation_id="conversation-1",
+        session_id="session-1",
+    )
+
+    assert result is not None
+    assert result.handled_by == "reminder"
+    assert result.reason == "reminder_rescheduled_via_rules"
+    assert reminder_service.reschedule_commands[-1][1] == datetime(
+        2026,
+        3,
+        27,
+        15,
+        0,
+        tzinfo=ZoneInfo("Asia/Shanghai"),
+    )
