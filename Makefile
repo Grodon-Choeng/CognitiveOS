@@ -5,7 +5,7 @@ COMPOSE_SERVICES := postgres redis temporal temporal-ui
 SERVICES ?= all
 API_RELOAD ?= 1
 APP_IMAGE ?= cognitiveos-app:latest
-IMAGE_SERVICES ?= app-api app-worker
+IMAGE_SERVICES ?= app-api app-worker app-feishu-longconn
 
 .PHONY: help install infra-up infra-down infra-logs migrate api worker feishu-longconn services-up services-stop services-status services-restart image-build image-migrate image-up image-down image-logs fmt lint test typecheck check compose-config
 

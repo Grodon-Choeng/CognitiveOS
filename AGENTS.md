@@ -222,6 +222,7 @@ workflows, activities, signals, queries, updates, timers, retries, durable execu
 - 当前统一服务启动/停止/状态查看优先使用 `make services-up`、`make services-stop`、`make services-status`、`make services-restart`；若只运行单个组件，再退回 `make api` / `make worker` / `make feishu-longconn`。
 - 服务编排器会把常驻服务状态与日志写到仓库内 `.runtime/services/`；该目录属于本地运行产物，不纳入版本控制。
 - 当前镜像构建与容器运行优先使用 `make image-build`、`make image-migrate`、`make image-up`、`make image-down`、`make image-logs`；如果修改了容器化运行方式，必须同步更新 `compose.yaml`、`Dockerfile`、`README.md` 与本文件。
+- 当前 `make image-up` 默认应启动 `app-api`、`app-worker` 与 `app-feishu-longconn`；若需裁剪容器集合，应显式传入 `IMAGE_SERVICES=...` 覆盖默认值。
 - 容器化运行时，应用日志文件与各类 jsonl 必须继续映射回宿主机，避免只留在容器层里难以排查。
 - 应用 settings 默认应支持从项目根目录 `.env` 读取本地配置；若变更读取方式，必须同步更新 `README.md` 与 `.env.example`。
 - 新增环境变量、启动方式或基础设施依赖时，必须同步更新 `README.md` 与本文件。
