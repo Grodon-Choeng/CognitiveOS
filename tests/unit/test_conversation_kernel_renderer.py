@@ -119,3 +119,24 @@ def test_renderer_formats_scoped_memory_reply() -> None:
     text = renderer.render(result, turn_context=_empty_turn_context())
 
     assert "背景记到这个待办里了" in text
+
+
+def test_renderer_formats_reminder_content_update_naturally() -> None:
+    renderer = AssistantResponseRenderer()
+    result = AssistantExecutionResult(
+        success=True,
+        action="reschedule_reminder",
+        object_type="reminder",
+        object_id="r-1",
+        object_title="下班打卡",
+        payload={
+            "when": "2026-03-25T21:05:00+08:00",
+            "timezone": "Asia/Shanghai",
+            "change_kind": "content",
+        },
+    )
+
+    text = renderer.render(result, turn_context=_empty_turn_context())
+
+    assert "改成“下班打卡”了" in text
+    assert "时间仍然是 2026-03-25 21:05" in text

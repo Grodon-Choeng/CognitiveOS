@@ -191,6 +191,29 @@ def _plan_with_referential_rules(
     if task_to_reminder_plan is not None:
         return task_to_reminder_plan
 
+    if text.startswith("完成") and object_type == "task":
+        reference_text = _extract_reference_after_action(text, action="完成")
+        return AssistantActionPlan(
+            intent="task_complete",
+            action="complete_task",
+            object_type="task",
+            object_id=None,
+            args={"reference_text": reference_text},
+            confidence=0.92,
+            reasoning="rules",
+        )
+
+    if ("改成待办" in text or "改成任务" in text) and object_type == "reminder":
+        return AssistantActionPlan(
+            intent="reminder_to_task",
+            action="convert_reminder_to_task",
+            object_type="reminder",
+            object_id=None,
+            args={"reference_text": _extract_reference_before_phrase(text, "改成")},
+            confidence=0.9,
+            reasoning="rules",
+        )
+
     reminder_reschedule_plan = _plan_reminder_reschedule(
         text,
         object_type=object_type,
@@ -216,29 +239,6 @@ def _plan_with_referential_rules(
                 "memory_type": _infer_memory_type(direct_memory_content),
             },
             confidence=0.92,
-            reasoning="rules",
-        )
-
-    if text.startswith("完成") and object_type == "task":
-        reference_text = _extract_reference_after_action(text, action="完成")
-        return AssistantActionPlan(
-            intent="task_complete",
-            action="complete_task",
-            object_type="task",
-            object_id=None,
-            args={"reference_text": reference_text},
-            confidence=0.92,
-            reasoning="rules",
-        )
-
-    if ("改成待办" in text or "改成任务" in text) and object_type == "reminder":
-        return AssistantActionPlan(
-            intent="reminder_to_task",
-            action="convert_reminder_to_task",
-            object_type="reminder",
-            object_id=None,
-            args={"reference_text": _extract_reference_before_phrase(text, "改成")},
-            confidence=0.9,
             reasoning="rules",
         )
 
@@ -770,29 +770,34 @@ def _plan_reminder_reschedule(
     if object_type != "reminder":
         return None
     if "改到" in text:
-        _, _, time_text = text.partition("改到")
+        _, _, target_text = text.partition("改到")
     elif "改成" in text:
-        _, _, time_text = text.partition("改成")
+        _, _, target_text = text.partition("改成")
+    elif "改为" in text:
+        _, _, target_text = text.partition("改为")
     else:
         return None
+    normalized_target_text = target_text.strip()
+    if not normalized_target_text:
+        return None
     schedule = _parse_natural_schedule(
-        time_text,
+        normalized_target_text,
         now_provider=now_provider,
         default_timezone=default_timezone,
     )
+    args = {"reference_text": _infer_scope_reference_text(text, turn_context=None)}
     if schedule is None:
-        return None
-    remind_at, timezone = schedule
+        args["text"] = normalized_target_text
+    else:
+        remind_at, timezone = schedule
+        args["remind_at"] = remind_at
+        args["timezone"] = timezone
     return AssistantActionPlan(
         intent="reminder_reschedule",
         action="reschedule_reminder",
         object_type="reminder",
         object_id=None,
-        args={
-            "reference_text": _infer_scope_reference_text(text, turn_context=None),
-            "remind_at": remind_at,
-            "timezone": timezone,
-        },
+        args=args,
         confidence=0.9,
         reasoning="rules",
     )

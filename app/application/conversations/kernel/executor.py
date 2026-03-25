@@ -362,21 +362,38 @@ class AssistantExecutor:
             )
         if plan.action == "reschedule_reminder":
             assert plan.object_id is not None
+            existing_reminder: ReminderDTO | None = None
+            remind_at = plan.args.get("remind_at")
+            timezone = _optional_str(plan.args.get("timezone"))
+            updated_text = _optional_str(plan.args.get("text"))
+            change_kind = "schedule"
+            if remind_at is None or timezone is None:
+                existing_reminder = await self._get_reminder_from_plan(
+                    plan,
+                    turn_context=turn_context,
+                )
+                remind_at = existing_reminder.remind_at
+                timezone = existing_reminder.timezone
+                change_kind = "content"
+            if updated_text is not None and change_kind == "schedule":
+                change_kind = "schedule_and_content"
             reminder = await self.reminder_service.reschedule_reminder(
                 RescheduleReminderCommand(
                     reminder_id=plan.object_id,
-                    remind_at=plan.args["remind_at"],
-                    timezone=str(plan.args["timezone"]),
-                    text=_optional_str(plan.args.get("text")),
+                    remind_at=remind_at,
+                    timezone=timezone,
+                    text=updated_text,
                 )
             )
+            payload = _reminder_item(reminder)
+            payload["change_kind"] = change_kind
             return AssistantExecutionResult(
                 success=True,
                 action=plan.action,
                 object_type="reminder",
                 object_id=reminder.reminder_id,
                 object_title=reminder.text,
-                payload=_reminder_item(reminder),
+                payload=payload,
                 followup_options=["查看提醒", "查看概览"],
             )
         if plan.action == "list_reminders":

@@ -262,3 +262,40 @@ async def test_planner_builds_reminder_reschedule_rule() -> None:
 
     assert plan.action == "reschedule_reminder"
     assert plan.args["remind_at"] == datetime(2026, 3, 27, 15, 0, tzinfo=ZoneInfo("Asia/Shanghai"))
+
+
+@pytest.mark.asyncio
+async def test_planner_builds_reminder_content_update_rule() -> None:
+    planner = _build_planner()
+    turn_context = AssistantTurnContext(
+        conversation_id="conversation-1",
+        session_id="session-1",
+        latest_user_text="把这个提醒改成下班打卡",
+        dialogue_mode="normal",
+        last_assistant_action=LastAssistantAction(
+            action_type="list_reminders",
+            success=True,
+            object_type="reminder",
+            summary="刚列出提醒",
+        ),
+    )
+
+    plan = await planner.plan(
+        HandleInboundConversationMessageCommand(
+            channel="web",
+            message_type="text",
+            user_identity="user-1",
+            external_message_id=None,
+            root_message_id=None,
+            parent_message_id=None,
+            chat_id=None,
+            thread_id=None,
+            text="把这个提醒改成下班打卡",
+            raw_payload={"text": "把这个提醒改成下班打卡"},
+        ),
+        turn_context=turn_context,
+    )
+
+    assert plan.action == "reschedule_reminder"
+    assert plan.args["text"] == "下班打卡"
+    assert "remind_at" not in plan.args

@@ -557,6 +557,44 @@ async def test_reschedule_reminder_updates_schedule_and_restarts_workflow() -> N
 
 
 @pytest.mark.asyncio
+async def test_reschedule_reminder_updates_text_without_changing_time() -> None:
+    repository = FakeReminderRepository()
+    workflow_gateway = FakeReminderWorkflowGateway()
+    service = ReminderApplicationService(
+        unit_of_work_factory=create_fake_unit_of_work_factory(repository),
+        workflow_gateway=workflow_gateway,
+        conversation_context_resolver=FakeConversationContextResolver(),
+    )
+
+    created = await service.create_reminder(
+        CreateReminderCommand(
+            text="打卡",
+            remind_at=datetime(2026, 3, 20, 13, 5, tzinfo=UTC),
+            timezone="Asia/Shanghai",
+            dispatch_channel="console",
+            dispatch_recipient_id="user-1",
+        )
+    )
+
+    updated = await service.reschedule_reminder(
+        RescheduleReminderCommand(
+            reminder_id=created.reminder_id,
+            text="下班打卡",
+            remind_at=created.remind_at,
+            timezone=created.timezone,
+        )
+    )
+
+    saved = repository.items[created.reminder_id]
+    assert updated.text == "下班打卡"
+    assert updated.remind_at == created.remind_at
+    assert saved.text == "下班打卡"
+    assert saved.schedule.remind_at == created.remind_at
+    assert workflow_gateway.canceled_workflows == [created.workflow_id or ""]
+    assert len(workflow_gateway.started) == 2
+
+
+@pytest.mark.asyncio
 async def test_reschedule_failed_reminder_restarts_without_canceling_existing_workflow() -> None:
     repository = FakeReminderRepository()
     workflow_gateway = FakeReminderWorkflowGateway()

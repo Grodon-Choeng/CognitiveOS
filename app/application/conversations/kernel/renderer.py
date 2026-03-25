@@ -108,6 +108,13 @@ def _render_execution_result(
     if result.action == "reschedule_reminder":
         payload = result.payload
         when = _format_when(payload.get("when"), payload.get("timezone"))
+        change_kind = _optional_str(payload.get("change_kind"))
+        if change_kind == "content":
+            return (
+                f"好，这条提醒我已经改成“{result.object_title}”了。\n"
+                f"时间仍然是 {when}。\n"
+                "如果还要再改时间或内容，也可以直接继续说。"
+            )
         return (
             "好，这条提醒我已经帮你改时间了。\n"
             f"新的时间是 {when}，内容还是“{result.object_title}”。\n"
@@ -142,9 +149,7 @@ def _render_execution_result(
     if result.action == "convert_task_to_reminder":
         reminder_items = _payload_items(result.payload, "reminder")
         reminder_text = (
-            reminder_items[0]["title"]
-            if reminder_items
-            else result.object_title or "这条待办"
+            reminder_items[0]["title"] if reminder_items else result.object_title or "这条待办"
         )
         return (
             "好，我已经把这条待办挂上提醒了。\n"
