@@ -1,14 +1,18 @@
 from dataclasses import dataclass
+from typing import Literal
 
 from app.application.reminders.commands import HandleReminderInboundMessageCommand
 from app.domain.reminders.entities import Reminder, ReminderStatus
 from app.domain.reminders.repository import ReminderRepository
+
+ReminderMatchConfidence = Literal["high", "low"]
 
 
 @dataclass(slots=True, frozen=True)
 class ReminderInboundMatch:
     reminder: Reminder
     source: str
+    confidence: ReminderMatchConfidence
 
 
 class ReminderInboundMatcher:
@@ -21,27 +25,36 @@ class ReminderInboundMatcher:
     ) -> ReminderInboundMatch | None:
         reminder = await self._match_by_exact_message_relation(command)
         if reminder is not None:
-            return ReminderInboundMatch(reminder=reminder, source="exact_message_relation")
+            return ReminderInboundMatch(
+                reminder=reminder,
+                source="exact_message_relation",
+                confidence="high",
+            )
 
         reminder = await self._match_by_conversation(command)
         if reminder is not None:
-            return ReminderInboundMatch(reminder=reminder, source="same_conversation_pending")
+            return ReminderInboundMatch(
+                reminder=reminder,
+                source="same_conversation_pending",
+                confidence="low",
+            )
 
         reminder = await self._match_by_chat_and_thread(command)
         if reminder is not None:
-            return ReminderInboundMatch(reminder=reminder, source="same_thread_recent_dispatch")
+            return ReminderInboundMatch(
+                reminder=reminder,
+                source="same_thread_recent_dispatch",
+                confidence="low",
+            )
 
         reminder = await self._match_by_chat(command)
         if reminder is not None:
-            return ReminderInboundMatch(reminder=reminder, source="same_chat_recent_dispatch")
-
-        reminder = await self.repository.get_latest_pending_by_dispatch(
-            channel=command.channel,
-            recipient_id=command.sender_id,
-        )
-        if reminder is None:
-            return None
-        return ReminderInboundMatch(reminder=reminder, source="latest_pending_by_dispatch")
+            return ReminderInboundMatch(
+                reminder=reminder,
+                source="same_chat_recent_dispatch",
+                confidence="low",
+            )
+        return None
 
     async def _match_by_conversation(
         self,

@@ -39,32 +39,6 @@ class TaskExecutorService(Protocol):
     async def get_task(self, task_id: str) -> TaskDTO: ...
     async def complete_task(self, command: CompleteTaskCommand) -> TaskDTO: ...
     async def cancel_task(self, command: CancelTaskCommand) -> TaskDTO: ...
-    async def complete_latest_task(
-        self,
-        *,
-        conversation_id: str,
-        session_id: str,
-    ) -> TaskDTO: ...
-    async def cancel_latest_task(
-        self,
-        *,
-        conversation_id: str,
-        session_id: str,
-    ) -> TaskDTO: ...
-    async def complete_matching_task(
-        self,
-        *,
-        conversation_id: str,
-        session_id: str,
-        title_hint: str,
-    ) -> TaskDTO: ...
-    async def cancel_matching_task(
-        self,
-        *,
-        conversation_id: str,
-        session_id: str,
-        title_hint: str,
-    ) -> TaskDTO: ...
     async def attach_reminder(
         self,
         *,
@@ -92,19 +66,6 @@ class ReminderExecutorService(Protocol):
 class MemoryExecutorService(Protocol):
     async def create_memory(self, command: CreateMemoryCommand) -> MemoryDTO: ...
     async def archive_memory(self, command: ArchiveMemoryCommand) -> MemoryDTO: ...
-    async def archive_latest_memory(
-        self,
-        *,
-        conversation_id: str,
-        session_id: str,
-    ) -> MemoryDTO: ...
-    async def archive_matching_memory(
-        self,
-        *,
-        conversation_id: str,
-        session_id: str,
-        content_hint: str,
-    ) -> MemoryDTO: ...
     async def list_memories(self, query: ListMemoriesQuery) -> MemoryListDTO: ...
 
 
@@ -593,18 +554,6 @@ class AssistantExecutor:
         *,
         turn_context: AssistantTurnContext,
     ) -> TaskDTO:
-        reference_text = _optional_str(plan.args.get("reference_text"))
-        if reference_text and hasattr(self.task_service, "complete_matching_task"):
-            return await self.task_service.complete_matching_task(
-                conversation_id=turn_context.conversation_id,
-                session_id=turn_context.session_id,
-                title_hint=reference_text,
-            )
-        if reference_text is None and hasattr(self.task_service, "complete_latest_task"):
-            return await self.task_service.complete_latest_task(
-                conversation_id=turn_context.conversation_id,
-                session_id=turn_context.session_id,
-            )
         assert plan.object_id is not None
         return await self.task_service.complete_task(CompleteTaskCommand(task_id=plan.object_id))
 
@@ -614,18 +563,6 @@ class AssistantExecutor:
         *,
         turn_context: AssistantTurnContext,
     ) -> TaskDTO:
-        reference_text = _optional_str(plan.args.get("reference_text"))
-        if reference_text and hasattr(self.task_service, "cancel_matching_task"):
-            return await self.task_service.cancel_matching_task(
-                conversation_id=turn_context.conversation_id,
-                session_id=turn_context.session_id,
-                title_hint=reference_text,
-            )
-        if reference_text is None and hasattr(self.task_service, "cancel_latest_task"):
-            return await self.task_service.cancel_latest_task(
-                conversation_id=turn_context.conversation_id,
-                session_id=turn_context.session_id,
-            )
         assert plan.object_id is not None
         return await self.task_service.cancel_task(CancelTaskCommand(task_id=plan.object_id))
 
@@ -646,18 +583,6 @@ class AssistantExecutor:
         *,
         turn_context: AssistantTurnContext,
     ) -> MemoryDTO:
-        reference_text = _optional_str(plan.args.get("reference_text"))
-        if reference_text and hasattr(self.memory_service, "archive_matching_memory"):
-            return await self.memory_service.archive_matching_memory(
-                conversation_id=turn_context.conversation_id,
-                session_id=turn_context.session_id,
-                content_hint=reference_text,
-            )
-        if reference_text is None and hasattr(self.memory_service, "archive_latest_memory"):
-            return await self.memory_service.archive_latest_memory(
-                conversation_id=turn_context.conversation_id,
-                session_id=turn_context.session_id,
-            )
         assert plan.object_id is not None
         return await self.memory_service.archive_memory(
             ArchiveMemoryCommand(memory_id=plan.object_id)

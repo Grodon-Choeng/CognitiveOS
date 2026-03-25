@@ -1,3 +1,5 @@
+import warnings
+
 from app.application.conversations.ports import ConversationContextResolver
 from app.application.reminders.commands import (
     CancelReminderCommand,
@@ -30,7 +32,7 @@ from app.application.reminders.queries import ListRemindersQuery
 from app.domain.reminders.entities import Reminder, ReminderStatus
 from app.domain.reminders.value_objects import ReminderId, ReminderSchedule
 
-_REMINDER_REPLY_COMMAND_KEYWORDS = (
+_REMINDER_REPLY_PASS_TO_KERNEL_KEYWORDS = (
     "查看",
     "列出",
     "哪些",
@@ -38,15 +40,21 @@ _REMINDER_REPLY_COMMAND_KEYWORDS = (
     "现在都",
     "还有什么",
     "取消",
-    "改到",
-    "改成",
-    "改期",
-    "重试",
     "提醒我",
     "待办",
     "任务",
     "记忆",
     "概览",
+)
+_REMINDER_REPLY_RESCHEDULE_KEYWORDS = (
+    "改到",
+    "改成",
+    "改期",
+    "重试",
+    "晚上再提醒",
+    "明天再说",
+    "明天提醒",
+    "先别提醒",
 )
 _REMINDER_REPLY_ACK_PHRASES = (
     "收到",
@@ -62,7 +70,8 @@ _REMINDER_REPLY_ACK_PHRASES = (
     "已处理",
     "done",
 )
-_REMINDER_REPLY_REJECT_PHRASES = ("不是这个", "先不用", "不用了", "不相关")
+_REMINDER_REPLY_REJECT_PHRASES = ("不是这个", "先不用", "不用了", "不相关", "你说啥")
+_REMINDER_REPLY_FOLLOWUP_REFERENCE_PHRASES = ("另一个", "第二个", "上一个", "刚才那个", "这个")
 
 
 class ReminderApplicationService:
@@ -321,7 +330,11 @@ class ReminderApplicationService:
         conversation_id: str,
         session_id: str,
     ) -> ReminderDTO:
-        # Deprecated: conversation 自然语言引用已统一收口到 resolver。
+        warnings.warn(
+            "cancel_latest_reminder 已废弃；conversation 自然语言引用应统一走 resolver。",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         reminder_list = await self.list_reminders(
             ListRemindersQuery(
                 conversation_id=conversation_id,
@@ -343,7 +356,11 @@ class ReminderApplicationService:
         session_id: str,
         text_hint: str,
     ) -> ReminderDTO:
-        # Deprecated: conversation 自然语言引用已统一收口到 resolver。
+        warnings.warn(
+            "cancel_matching_reminder 已废弃；conversation 自然语言引用应统一走 resolver。",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         reminder_list = await self.list_reminders(
             ListRemindersQuery(
                 conversation_id=conversation_id,
@@ -383,7 +400,7 @@ class ReminderApplicationService:
         command: HandleReminderInboundMessageCommand,
     ) -> ReminderInboundMessageResult:
         reply_semantics = _classify_reminder_reply_semantics(command.text)
-        if reply_semantics != "acknowledge":
+        if reply_semantics == "pass_to_kernel":
             return ReminderInboundMessageResult(
                 handled=False,
                 reason="not_reminder_reply",
@@ -418,13 +435,31 @@ class ReminderApplicationService:
                 )
 
             reminder = matched.reminder
-            fast_path_decision = _decide_fast_path_action(match_source=matched.source)
-            if fast_path_decision == "needs_confirmation":
+            if reply_semantics == "reject_or_not_related":
                 return ReminderInboundMessageResult(
                     handled=False,
                     reminder_id=str(reminder.reminder_id.value),
-                    reason="reminder_needs_confirmation",
-                    response_text="我理解成你在回复最近这条提醒，先帮你确认一下：如果是这条，请直接说“是这条提醒”或告诉我要怎么改。",
+                    reason="reminder_reply_rejected",
+                    decision="pass_to_kernel",
+                    match_source=matched.source,
+                )
+
+            if reply_semantics == "reschedule_or_defer":
+                return ReminderInboundMessageResult(
+                    handled=False,
+                    reminder_id=str(reminder.reminder_id.value),
+                    reason="reminder_followup_needs_confirmation",
+                    response_text="我先不把这条提醒记成完成。你像是在说要调整刚才那条提醒，如果是它，可以直接继续说“改这条到明天下午”或“先别提醒”。",
+                    decision="needs_confirmation",
+                    match_source=matched.source,
+                )
+
+            if matched.confidence != "high":
+                return ReminderInboundMessageResult(
+                    handled=False,
+                    reminder_id=str(reminder.reminder_id.value),
+                    reason="reminder_match_low_confidence",
+                    response_text="我理解成你可能是在回复最近这条提醒，但这一步我不自动完成。你可以直接说“就是这条提醒”，或者把要改的内容再说完整一点。",
                     decision="needs_confirmation",
                     match_source=matched.source,
                 )
@@ -500,21 +535,19 @@ def _classify_reminder_reply_semantics(text: str) -> str:
     normalized = text.strip().casefold()
     if not normalized:
         return "pass_to_kernel"
-    if any(keyword in normalized for keyword in _REMINDER_REPLY_COMMAND_KEYWORDS):
-        return "defer_or_reschedule"
+    if any(keyword in normalized for keyword in _REMINDER_REPLY_PASS_TO_KERNEL_KEYWORDS):
+        return "pass_to_kernel"
+    if any(keyword in normalized for keyword in _REMINDER_REPLY_RESCHEDULE_KEYWORDS):
+        return "reschedule_or_defer"
     if any(phrase in normalized for phrase in _REMINDER_REPLY_REJECT_PHRASES):
+        if any(phrase in normalized for phrase in _REMINDER_REPLY_FOLLOWUP_REFERENCE_PHRASES):
+            return "pass_to_kernel"
         return "reject_or_not_related"
     if normalized in _REMINDER_REPLY_ACK_PHRASES:
         return "acknowledge"
     if normalized.startswith(("我已经", "已经", "已")):
         return "acknowledge"
-    return "reject_or_not_related"
-
-
-def _decide_fast_path_action(*, match_source: str) -> str:
-    if match_source in {"exact_message_relation", "same_thread_recent_dispatch"}:
-        return "completed"
-    return "needs_confirmation"
+    return "pass_to_kernel"
 
 
 def _build_reminder_workflow_id(reminder_id: ReminderId) -> str:

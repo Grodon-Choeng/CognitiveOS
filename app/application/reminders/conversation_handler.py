@@ -46,13 +46,14 @@ class ReminderConversationHandler:
             }
         elif result.decision == "needs_confirmation":
             assistant_turn_state = {
-                "dialogue_mode": "confirmation",
-                "pending_confirmation": {
-                    "confirm_action": "reply_reminder",
-                    "preview_text": "最近提醒回复",
+                "dialogue_mode": "normal",
+                "focused_object": {
+                    "object_type": "reminder",
+                    "object_id": result.reminder_id,
+                    "title": "最近提醒",
                 },
                 "last_assistant_action": {
-                    "action_type": "reply_reminder_needs_confirmation",
+                    "action_type": "reminder_fast_path_confirmation",
                     "success": True,
                     "object_type": "reminder",
                     "object_id": result.reminder_id,

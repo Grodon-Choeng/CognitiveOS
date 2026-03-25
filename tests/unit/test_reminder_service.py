@@ -1027,7 +1027,8 @@ async def test_handle_inbound_message_prefers_exact_dispatch_message_match() -> 
 
 
 @pytest.mark.asyncio
-async def test_handle_inbound_message_matches_same_chat_and_thread_before_fallback() -> None:
+async def test_handle_inbound_message_same_chat_and_thread_only_gives_low_confidence_confirmation(
+) -> None:
     repository = FakeReminderRepository()
     workflow_gateway = FakeReminderWorkflowGateway()
     service = ReminderApplicationService(
@@ -1078,10 +1079,11 @@ async def test_handle_inbound_message_matches_same_chat_and_thread_before_fallba
 
     first_saved = repository.items[first.reminder_id]
     second_saved = repository.items[second.reminder_id]
-    assert result.handled is True
+    assert result.handled is False
     assert result.reminder_id == first.reminder_id
     assert result.match_source == "same_thread_recent_dispatch"
-    assert first_saved.status.value == "completed"
+    assert result.decision == "needs_confirmation"
+    assert first_saved.status.value == "pending"
     assert second_saved.status.value == "pending"
 
 

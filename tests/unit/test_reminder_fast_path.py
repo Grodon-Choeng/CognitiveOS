@@ -77,10 +77,10 @@ async def test_最近_pending_提醒只进入_needs_confirmation() -> None:
             ReminderInboundMessageResult(
                 handled=False,
                 reminder_id="r-2",
-                reason="reminder_needs_confirmation",
-                response_text="我理解成你在回复最近这条提醒，先帮你确认一下。",
+                reason="reminder_match_low_confidence",
+                response_text="我理解成你可能是在回复最近这条提醒，但这一步我不自动完成。",
                 decision="needs_confirmation",
-                match_source="latest_pending_by_dispatch",
+                match_source="same_chat_recent_dispatch",
             )
         )
     )
@@ -89,3 +89,5 @@ async def test_最近_pending_提醒只进入_needs_confirmation() -> None:
 
     assert result.decision == "needs_confirmation"
     assert result.assistant_turn_state is not None
+    assert result.assistant_turn_state["dialogue_mode"] == "normal"
+    assert result.assistant_turn_state["focused_object"]["object_type"] == "reminder"

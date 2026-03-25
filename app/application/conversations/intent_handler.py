@@ -274,7 +274,7 @@ class LLMFirstConversationIntentClassifier:
         return _parse_intent_response(result.content)
 
 
-class IntentConversationHandler:
+class LegacyIntentConversationHandler:
     name = "intent"
 
     def __init__(
@@ -282,7 +282,8 @@ class IntentConversationHandler:
         *,
         kernel_facade: ConversationKernelFacade,
     ) -> None:
-        # 兼容旧入口的 transitional adapter，不承载新的业务编排逻辑。
+        # 仅兼容旧入口的 legacy adapter。
+        # 新的 conversation 能力应直接进入 kernel facade，而不是继续堆到这里。
         self.kernel_facade = kernel_facade
 
     async def handle(
@@ -328,6 +329,10 @@ class IntentConversationHandler:
             reason=kernel_outcome.reason,
             response_text=kernel_outcome.response_text,
         )
+
+
+# Deprecated alias: 保留旧类型名供容器装配和历史调用兼容。
+IntentConversationHandler = LegacyIntentConversationHandler
 
 
 class _EmptyHistoryReader:

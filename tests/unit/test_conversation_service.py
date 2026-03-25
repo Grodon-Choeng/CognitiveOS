@@ -236,12 +236,13 @@ async def test_conversation_service_returns_fast_path_confirmation_without_enter
             conversation_id="conversation-test",
             session_id="session-test",
             handled_by="reminder",
-            reason="reminder_needs_confirmation",
-            response_text="我理解成你在回复最近这条提醒，先帮你确认一下。",
+            reason="reminder_match_low_confidence",
+            response_text="我理解成你可能是在回复最近这条提醒，但这一步我不自动完成。",
             assistant_turn_state={
-                "dialogue_mode": "confirmation",
+                "dialogue_mode": "normal",
+                "focused_object": {"object_type": "reminder", "object_id": "r-1"},
                 "last_assistant_action": {
-                    "action_type": "reply_reminder_needs_confirmation",
+                    "action_type": "reminder_fast_path_confirmation",
                     "success": True,
                 },
             },
@@ -258,8 +259,8 @@ async def test_conversation_service_returns_fast_path_confirmation_without_enter
     result = await service.handle_inbound_message(_build_command("收到"))
 
     assert result.handled is True
-    assert result.reason == "reminder_needs_confirmation"
-    assert "先帮你确认一下" in (result.response_text or "")
+    assert result.reason == "reminder_match_low_confidence"
+    assert "不自动完成" in (result.response_text or "")
 
 
 @pytest.mark.asyncio

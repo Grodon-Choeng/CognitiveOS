@@ -2,11 +2,11 @@
 
 CognitiveOS 是一个面向个人助理场景的 AI-native 模块化单体后端。
 
-当前仓库的真实形态已经不是“第一阶段骨架期”，而是一个正在收口中的 kernel 过渡态：
+当前仓库不是“第一阶段骨架期”，而是 reminder 垂直切片已闭环、conversation 主链路进入 assistant kernel 过渡态的收口阶段：
 
 - 当前实现：`resolve context` → `reminder fast path` → `build turn state` → `plan` → `execute` → `render` → `record / persist`
 - 当前稳定垂直切片：`reminder creation` → `persistence` → `Temporal workflow bootstrap` → `message sending adapter contract` → `user reply continuation path`
-- 目标方向：继续把 conversation 主链路收口成更完整的 assistant kernel，逐步消化迁移期兼容入口和旧 shortcut
+- 下一阶段目标：继续把 conversation 主链路收口成更完整的 assistant kernel，逐步消化迁移期兼容入口和旧 shortcut，而不是提前宣称已经达到终态
 
 ## 当前技术基线
 
@@ -234,7 +234,7 @@ tests/
 
 ### 当前范围说明
 
-- reminder reply continuation 仍保留优先快路径，但现在只处理高置信 acknowledge；其余输入交回 kernel
+- reminder reply continuation 仍保留优先快路径，但现在只有高置信 acknowledge 才会直接 shortcut；改期、拒绝和低置信命中不会自动 completed
 - 当前 turn state 已持久化到 `assistant_turn_states`
 - 已支持 task/reminder 双向转换、失败提醒重试和 conversation debug 返回
 - memory 已支持 `memory_type`、`scope_object_type`、`scope_object_id`、`importance`、`expires_at`
@@ -242,7 +242,7 @@ tests/
 ### 当前主链路与迁移期术语
 
 - canonical path：`ConversationApplicationService` + `ConversationKernelFacade`
-- legacy adapter：`IntentConversationHandler`
+- legacy adapter：`LegacyIntentConversationHandler`（保留 `IntentConversationHandler` 兼容别名）
 - deprecated shortcuts：service 层 conversation-era `latest / matching` 方法，当前只保留兼容，不作为 kernel 正常路径
 - 当前 `ConversationApplicationService._handle_with_kernel()` 的真实顺序是：
   - `resolve context`

@@ -3,7 +3,10 @@ import inspect
 import pytest
 
 from app.application.conversations.commands import HandleInboundConversationMessageCommand
-from app.application.conversations.intent_handler import IntentConversationHandler
+from app.application.conversations.intent_handler import (
+    IntentConversationHandler,
+    LegacyIntentConversationHandler,
+)
 from app.application.conversations.kernel.facade import (
     ConversationKernelFacade,
     ConversationKernelOutcome,
@@ -79,15 +82,19 @@ def _build_outcome() -> ConversationKernelOutcome:
 
 
 def test_intent_handler_only_depends_on_kernel_facade() -> None:
-    parameters = inspect.signature(IntentConversationHandler.__init__).parameters
+    parameters = inspect.signature(LegacyIntentConversationHandler.__init__).parameters
 
     assert list(parameters) == ["self", "kernel_facade"]
+
+
+def test_intent_handler_is_kept_as_legacy_alias() -> None:
+    assert IntentConversationHandler is LegacyIntentConversationHandler
 
 
 @pytest.mark.asyncio
 async def test_intent_handler_delegates_to_legacy_kernel_facade() -> None:
     facade = FakeKernelFacade(_build_outcome())
-    handler = IntentConversationHandler(kernel_facade=facade)
+    handler = LegacyIntentConversationHandler(kernel_facade=facade)
 
     result = await handler.handle(
         _build_command("完成第三个"),
@@ -125,7 +132,7 @@ async def test_intent_handler_returns_none_when_legacy_kernel_cannot_handle() ->
             assistant_turn_state=None,
         )
     )
-    handler = IntentConversationHandler(kernel_facade=facade)
+    handler = LegacyIntentConversationHandler(kernel_facade=facade)
 
     result = await handler.handle(
         _build_command("闲聊"),
