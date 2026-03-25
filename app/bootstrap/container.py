@@ -3,6 +3,7 @@ from dishka.integrations.fastapi import FastapiProvider
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.application.audit.service import AuditQueryService
+from app.application.conversations.inbound_processor import ConversationInboundProcessor
 from app.application.conversations.intent_handler import (
     IntentConversationHandler,
     LLMFirstConversationIntentClassifier,
@@ -17,6 +18,8 @@ from app.application.conversations.service import (
     ConversationApplicationService,
     LLMConversationFallbackResponder,
 )
+from app.application.debug_im.ports import DebugIMMessageStore
+from app.application.debug_im.service import DebugIMApplicationService
 from app.application.memory.ports import MemoryUnitOfWorkFactory
 from app.application.memory.service import MemoryApplicationService
 from app.application.overview.service import OverviewApplicationService
@@ -35,7 +38,9 @@ from app.infrastructure.db.uow import (
     SQLAlchemyReminderUnitOfWork,
     SQLAlchemyTaskUnitOfWork,
 )
+from app.infrastructure.debug_im import SQLAlchemyDebugIMMessageStore
 from app.infrastructure.integrations.messaging import (
+    DebugIMMessagingAdapter,
     FeishuLongConnectionListener,
     FeishuMessagingAdapter,
     FeishuWebhookHandler,
@@ -274,6 +279,13 @@ class ApplicationProvider(Provider):
         return AuditQueryService(session_factory)
 
     @provide(scope=Scope.APP)
+    def provide_debug_im_message_store(
+        self,
+        session_factory: AsyncSessionFactory,
+    ) -> DebugIMMessageStore:
+        return SQLAlchemyDebugIMMessageStore(session_factory)
+
+    @provide(scope=Scope.APP)
     def provide_overview_service(
         self,
         reminder_service: ReminderApplicationService,
@@ -422,6 +434,17 @@ class ApplicationProvider(Provider):
         )
 
     @provide(scope=Scope.APP)
+    def provide_conversation_inbound_processor(
+        self,
+        conversation_service: ConversationApplicationService,
+        messaging_adapter: MessagingAdapter,
+    ) -> ConversationInboundProcessor:
+        return ConversationInboundProcessor(
+            conversation_service=conversation_service,
+            messaging_adapter=messaging_adapter,
+        )
+
+    @provide(scope=Scope.APP)
     def provide_messaging_adapter(
         self,
         settings: Settings,
@@ -432,10 +455,14 @@ class ApplicationProvider(Provider):
         if settings.feishu_app_id and settings.feishu_app_secret:
             base_adapter = RoutingMessagingAdapter(
                 default_adapter=logging_adapter,
+                debug_im_adapter=DebugIMMessagingAdapter(),
                 feishu_adapter=FeishuMessagingAdapter(settings=settings),
             )
         else:
-            base_adapter = RoutingMessagingAdapter(default_adapter=logging_adapter)
+            base_adapter = RoutingMessagingAdapter(
+                default_adapter=logging_adapter,
+                debug_im_adapter=DebugIMMessagingAdapter(),
+            )
 
         return RecordingMessagingAdapter(
             inner=base_adapter,
@@ -445,12 +472,21 @@ class ApplicationProvider(Provider):
     @provide(scope=Scope.APP)
     def provide_inbound_event_recorder(
         self,
-        conversation_service: ConversationApplicationService,
-        messaging_adapter: MessagingAdapter,
+        inbound_processor: ConversationInboundProcessor,
     ) -> ConversationInboundEventRecorder:
         return ConversationInboundEventRecorder(
-            conversation_service=conversation_service,
-            messaging_adapter=messaging_adapter,
+            inbound_processor=inbound_processor,
+        )
+
+    @provide(scope=Scope.APP)
+    def provide_debug_im_service(
+        self,
+        inbound_processor: ConversationInboundProcessor,
+        debug_im_message_store: DebugIMMessageStore,
+    ) -> DebugIMApplicationService:
+        return DebugIMApplicationService(
+            inbound_processor=inbound_processor,
+            message_store=debug_im_message_store,
         )
 
     @provide(scope=Scope.APP)

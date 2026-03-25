@@ -67,6 +67,8 @@ flowchart LR
 - “这个 / 那个 / 第二个” 这类对象级解析 **只放 application kernel**，不继续往 infrastructure 下沉。
 - reminder workflow、LLM gateway、messaging adapter 维持既有设计，本轮不扩到新的基础设施抽象。
 - `assistant_turn_states` 已作为 infrastructure-level persistence 引入，用来持久化 conversation execution state；消息审计中的 `assistant_turn_state` 继续作为审计快照保留。
+- `debug_im` 作为调试专用 IM 渠道接入，不复刻第二套 conversation 逻辑；它通过独立的 channel 和 message adapter 复用同一条 inbound processor / conversation service / Temporal 主链路。
+- `debug_im` 的历史消息与最近会话直接复用 `message_event_logs`，websocket 仅负责实时推送，不作为消息真相来源。
 
 ## 持久化执行态
 

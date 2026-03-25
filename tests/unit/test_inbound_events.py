@@ -2,36 +2,25 @@ from dataclasses import dataclass
 
 import pytest
 
+from app.application.conversations.commands import HandleInboundConversationMessageCommand
 from app.application.conversations.dto import ConversationInboundResult
 from app.bootstrap.inbound_events import ConversationInboundEventRecorder
-from app.infrastructure.integrations.messaging.base import (
-    MessageTarget,
-    OutboundMessage,
-    SendResult,
-)
 from app.infrastructure.integrations.messaging.feishu_webhook import InboundMessageEvent
 
 
 @dataclass
-class FakeConversationService:
+class FakeInboundProcessor:
     result: ConversationInboundResult
 
-    async def handle_inbound_message(self, command: object) -> ConversationInboundResult:
-        _ = command
-        return self.result
+    def __post_init__(self) -> None:
+        self.commands: list[HandleInboundConversationMessageCommand] = []
 
-
-class FakeMessagingAdapter:
-    def __init__(self) -> None:
-        self.sent_messages: list[tuple[MessageTarget, OutboundMessage]] = []
-
-    async def send_message(
+    async def handle_message(
         self,
-        target: MessageTarget,
-        content: OutboundMessage,
-    ) -> SendResult:
-        self.sent_messages.append((target, content))
-        return SendResult(accepted=True, external_message_id="om_reply_1")
+        command: HandleInboundConversationMessageCommand,
+    ) -> ConversationInboundResult:
+        self.commands.append(command)
+        return self.result
 
 
 def build_event() -> InboundMessageEvent:
@@ -55,67 +44,95 @@ def build_event() -> InboundMessageEvent:
 
 
 @pytest.mark.asyncio
-async def test_inbound_event_recorder_sends_response_message_when_present() -> None:
-    messaging_adapter = FakeMessagingAdapter()
-    recorder = ConversationInboundEventRecorder(
-        conversation_service=FakeConversationService(
-            ConversationInboundResult(
-                handled=True,
-                conversation_id="conversation-1",
-                session_id="session-1",
-                handled_by="task",
-                reason="task_created_via_llm",
-                response_text="好的，已创建待办。",
-            )
-        ),
-        messaging_adapter=messaging_adapter,
+async def test_inbound_event_recorder_delegates_valid_feishu_event() -> None:
+    processor = FakeInboundProcessor(
+        ConversationInboundResult(
+            handled=True,
+            conversation_id="conversation-1",
+            session_id="session-1",
+            handled_by="task",
+            reason="task_created_via_llm",
+            response_text="好的，已创建待办。",
+        )
     )
+    recorder = ConversationInboundEventRecorder(inbound_processor=processor)
 
     await recorder.record(build_event())
 
-    assert messaging_adapter.sent_messages[0][0].recipient_id == "ou_123"
-    assert messaging_adapter.sent_messages[0][1].text == "好的，已创建待办。"
+    assert processor.commands[0].channel == "feishu"
+    assert processor.commands[0].user_identity == "ou_123"
+    assert processor.commands[0].text == "你好"
 
 
 @pytest.mark.asyncio
-async def test_inbound_event_recorder_skips_response_when_no_response_text() -> None:
-    messaging_adapter = FakeMessagingAdapter()
-    recorder = ConversationInboundEventRecorder(
-        conversation_service=FakeConversationService(
-            ConversationInboundResult(
-                handled=True,
-                conversation_id="conversation-1",
-                session_id="session-1",
-                handled_by="task",
-                reason="task_created_via_llm",
-                response_text=None,
-            )
-        ),
-        messaging_adapter=messaging_adapter,
+async def test_inbound_event_recorder_skips_non_p2p_message() -> None:
+    processor = FakeInboundProcessor(
+        ConversationInboundResult(
+            handled=True,
+            conversation_id="conversation-1",
+            session_id="session-1",
+            handled_by="conversation",
+            reason="handled",
+            response_text="ignored",
+        )
+    )
+    recorder = ConversationInboundEventRecorder(inbound_processor=processor)
+    event = build_event()
+    event = InboundMessageEvent(
+        channel=event.channel,
+        event_type=event.event_type,
+        message_id=event.message_id,
+        root_message_id=event.root_message_id,
+        parent_message_id=event.parent_message_id,
+        chat_id=event.chat_id,
+        thread_id=event.thread_id,
+        chat_type="group",
+        message_type=event.message_type,
+        text=event.text,
+        sender_open_id=event.sender_open_id,
+        sender_user_id=event.sender_user_id,
+        sender_union_id=event.sender_union_id,
+        tenant_key=event.tenant_key,
+        raw_body=event.raw_body,
     )
 
-    await recorder.record(build_event())
+    await recorder.record(event)
 
-    assert messaging_adapter.sent_messages == []
+    assert processor.commands == []
 
 
 @pytest.mark.asyncio
-async def test_inbound_event_recorder_sends_guidance_when_not_handled_but_has_response() -> None:
-    messaging_adapter = FakeMessagingAdapter()
-    recorder = ConversationInboundEventRecorder(
-        conversation_service=FakeConversationService(
-            ConversationInboundResult(
-                handled=False,
-                conversation_id="conversation-1",
-                session_id="session-1",
-                handled_by=None,
-                reason="no_handler_accepted",
-                response_text="我暂时没理解这条消息。",
-            )
-        ),
-        messaging_adapter=messaging_adapter,
+async def test_inbound_event_recorder_skips_missing_sender_or_text() -> None:
+    processor = FakeInboundProcessor(
+        ConversationInboundResult(
+            handled=True,
+            conversation_id="conversation-1",
+            session_id="session-1",
+            handled_by="conversation",
+            reason="handled",
+            response_text="ignored",
+        )
+    )
+    recorder = ConversationInboundEventRecorder(inbound_processor=processor)
+    event = build_event()
+    event = InboundMessageEvent(
+        channel=event.channel,
+        event_type=event.event_type,
+        message_id=event.message_id,
+        root_message_id=event.root_message_id,
+        parent_message_id=event.parent_message_id,
+        chat_id=event.chat_id,
+        thread_id=event.thread_id,
+        chat_type=event.chat_type,
+        message_type=event.message_type,
+        text=None,
+        sender_open_id=event.sender_open_id,
+        sender_user_id=event.sender_user_id,
+        sender_union_id=event.sender_union_id,
+        tenant_key=event.tenant_key,
+        raw_body=event.raw_body,
     )
 
-    await recorder.record(build_event())
+    await recorder.record(event)
 
-    assert messaging_adapter.sent_messages[0][1].text == "我暂时没理解这条消息。"
+    assert processor.commands == []

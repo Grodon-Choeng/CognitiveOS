@@ -161,6 +161,9 @@ tests/
 - 飞书事件订阅回调入口为 `POST /api/v1/integrations/feishu/events`。
 - 飞书也支持通过长连接接收入站事件，入口命令为 `make feishu-longconn`。
 - 内部统一消息入口为 `POST /api/v1/conversations/messages`，用于让 Web 与飞书共用同一条 conversation 处理链路。
+- 现已新增 `debug_im` 调试渠道：`POST /api/v1/debug/im/messages` 可模拟用户发消息，`GET /api/v1/debug/im/messages` / `GET /api/v1/debug/im/sessions` 可查看最近消息与会话。
+- `WS /api/v1/debug/im/ws?user_identity=...` 可订阅调试 IM 会话的实时消息；连接后会先收到最近历史，再持续收到新消息推送。
+- `debug_im` 仍复用同一条 conversation / reminder / Temporal / messaging adapter 主链路，不单独维护第二套业务逻辑。
 - conversation source binding 当前使用数据库唯一约束 + upsert 写入，避免并发场景下为同一来源键写出重复映射。
 - conversation assistant kernel 当前会在入站消息审计 metadata 中附带结构化 `assistant_turn_state`，用于复用上一回合的焦点对象、候选列表和最近动作。
 - assistant turn state 现在也会双写到数据库表 `assistant_turn_states`，用于 webhook / 长连接 / 多轮异步对话下的稳定恢复。
@@ -168,6 +171,7 @@ tests/
 - 聚合时间线入口为 `GET /api/v1/audit/timeline`，会把 `message/model/tool/workflow` 四类事件按时间混排返回。
 - 聚合时间线的游标当前带有事件类型信息，用于避免不同审计表在同一时间戳下分页时出现跨类型漂移。
 - 当前最小入站续执行逻辑：仅对飞书 `p2p` 文本消息生效，并按 `sender_open_id` 关联该用户最近一个 `pending` reminder。
+- `debug_im` 的 reminder 续执行不依赖飞书长连接；提醒发出后会以调试消息形式写入统一消息审计与实时 websocket 推送，可直接在同一调试会话里回复。
 - conversation intent 当前改为 `LLM 优先、规则兜底`：若配置了 `COGNITIVE_OS_CONVERSATION_INTENT_MODEL`，会优先走 `llm_gateway` 做 reminder/task/memory 意图识别；`COGNITIVE_OS_CONVERSATION_LLM_PROVIDER=openai` 时需要 `COGNITIVE_OS_OPENAI_API_KEY`，`local` 时使用 `COGNITIVE_OS_LOCAL_LLM_BASE_URL`；未配置或模型失败时再退回显式规则。
 - 在 assistant kernel 内部，当前规划阶段会优先尝试显式规则快路径，再复用已有 classifier 与 fallback responder。
 - reminder 的规则兜底当前保持收敛：只覆盖显式、低歧义的输入，例如 `提醒：2026-03-24T09:00:00+08:00 开会`；更自然的时间表达默认优先交给 `LLM` 处理。

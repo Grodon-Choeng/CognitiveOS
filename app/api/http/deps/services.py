@@ -5,6 +5,7 @@ from fastapi import Depends
 
 from app.application.audit.service import AuditQueryService
 from app.application.conversations.service import ConversationApplicationService
+from app.application.debug_im.service import DebugIMApplicationService
 from app.application.memory.service import MemoryApplicationService
 from app.application.overview.service import OverviewApplicationService
 from app.application.reminders.service import ReminderApplicationService
@@ -21,6 +22,13 @@ def get_audit_service(service: FromDishka[AuditQueryService]) -> AuditQueryServi
 def get_conversation_service(
     service: FromDishka[ConversationApplicationService],
 ) -> ConversationApplicationService:
+    return service
+
+
+@inject
+async def get_debug_im_service(
+    service: FromDishka[DebugIMApplicationService],
+) -> DebugIMApplicationService:
     return service
 
 
@@ -60,6 +68,7 @@ ConversationServiceDep = Annotated[
     ConversationApplicationService,
     Depends(get_conversation_service),
 ]
+DebugIMServiceDep = Annotated[DebugIMApplicationService, Depends(get_debug_im_service)]
 ReminderServiceDep = Annotated[ReminderApplicationService, Depends(get_reminder_service)]
 MemoryServiceDep = Annotated[MemoryApplicationService, Depends(get_memory_service)]
 TaskServiceDep = Annotated[TaskApplicationService, Depends(get_task_service)]

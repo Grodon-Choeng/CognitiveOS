@@ -3,6 +3,7 @@
 from app.api.http.deps.services import (
     AuditServiceDep,
     ConversationServiceDep,
+    DebugIMServiceDep,
     FeishuWebhookHandlerDep,
     MemoryServiceDep,
     OverviewServiceDep,
@@ -13,6 +14,7 @@ from app.api.http.deps.services import (
 __all__ = [
     "AuditServiceDep",
     "ConversationServiceDep",
+    "DebugIMServiceDep",
     "FeishuWebhookHandlerDep",
     "MemoryServiceDep",
     "OverviewServiceDep",

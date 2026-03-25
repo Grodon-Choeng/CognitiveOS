@@ -2,6 +2,7 @@ import pytest
 
 from app.application.audit.service import AuditQueryService
 from app.application.conversations.service import ConversationApplicationService
+from app.application.debug_im.service import DebugIMApplicationService
 from app.application.overview.service import OverviewApplicationService
 from app.application.reminders.service import ReminderApplicationService
 from app.bootstrap.container import create_runtime_container
@@ -21,6 +22,7 @@ async def test_runtime_container_reuses_app_scoped_singletons() -> None:
     try:
         reminder_service = await container.get(ReminderApplicationService)
         conversation_service = await container.get(ConversationApplicationService)
+        debug_im_service = await container.get(DebugIMApplicationService)
         audit_service = await container.get(AuditQueryService)
         overview_service = await container.get(OverviewApplicationService)
         message_event_recorder = await container.get(MultiMessageEventRecorder)
@@ -28,6 +30,7 @@ async def test_runtime_container_reuses_app_scoped_singletons() -> None:
 
         assert reminder_service is await container.get(ReminderApplicationService)
         assert conversation_service is await container.get(ConversationApplicationService)
+        assert debug_im_service is await container.get(DebugIMApplicationService)
         assert audit_service is await container.get(AuditQueryService)
         assert overview_service is await container.get(OverviewApplicationService)
         assert message_event_recorder is await container.get(MultiMessageEventRecorder)
