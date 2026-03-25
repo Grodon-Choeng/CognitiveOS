@@ -89,17 +89,20 @@ class ApplicationProvider(Provider):
         settings: Settings,
         model_invocation_recorder: MultiModelInvocationRecorder,
     ) -> RecordingLLMGateway | None:
-        if not settings.conversation_intent_model:
+        model = settings.effective_conversation_intent_model
+        if model is None:
             return None
-        provider = settings.conversation_llm_provider.strip().casefold()
+        provider = settings.effective_conversation_llm_provider
+        endpoint = settings.effective_conversation_llm_endpoint
+        api_key = settings.effective_conversation_llm_api_key
         if provider == "openai":
-            if not settings.openai_api_key:
+            if api_key is None:
                 return None
             return RecordingLLMGateway(
                 OpenAIChatLLMGateway(
-                    api_key=settings.openai_api_key,
-                    model=settings.conversation_intent_model,
-                    base_url=settings.openai_base_url,
+                    api_key=api_key,
+                    model=model,
+                    base_url=endpoint,
                     timeout_seconds=settings.conversation_intent_llm_timeout_seconds,
                 ),
                 model_invocation_recorder,
@@ -107,15 +110,13 @@ class ApplicationProvider(Provider):
         if provider == "local":
             return RecordingLLMGateway(
                 LocalChatLLMGateway(
-                    model=settings.conversation_intent_model,
-                    base_url=settings.local_llm_base_url,
+                    model=model,
+                    base_url=endpoint,
                     timeout_seconds=settings.conversation_intent_llm_timeout_seconds,
                 ),
                 model_invocation_recorder,
             )
-        raise ValueError(
-            f"不支持的 conversation llm provider：{settings.conversation_llm_provider}"
-        )
+        raise ValueError(f"不支持的 conversation llm provider：{provider}")
 
     @provide(scope=Scope.APP)
     def provide_session_factory(self, settings: Settings) -> AsyncSessionFactory:
@@ -312,9 +313,9 @@ class ApplicationProvider(Provider):
         )
         return LLMFirstConversationIntentClassifier(
             llm_gateway=llm_gateway,
-            model=settings.conversation_intent_model,
-            api_key_suffix=build_api_key_suffix(settings.openai_api_key),
-            provider=settings.conversation_llm_provider,
+            model=settings.effective_conversation_intent_model,
+            api_key_suffix=build_api_key_suffix(settings.effective_conversation_llm_api_key),
+            provider=settings.effective_conversation_llm_provider,
         )
 
     @provide(scope=Scope.APP)
@@ -426,10 +427,10 @@ class ApplicationProvider(Provider):
             renderer=assistant_response_renderer,
             fallback_responder=LLMConversationFallbackResponder(
                 llm_gateway=llm_gateway,
-                model=settings.conversation_intent_model,
-                api_key_suffix=build_api_key_suffix(settings.openai_api_key),
+                model=settings.effective_conversation_intent_model,
+                api_key_suffix=build_api_key_suffix(settings.effective_conversation_llm_api_key),
                 history_reader=audit_service,
-                provider=settings.conversation_llm_provider,
+                provider=settings.effective_conversation_llm_provider,
             ),
         )
 

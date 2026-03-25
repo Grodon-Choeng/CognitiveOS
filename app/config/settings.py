@@ -34,7 +34,14 @@ class Settings(BaseSettings):
     temporal_namespace: str = "default"
     temporal_task_queue: str = "cognitiveos-reminders"
     temporal_reminder_workflow_name: str = "reminder-workflow"
-    conversation_llm_provider: str = "openai"
+    llm_default_provider: str = "openai"
+    llm_default_endpoint: str | None = None
+    llm_default_api_key: str | None = Field(default=None)
+    llm_default_small_model: str | None = None
+    llm_default_large_model: str | None = None
+    conversation_llm_provider: str | None = None
+    conversation_llm_endpoint: str | None = None
+    conversation_llm_api_key: str | None = Field(default=None)
     openai_base_url: str = "https://api.openai.com/v1"
     openai_api_key: str | None = Field(default=None)
     local_llm_base_url: str = "http://localhost:1234/api/v1/chat"
@@ -49,7 +56,68 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
+    @property
+    def effective_conversation_llm_provider(self) -> str:
+        return (
+            _normalized_optional_string(self.conversation_llm_provider)
+            or _normalized_optional_string(self.llm_default_provider)
+            or "openai"
+        )
+
+    @property
+    def effective_conversation_llm_endpoint(self) -> str:
+        conversation_endpoint = _normalized_optional_string(self.conversation_llm_endpoint)
+        if conversation_endpoint is not None:
+            return conversation_endpoint
+
+        default_endpoint = _normalized_optional_string(self.llm_default_endpoint)
+        if default_endpoint is not None:
+            return default_endpoint
+
+        provider = self.effective_conversation_llm_provider
+        if provider == "local":
+            return self.local_llm_base_url
+        return self.openai_base_url
+
+    @property
+    def effective_conversation_llm_api_key(self) -> str | None:
+        conversation_api_key = _normalized_optional_string(self.conversation_llm_api_key)
+        if conversation_api_key is not None:
+            return conversation_api_key
+
+        default_api_key = _normalized_optional_string(self.llm_default_api_key)
+        if default_api_key is not None:
+            return default_api_key
+
+        if self.effective_conversation_llm_provider == "openai":
+            return _normalized_optional_string(self.openai_api_key)
+        return None
+
+    @property
+    def effective_conversation_intent_model(self) -> str | None:
+        return (
+            _normalized_optional_string(self.conversation_intent_model)
+            or _normalized_optional_string(self.llm_default_small_model)
+        )
+
+    @property
+    def effective_default_small_model(self) -> str | None:
+        return _normalized_optional_string(self.llm_default_small_model)
+
+    @property
+    def effective_default_large_model(self) -> str | None:
+        return _normalized_optional_string(self.llm_default_large_model)
+
 
 @lru_cache
 def get_settings() -> Settings:
     return Settings()
+
+
+def _normalized_optional_string(value: str | None) -> str | None:
+    if value is None:
+        return None
+    normalized = value.strip()
+    if not normalized:
+        return None
+    return normalized

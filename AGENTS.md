@@ -223,7 +223,8 @@ workflows, activities, signals, queries, updates, timers, retries, durable execu
 - 服务编排器会把常驻服务状态与日志写到仓库内 `.runtime/services/`；该目录属于本地运行产物，不纳入版本控制。
 - 应用 settings 默认应支持从项目根目录 `.env` 读取本地配置；若变更读取方式，必须同步更新 `README.md` 与 `.env.example`。
 - 新增环境变量、启动方式或基础设施依赖时，必须同步更新 `README.md` 与本文件。
-- 当前若启用 conversation 的 LLM 优先意图识别，至少需要配置 `COGNITIVE_OS_CONVERSATION_INTENT_MODEL`；使用 `openai` provider 时还需要 `COGNITIVE_OS_OPENAI_API_KEY`，使用 `local` provider 时需要 `COGNITIVE_OS_LOCAL_LLM_BASE_URL`；未配置时必须自动退回规则兜底，而不是直接报错中断主流程。
+- 当前 LLM 配置应优先通过“默认兜底配置 + conversation 覆盖配置”表达：默认层至少包括 `COGNITIVE_OS_LLM_DEFAULT_PROVIDER`、`COGNITIVE_OS_LLM_DEFAULT_ENDPOINT`、`COGNITIVE_OS_LLM_DEFAULT_API_KEY`、`COGNITIVE_OS_LLM_DEFAULT_SMALL_MODEL`、`COGNITIVE_OS_LLM_DEFAULT_LARGE_MODEL`；conversation 层可再通过 `COGNITIVE_OS_CONVERSATION_LLM_PROVIDER`、`COGNITIVE_OS_CONVERSATION_LLM_ENDPOINT`、`COGNITIVE_OS_CONVERSATION_LLM_API_KEY`、`COGNITIVE_OS_CONVERSATION_INTENT_MODEL` 覆盖。
+- 当前 conversation 的 LLM 优先意图识别若未显式配置 `COGNITIVE_OS_CONVERSATION_INTENT_MODEL`，允许回退到 `COGNITIVE_OS_LLM_DEFAULT_SMALL_MODEL`；`local` provider 允许无 key，`openai` / OpenAI-compatible provider 默认需要 endpoint、key、model；未配置时必须自动退回规则兜底，而不是直接报错中断主流程。
 
 ---
 

@@ -57,6 +57,28 @@ cp .env.example .env
 
 应用会默认读取项目根目录下的 `.env`。
 
+当前 LLM 配置建议分成两层：
+
+- 默认兜底配置
+  - `COGNITIVE_OS_LLM_DEFAULT_PROVIDER`
+  - `COGNITIVE_OS_LLM_DEFAULT_ENDPOINT`
+  - `COGNITIVE_OS_LLM_DEFAULT_API_KEY`
+  - `COGNITIVE_OS_LLM_DEFAULT_SMALL_MODEL`
+  - `COGNITIVE_OS_LLM_DEFAULT_LARGE_MODEL`
+- conversation 覆盖配置
+  - `COGNITIVE_OS_CONVERSATION_LLM_PROVIDER`
+  - `COGNITIVE_OS_CONVERSATION_LLM_ENDPOINT`
+  - `COGNITIVE_OS_CONVERSATION_LLM_API_KEY`
+  - `COGNITIVE_OS_CONVERSATION_INTENT_MODEL`
+
+当前实现里：
+
+- `LLM_DEFAULT_SMALL_MODEL` 会作为 conversation intent 的默认兜底模型
+- `LLM_DEFAULT_LARGE_MODEL` 先作为未来动态路由的保留配置
+- conversation 层如果显式提供自己的 provider / endpoint / key / model，会优先覆盖默认配置
+- 本地 `local` provider 仍允许不配置 key
+- 外部 `openai` / OpenAI-compatible provider 通常需要同时配置 endpoint、key、model
+
 ### 3. 启动本地基础设施
 
 ```bash
@@ -209,7 +231,7 @@ tests/
 - 聚合时间线的游标当前带有事件类型信息，用于避免不同审计表在同一时间戳下分页时出现跨类型漂移。
 - 当前最小入站续执行逻辑：仅对飞书 `p2p` 文本消息生效，并按 `sender_open_id` 关联该用户最近一个 `pending` reminder。
 - `debug_im` 的 reminder 续执行不依赖飞书长连接；提醒发出后会以调试消息形式写入统一消息审计与实时 websocket 推送，可直接在同一调试会话里回复。
-- conversation intent 当前改为 `LLM 优先、规则兜底`：若配置了 `COGNITIVE_OS_CONVERSATION_INTENT_MODEL`，会优先走 `llm_gateway` 做 reminder/task/memory 意图识别；`COGNITIVE_OS_CONVERSATION_LLM_PROVIDER=openai` 时需要 `COGNITIVE_OS_OPENAI_API_KEY`，`local` 时使用 `COGNITIVE_OS_LOCAL_LLM_BASE_URL`；未配置或模型失败时再退回显式规则。
+- conversation intent 当前改为 `LLM 优先、规则兜底`：若配置了 `COGNITIVE_OS_CONVERSATION_INTENT_MODEL`，会优先走 `llm_gateway` 做 reminder/task/memory 意图识别；若未单独配置 conversation 模型，则会回退到 `COGNITIVE_OS_LLM_DEFAULT_SMALL_MODEL`；provider / endpoint / key 也遵循“conversation 覆盖优先、默认配置兜底、旧 provider 专属配置兼容”的顺序；未配置或模型失败时再退回显式规则。
 - 在 assistant kernel 内部，当前规划阶段会优先尝试显式规则快路径，再复用已有 classifier 与 fallback responder。
 - reminder 的规则兜底当前保持收敛：只覆盖显式、低歧义的输入，例如 `提醒：2026-03-24T09:00:00+08:00 开会`；更自然的时间表达默认优先交给 `LLM` 处理。
 - 当前 reminder create / list / get / reply / cancel 路由已接入 application service，可用于最小 reminder 生命周期闭环验证。
