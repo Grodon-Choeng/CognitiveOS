@@ -1,12 +1,15 @@
 from dataclasses import dataclass
 from datetime import datetime
 
+from app.domain.reminders.value_objects import ReminderRecurrence
+
 
 @dataclass(slots=True, frozen=True)
 class CreateReminderCommand:
     text: str
     remind_at: datetime
     timezone: str
+    recurrence: ReminderRecurrence | None = None
     linked_task_id: str | None = None
     conversation_id: str | None = None
     session_id: str | None = None

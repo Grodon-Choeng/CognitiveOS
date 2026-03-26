@@ -8,7 +8,7 @@ from temporalio.client import Client
 from app.application.reminders.ports import ReminderDispatchTarget
 from app.config.settings import Settings
 from app.domain.reminders.entities import Reminder
-from app.domain.reminders.value_objects import ReminderId, ReminderSchedule
+from app.domain.reminders.value_objects import ReminderId, ReminderRecurrence, ReminderSchedule
 from app.infrastructure.temporal.gateway import TemporalReminderWorkflowGateway
 from app.infrastructure.temporal.workflows.reminder_workflow import ReminderWorkflowInput
 from app.observability.context import bind_observability_context, reset_observability_context
@@ -89,6 +89,28 @@ def build_reminder(*, workflow_id: str | None = None) -> Reminder:
     )
 
 
+def build_recurring_reminder(*, workflow_id: str | None = None) -> Reminder:
+    return Reminder(
+        reminder_id=ReminderId.from_string("00000000-0000-0000-0000-000000000002"),
+        text="提醒我上班打卡",
+        schedule=ReminderSchedule(
+            remind_at=datetime(2026, 3, 20, 9, 55, tzinfo=UTC),
+            timezone="Asia/Shanghai",
+            recurrence=ReminderRecurrence(
+                recurrence_type="weekly_by_weekdays",
+                weekdays=("mon", "tue", "wed", "thu", "fri"),
+                hour=9,
+                minute=55,
+            ),
+        ),
+        conversation_id="conversation-1",
+        session_id="session-1",
+        dispatch_channel="console",
+        dispatch_recipient_id="user-1",
+        workflow_id=workflow_id,
+    )
+
+
 @pytest.mark.asyncio
 async def test_temporal_gateway_uses_precomputed_workflow_id_and_records_success() -> None:
     recorder = FakeWorkflowEventRecorder()
@@ -137,6 +159,29 @@ async def test_temporal_gateway_records_failure_when_start_workflow_fails() -> N
     assert recorder.records[0].event_type == "workflow_start_failed"
     assert recorder.records[0].success is False
     assert recorder.records[0].payload["error_type"] == "RuntimeError"
+
+
+@pytest.mark.asyncio
+async def test_temporal_gateway_passes_recurrence_payload_into_workflow_input() -> None:
+    recorder = FakeWorkflowEventRecorder()
+    client = FakeTemporalClient()
+    gateway = TemporalReminderWorkflowGateway(Settings(), recorder)
+    gateway._client = cast(Client, client)
+
+    await gateway.start_reminder(
+        reminder=build_recurring_reminder(
+            workflow_id="reminder:00000000-0000-0000-0000-000000000002"
+        ),
+        dispatch_target=ReminderDispatchTarget(channel="console", recipient_id="user-1"),
+    )
+
+    workflow_input = cast(ReminderWorkflowInput, client.started_calls[0].workflow_input)
+    assert workflow_input.recurrence == {
+        "recurrence_type": "weekly_by_weekdays",
+        "weekdays": ["mon", "tue", "wed", "thu", "fri"],
+        "hour": 9,
+        "minute": 55,
+    }
 
 
 @pytest.mark.asyncio

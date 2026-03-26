@@ -1,7 +1,9 @@
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 
 from temporalio import workflow
+
+from app.domain.reminders.value_objects import ReminderRecurrence, next_remind_at_for_recurrence
 
 REMINDER_WORKFLOW_NAME = "reminder-workflow"
 RECORD_USER_REPLY_SIGNAL = "record-user-reply"
@@ -15,6 +17,7 @@ class ReminderWorkflowInput:
     timezone: str
     dispatch_channel: str
     dispatch_recipient_id: str
+    recurrence: dict[str, object] | None = None
     conversation_id: str | None = None
     session_id: str | None = None
     trace_id: str | None = None
@@ -41,6 +44,10 @@ class ReminderWorkflow:
     @workflow.run
     async def run(self, workflow_input: ReminderWorkflowInput) -> str:
         self.state.reminder_id = workflow_input.reminder_id
+        remind_at = datetime.fromisoformat(workflow_input.remind_at)
+        delay = remind_at - workflow.now().astimezone(UTC)
+        if delay > timedelta(0):
+            await workflow.sleep(delay)
         self.state.status = "sending_message"
         workflow.logger.info(
             "提醒工作流已启动，准备发送提醒消息。",
@@ -80,6 +87,32 @@ class ReminderWorkflow:
             start_to_close_timeout=timedelta(seconds=10),
         )
         self.state.dispatch_message_id = dispatch_message_id
+        recurrence = _load_recurrence(workflow_input.recurrence)
+        if recurrence is not None:
+            self.state.status = "scheduled_next_occurrence"
+            next_remind_at = next_remind_at_for_recurrence(
+                recurrence,
+                timezone=workflow_input.timezone,
+                after=remind_at,
+            )
+            workflow.continue_as_new(
+                ReminderWorkflowInput(
+                    reminder_id=workflow_input.reminder_id,
+                    text=workflow_input.text,
+                    remind_at=next_remind_at.isoformat(),
+                    timezone=workflow_input.timezone,
+                    dispatch_channel=workflow_input.dispatch_channel,
+                    dispatch_recipient_id=workflow_input.dispatch_recipient_id,
+                    recurrence=workflow_input.recurrence,
+                    conversation_id=workflow_input.conversation_id,
+                    session_id=workflow_input.session_id,
+                    trace_id=workflow_input.trace_id,
+                    chain_id=workflow_input.chain_id,
+                    request_id=workflow_input.request_id,
+                    dispatch_chat_id=workflow_input.dispatch_chat_id,
+                    dispatch_thread_id=workflow_input.dispatch_thread_id,
+                )
+            )
         self.state.status = "waiting_for_reply"
         workflow.logger.info(
             "提醒消息已发送，等待后续回复信号。",
@@ -111,3 +144,9 @@ class ReminderWorkflow:
     @workflow.query(name="get-state")
     def get_state(self) -> ReminderWorkflowState:
         return self.state
+
+
+def _load_recurrence(payload: dict[str, object] | None) -> ReminderRecurrence | None:
+    if payload is None:
+        return None
+    return ReminderRecurrence.from_payload(payload)

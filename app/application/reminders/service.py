@@ -11,6 +11,7 @@ from app.application.reminders.dto import (
     ReminderDTO,
     ReminderInboundMessageResult,
     ReminderListDTO,
+    ReminderRecurrenceDTO,
     ReminderReplyDTO,
 )
 from app.application.reminders.errors import (
@@ -28,7 +29,7 @@ from app.application.reminders.ports import (
 )
 from app.application.reminders.queries import ListRemindersQuery
 from app.domain.reminders.entities import Reminder, ReminderStatus
-from app.domain.reminders.value_objects import ReminderId, ReminderSchedule
+from app.domain.reminders.value_objects import ReminderId, ReminderRecurrence, ReminderSchedule
 
 _REMINDER_REPLY_PASS_TO_KERNEL_KEYWORDS = (
     "查看",
@@ -98,6 +99,7 @@ class ReminderApplicationService:
             schedule=ReminderSchedule(
                 remind_at=command.remind_at,
                 timezone=command.timezone,
+                recurrence=command.recurrence,
             ),
             conversation_id=conversation_context.conversation_id,
             session_id=conversation_context.session_id,
@@ -145,6 +147,13 @@ class ReminderApplicationService:
             reminder = await unit_of_work.reminders.get(reminder_id)
             if reminder is None:
                 raise ReminderNotFoundError(f"提醒不存在：{command.reminder_id}")
+            if reminder.schedule.is_recurring:
+                return ReminderReplyDTO(
+                    reminder_id=command.reminder_id,
+                    reply_text=command.reply_text,
+                    accepted=False,
+                    status=ReminderStatus.PENDING.value,
+                )
             if reminder.status != ReminderStatus.PENDING:
                 raise ReminderStateConflictError(f"提醒当前状态不允许回复：{reminder.status.value}")
 
@@ -395,6 +404,14 @@ class ReminderApplicationService:
                 )
 
             reminder = matched.reminder
+            if reminder.schedule.is_recurring:
+                return ReminderInboundMessageResult(
+                    handled=False,
+                    reminder_id=str(reminder.reminder_id.value),
+                    reason="recurring_reminder_reply_not_supported",
+                    decision="pass_to_kernel",
+                    match_source=matched.source,
+                )
             if reply_semantics == "reject_or_not_related":
                 return ReminderInboundMessageResult(
                     handled=False,
@@ -459,6 +476,7 @@ class ReminderApplicationService:
             remind_at=reminder.schedule.remind_at,
             timezone=reminder.schedule.timezone,
             status=reminder.status.value,
+            recurrence=_to_recurrence_dto(reminder.schedule.recurrence),
             linked_task_id=reminder.linked_task_id,
             failure_stage=reminder.failure_stage,
             failure_reason_code=reminder.failure_reason_code,
@@ -512,3 +530,14 @@ def _classify_reminder_reply_semantics(text: str) -> str:
 
 def _build_reminder_workflow_id(reminder_id: ReminderId) -> str:
     return f"reminder:{reminder_id.value}"
+
+
+def _to_recurrence_dto(recurrence: ReminderRecurrence | None) -> ReminderRecurrenceDTO | None:
+    if recurrence is None:
+        return None
+    return ReminderRecurrenceDTO(
+        recurrence_type=recurrence.recurrence_type,
+        weekdays=list(recurrence.weekdays),
+        hour=recurrence.hour,
+        minute=recurrence.minute,
+    )

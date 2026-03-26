@@ -1,9 +1,10 @@
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Index, String, func
+from sqlalchemy import JSON, Boolean, DateTime, Index, String, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.infrastructure.db.base import Base
+from app.infrastructure.types import JSONObject
 
 
 class ReminderModel(Base):
@@ -46,6 +47,7 @@ class ReminderModel(Base):
     text: Mapped[str] = mapped_column(String(500))
     remind_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     timezone: Mapped[str] = mapped_column(String(64), nullable=False)
+    recurrence_json: Mapped[JSONObject | None] = mapped_column(JSON, nullable=True)
     status: Mapped[str] = mapped_column(String(32), nullable=False)
     workflow_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     conversation_id: Mapped[str | None] = mapped_column(String(36), nullable=True)

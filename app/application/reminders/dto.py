@@ -1,6 +1,14 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Literal
+
+
+@dataclass(slots=True, frozen=True)
+class ReminderRecurrenceDTO:
+    recurrence_type: str
+    weekdays: list[str] = field(default_factory=list)
+    hour: int = 9
+    minute: int = 0
 
 
 @dataclass(slots=True, frozen=True)
@@ -10,6 +18,7 @@ class ReminderDTO:
     remind_at: datetime
     timezone: str
     status: str
+    recurrence: ReminderRecurrenceDTO | None = None
     linked_task_id: str | None = None
     failure_stage: str | None = None
     failure_reason_code: str | None = None

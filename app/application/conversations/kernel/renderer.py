@@ -130,12 +130,16 @@ def _render_execution_result(
         lines.append("如果没问题，你可以直接回复“确认”或“按这个来”。")
         return "\n".join(lines)
     if result.action == "complex_plan_executed":
-        reminders = _payload_items(result.payload, "created_reminders")
-        lines = ["我已经按这个方案先落地了当前可执行的部分。"]
-        if reminders:
-            lines.append(f"- 已创建 {len(reminders)} 条单次提醒")
-        lines.append("- 已把工作日规则和约束记成一条说明，方便你后续继续沿用")
-        lines.append("当前还不会自动托管真正的循环规则。")
+        recurring_reminders = _payload_items(result.payload, "created_recurring_reminders")
+        one_off_reminders = _payload_items(result.payload, "created_one_off_reminders")
+        memory_items = _payload_items(result.payload, "memory")
+        lines = ["我已经按这个方案建好了。"]
+        if recurring_reminders:
+            lines.append(f"- 已创建 {len(recurring_reminders)} 条循环提醒")
+        if one_off_reminders:
+            lines.append(f"- 已创建 {len(one_off_reminders)} 条单次提醒")
+        if memory_items:
+            lines.append("- 已把“另行通知”这类约束记成偏好，避免误建提醒")
         return "\n".join(lines)
     if result.action == "retry_failed_reminder":
         return (

@@ -220,11 +220,12 @@ reminder fast path 是 reminder reply 的过渡兼容 shortcut，不是通用对
   - turn state 中已有 `pending_complex_plan`
 - 当前最小实现的期望执行结果：
   - executor 读取 `pending_complex_plan`
+  - 会为 recurring rule 生成真正的 recurring reminders
   - 会为 override 生成可落地的单次 reminders
-  - 会把 recurring 规则与 constraint 合并写成一条 memory note
+  - 只把 constraint / preference 写成 memory
 - 当前最小实现的非承诺范围：
-  - 还不会真正托管长期 recurring reminder
-  - recurring rule 目前只是被结构化保存并用于生成 override 拆分
+  - 当前只稳定承诺 `workdays + 固定时分` 的 recurring reminder
+  - 当前 override 只稳定承诺结构化单日日期，不承诺通用排班规则
 
 #### C1. 低置信但可猜时进入 `needs_confirmation`
 
@@ -328,6 +329,31 @@ reminder fast path 是 reminder reply 的过渡兼容 shortcut，不是通用对
   - 由 kernel 或 fallback 决定；fast path 不应生成 reminder handling 文案
 - 不应发生的错误行为：
   - 不应因为 `parent_message_id`/thread relation 命中而 shortcut 完成
+
+### E. 复杂规则请求类
+
+#### E1. 复杂规则默认进入 preview，不直接执行
+
+- 复杂规则请求命中 `StructuredRulePlan` 后，第一轮只返回 preview。
+- assistant turn state 必须进入 `dialogue_mode=confirmation`。
+- `pending_complex_plan` 必须保存在 assistant turn state，供下一轮确认恢复。
+
+#### E2. 确认后拆成多动作执行
+
+- 第二轮用户回复 `确认`、`按这个来`、`就这么建` 时，真实 conversation 入口应优先从 turn state 恢复 `pending_complex_plan`。
+- 当前最小闭环会把 recurring rule 创建为 recurring reminders，把 override 创建为 one-off reminders，再把 constraint 写入 memory。
+- 不允许依赖测试手工注入 confirmation context 才能执行。
+
+#### E3. 约束性表达进入 constraint / memory，而不是 reminder
+
+- 诸如“其他非工作日我会另行通知”这类表达，应进入 constraint memory / preference。
+- 这类约束不能被误拆成新的 reminder，也不能塞回 recurring reminder 的正文。
+
+#### E4. 当前 recurring 支持范围与非承诺范围
+
+- 当前稳定承诺的 recurring 范围：`工作日 + 固定时分`，并保留 timezone。
+- 当前稳定承诺的 override 范围：结构化单日日期，如 `本周六`，会落成 one-off reminders。
+- 当前不承诺：任意 RRULE、节假日推导、复杂排班、跨规则冲突求解、对 recurring reminder 的完整 reply continuation 语义。
 
 ## 4. 解析优先级规范
 
@@ -451,7 +477,8 @@ reminder fast path 的行为由 [app/application/reminders/service.py](/Users/go
 | 规范条目 | 测试文件 | 测试名 | 是否已覆盖 | 备注 |
 | --- | --- | --- | --- | --- |
 | C0 复杂规则请求先进入预览确认 | [tests/unit/test_complex_rule_requests.py](/Users/gordon/Code/Personal/CognitiveOS/tests/unit/test_complex_rule_requests.py) | `test_复杂规则请求不会被压成一条_reminder`、`test_复杂规则请求默认进入_confirmation_preview` | 已覆盖 | 验证不会误压成单条 reminder，且默认返回 preview |
-| C0.1 复杂规则确认后拆分执行 | [tests/unit/test_complex_rule_requests.py](/Users/gordon/Code/Personal/CognitiveOS/tests/unit/test_complex_rule_requests.py) | `test_确认后会拆成多个动作执行`、`test_其他非工作日我另行通知_不会被误建成_reminder_文本` | 已覆盖 | 当前只落地 override reminders + 一条 memory note |
+| C0.1 复杂规则确认后拆分执行 | [tests/unit/test_complex_rule_requests.py](/Users/gordon/Code/Personal/CognitiveOS/tests/unit/test_complex_rule_requests.py) | `test_确认后会拆成多个动作执行`、`test_其他非工作日我另行通知_不会被误建成_reminder_文本` | 已覆盖 | 当前会创建 recurring reminders、one-off overrides 与 constraint memory |
+| E2 preview -> confirm -> execute 真实入口闭环 | [tests/unit/test_complex_rule_requests.py](/Users/gordon/Code/Personal/CognitiveOS/tests/unit/test_complex_rule_requests.py) | `test_真实_conversation_service_能恢复_pending_complex_plan并完成确认执行` | 已覆盖 | 验证 preview 后保存 pending plan，确认时经 `ConversationApplicationService` 自动恢复并执行 |
 | A1 明天提醒我买药 -> create_reminder | [tests/unit/test_kernel_followup_behaviors.py](/Users/gordon/Code/Personal/CognitiveOS/tests/unit/test_kernel_followup_behaviors.py) | `test_明天提醒我买药_创建提醒并返回自然确认` | 已覆盖 | 断言 plan、执行调用与渲染 |
 | A2 记一下我不想早上八点前被提醒 -> create_memory | [tests/unit/test_kernel_followup_behaviors.py](/Users/gordon/Code/Personal/CognitiveOS/tests/unit/test_kernel_followup_behaviors.py) | `test_记一下我不想早上八点前被提醒_写入记忆并自然回复` | 已覆盖 | 当前按 `note` 收口，不把该精确话术承诺为 preference typing |
 | A3 帮我加一个待办：整理周报 | 无稳定承诺测试 | 无 | 缺失但不补 | 当前仅部分支持，不列为稳定承诺 |

@@ -45,6 +45,7 @@ def test_reminder_model_declares_lookup_indexes() -> None:
     reminder_table = cast(Table, ReminderModel.__table__)
     reminder_index_names = {str(index.name) for index in reminder_table.indexes}
 
+    assert "recurrence_json" in reminder_table.c
     assert "ix_reminders_pending_conversation_lookup" in reminder_index_names
     assert "ix_reminders_pending_dispatch_lookup" in reminder_index_names
     assert "ix_reminders_pending_dispatch_chat_lookup" in reminder_index_names

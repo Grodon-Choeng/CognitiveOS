@@ -3,7 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.reminders.entities import Reminder, ReminderStatus
 from app.domain.reminders.repository import ReminderRepository
-from app.domain.reminders.value_objects import ReminderId, ReminderSchedule
+from app.domain.reminders.value_objects import ReminderId, ReminderRecurrence, ReminderSchedule
 from app.infrastructure.db.models.reminder import ReminderModel
 
 
@@ -137,6 +137,7 @@ class SQLAlchemyReminderRepository(ReminderRepository):
         model.text = reminder.text
         model.remind_at = reminder.schedule.remind_at
         model.timezone = reminder.schedule.timezone
+        model.recurrence_json = _recurrence_to_json(reminder.schedule.recurrence)
         model.status = reminder.status.value
         model.workflow_id = reminder.workflow_id
         model.conversation_id = reminder.conversation_id
@@ -159,6 +160,7 @@ class SQLAlchemyReminderRepository(ReminderRepository):
             text=reminder.text,
             remind_at=reminder.schedule.remind_at,
             timezone=reminder.schedule.timezone,
+            recurrence_json=_recurrence_to_json(reminder.schedule.recurrence),
             status=reminder.status.value,
             workflow_id=reminder.workflow_id,
             conversation_id=reminder.conversation_id,
@@ -183,6 +185,7 @@ class SQLAlchemyReminderRepository(ReminderRepository):
             schedule=ReminderSchedule(
                 remind_at=model.remind_at,
                 timezone=model.timezone,
+                recurrence=_recurrence_from_json(model.recurrence_json),
             ),
             status=ReminderStatus(model.status),
             workflow_id=model.workflow_id,
@@ -199,3 +202,15 @@ class SQLAlchemyReminderRepository(ReminderRepository):
             failure_reason_code=model.failure_reason_code,
             retryable=model.retryable,
         )
+
+
+def _recurrence_to_json(recurrence: ReminderRecurrence | None) -> dict[str, object] | None:
+    if recurrence is None:
+        return None
+    return recurrence.to_payload()
+
+
+def _recurrence_from_json(payload: object) -> ReminderRecurrence | None:
+    if not isinstance(payload, dict):
+        return None
+    return ReminderRecurrence.from_payload(payload)

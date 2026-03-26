@@ -47,6 +47,11 @@ class TemporalReminderWorkflowGateway(ReminderWorkflowGateway):
                     text=reminder.text,
                     remind_at=reminder.schedule.remind_at.isoformat(),
                     timezone=reminder.schedule.timezone,
+                    recurrence=(
+                        reminder.schedule.recurrence.to_payload()
+                        if reminder.schedule.recurrence is not None
+                        else None
+                    ),
                     conversation_id=reminder.conversation_id,
                     session_id=reminder.session_id,
                     trace_id=trace_id,
