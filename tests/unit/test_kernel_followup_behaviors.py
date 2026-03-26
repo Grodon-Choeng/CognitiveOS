@@ -19,7 +19,7 @@ from app.application.conversations.kernel.state import (
 )
 from app.application.conversations.kernel.structured_rule_planner import StructuredRulePlanner
 from app.application.memory.dto import MemoryDTO
-from app.application.reminders.dto import ReminderDTO
+from app.application.reminders.dto import ReminderBulkCancelSummaryDTO, ReminderDTO
 from app.application.tasks.dto import TaskDTO
 
 
@@ -122,6 +122,7 @@ class RecordingReminderService:
     def __init__(self) -> None:
         self.created_reminder_payloads: list[tuple[str, datetime, str]] = []
         self.canceled_reminder_ids: list[str] = []
+        self.cancel_all_calls: list[tuple[str | None, str | None]] = []
         self.rescheduled_reminder_ids: list[str] = []
         self.last_reschedule_when: datetime | None = None
         self.titles_by_id: dict[str, str] = {}
@@ -155,6 +156,31 @@ class RecordingReminderService:
             status="canceled",
         )
 
+    async def cancel_all_reminders(self, command) -> ReminderBulkCancelSummaryDTO:  # noqa: ANN001
+        self.cancel_all_calls.append((command.conversation_id, command.session_id))
+        canceled_items = [
+            ReminderDTO(
+                reminder_id="r-1",
+                text="买药提醒",
+                remind_at=datetime(2026, 3, 26, 6, 0, tzinfo=ZoneInfo("UTC")),
+                timezone="Asia/Shanghai",
+                status="canceled",
+            ),
+            ReminderDTO(
+                reminder_id="r-2",
+                text="打卡提醒",
+                remind_at=datetime(2026, 3, 26, 7, 55, tzinfo=ZoneInfo("UTC")),
+                timezone="Asia/Shanghai",
+                status="canceled",
+            ),
+        ]
+        return ReminderBulkCancelSummaryDTO(
+            total_canceled=2,
+            one_off_canceled=1,
+            recurring_canceled=1,
+            canceled_items=canceled_items,
+        )
+
     async def link_task(self, *, reminder_id: str, task_id: str):  # noqa: ARG002
         raise AssertionError
 
@@ -173,6 +199,9 @@ class RecordingReminderService:
         )
 
     async def list_reminders(self, query):  # noqa: ANN001
+        raise AssertionError
+
+    async def list_active_reminders(self, query):  # noqa: ANN001
         raise AssertionError
 
 
@@ -582,3 +611,44 @@ async def test_列表展示后的_取消第二个_优先命中_visible_candidate
     assert getattr(result, "object_id", None) == "r-2"
     assert response_text is not None
     assert "交房租提醒" in response_text
+
+
+@pytest.mark.asyncio
+async def test_把现在所有的提醒都取消_会走批量取消语义() -> None:
+    reminder_service = RecordingReminderService()
+    turn_context = AssistantTurnContext(
+        conversation_id="conversation-1",
+        session_id="session-1",
+        latest_user_text="把现在所有的提醒都取消",
+        metadata={
+            "pending_reminders": [
+                {
+                    "object_type": "reminder",
+                    "object_id": "r-1",
+                    "title": "买药提醒",
+                    "status": "pending",
+                },
+                {
+                    "object_type": "reminder",
+                    "object_id": "r-2",
+                    "title": "打卡提醒",
+                    "status": "pending",
+                },
+            ]
+        },
+    )
+
+    plan, result, response_text = await _run_kernel_turn(
+        text="把现在所有的提醒都取消",
+        turn_context=turn_context,
+        reminder_service=reminder_service,
+    )
+
+    assert plan.action == "cancel_all_reminders"
+    assert reminder_service.cancel_all_calls == [("conversation-1", "session-1")]
+    assert result is not None
+    assert getattr(result, "action", None) == "cancel_all_reminders"
+    assert response_text is not None
+    assert "全部取消了，共 2 条" in response_text
+    assert "单次提醒 1 条" in response_text
+    assert "循环提醒 1 条" in response_text

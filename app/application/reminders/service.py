@@ -1,5 +1,6 @@
 from app.application.conversations.ports import ConversationContextResolver
 from app.application.reminders.commands import (
+    CancelAllRemindersCommand,
     CancelReminderCommand,
     CreateReminderCommand,
     HandleReminderInboundMessageCommand,
@@ -8,6 +9,7 @@ from app.application.reminders.commands import (
     RetryFailedReminderCommand,
 )
 from app.application.reminders.dto import (
+    ReminderBulkCancelSummaryDTO,
     ReminderDTO,
     ReminderInboundMessageResult,
     ReminderListDTO,
@@ -71,6 +73,7 @@ _REMINDER_REPLY_ACK_PHRASES = (
 )
 _REMINDER_REPLY_REJECT_PHRASES = ("不是这个", "先不用", "不用了", "不相关", "你说啥")
 _REMINDER_REPLY_FOLLOWUP_REFERENCE_PHRASES = ("另一个", "第二个", "上一个", "刚才那个", "这个")
+_MALFORMED_REMINDER_CONNECTORS = ("然后", "也得", "另行通知", "其他非工作日", "并且", "同时")
 
 
 class ReminderApplicationService:
@@ -187,6 +190,9 @@ class ReminderApplicationService:
         return self._to_dto(reminder)
 
     async def list_reminders(self, query: ListRemindersQuery) -> ReminderListDTO:
+        if query.status in {None, ReminderStatus.PENDING.value}:
+            return await self.list_active_reminders(query)
+
         async with self.unit_of_work_factory() as unit_of_work:
             reminders = await unit_of_work.reminders.list(
                 conversation_id=query.conversation_id,
@@ -197,6 +203,23 @@ class ReminderApplicationService:
             )
 
         return ReminderListDTO(items=[self._to_dto(reminder) for reminder in reminders])
+
+    async def list_active_reminders(self, query: ListRemindersQuery) -> ReminderListDTO:
+        async with self.unit_of_work_factory() as unit_of_work:
+            reminders = await unit_of_work.reminders.list(
+                conversation_id=query.conversation_id,
+                session_id=query.session_id,
+                status=ReminderStatus.PENDING.value,
+                query=query.query,
+                limit=max(query.limit * 3, query.limit),
+            )
+
+        visible_reminders = [
+            reminder for reminder in reminders if not _is_hidden_active_reminder(reminder)
+        ]
+        return ReminderListDTO(
+            items=[self._to_dto(reminder) for reminder in visible_reminders[: query.limit]]
+        )
 
     async def find_candidates(
         self,
@@ -230,6 +253,43 @@ class ReminderApplicationService:
             session_id=session_id,
             status=ReminderStatus.PENDING.value,
             limit=limit,
+        )
+
+    async def cancel_all_reminders(
+        self,
+        command: CancelAllRemindersCommand,
+    ) -> ReminderBulkCancelSummaryDTO:
+        if command.conversation_id is None and command.session_id is None:
+            raise ReminderStateConflictError("批量取消提醒时必须提供会话范围。")
+
+        active_reminders = await self.list_active_reminders(
+            ListRemindersQuery(
+                conversation_id=command.conversation_id,
+                session_id=command.session_id,
+                limit=500,
+            )
+        )
+        if not active_reminders.items:
+            return ReminderBulkCancelSummaryDTO(
+                total_canceled=0,
+                one_off_canceled=0,
+                recurring_canceled=0,
+                canceled_items=[],
+            )
+
+        canceled_items: list[ReminderDTO] = []
+        for reminder in active_reminders.items:
+            canceled_items.append(
+                await self.cancel_reminder(CancelReminderCommand(reminder_id=reminder.reminder_id))
+            )
+
+        recurring_canceled = sum(1 for item in canceled_items if item.recurrence is not None)
+        one_off_canceled = len(canceled_items) - recurring_canceled
+        return ReminderBulkCancelSummaryDTO(
+            total_canceled=len(canceled_items),
+            one_off_canceled=one_off_canceled,
+            recurring_canceled=recurring_canceled,
+            canceled_items=canceled_items,
         )
 
     async def reschedule_reminder(self, command: RescheduleReminderCommand) -> ReminderDTO:
@@ -541,3 +601,19 @@ def _to_recurrence_dto(recurrence: ReminderRecurrence | None) -> ReminderRecurre
         hour=recurrence.hour,
         minute=recurrence.minute,
     )
+
+
+def _is_hidden_active_reminder(reminder: Reminder) -> bool:
+    normalized = reminder.text.strip()
+    if not normalized:
+        return True
+    if "另行通知" in normalized:
+        return True
+    if len(normalized) >= 80:
+        return True
+    connector_hits = sum(1 for keyword in _MALFORMED_REMINDER_CONNECTORS if keyword in normalized)
+    if normalized.count("提醒") >= 2 and connector_hits >= 1 and len(normalized) >= 24:
+        return True
+    if connector_hits >= 2 and len(normalized) >= 20:
+        return True
+    return False

@@ -71,6 +71,9 @@ class RecordingReminderService:
     async def list_reminders(self, query):  # noqa: ANN001, pragma: no cover
         raise AssertionError(query)
 
+    async def list_active_reminders(self, query):  # noqa: ANN001, pragma: no cover
+        raise AssertionError(query)
+
 
 class RecordingMemoryService:
     def __init__(self) -> None:

@@ -14,6 +14,8 @@ from app.application.tasks.queries import ListTasksQuery
 
 
 class ReminderOverviewReader(Protocol):
+    async def list_active_reminders(self, query: ListRemindersQuery) -> ReminderListDTO: ...
+
     async def list_reminders(self, query: ListRemindersQuery) -> ReminderListDTO: ...
 
 
@@ -58,11 +60,10 @@ class OverviewApplicationService:
         self.audit_service = audit_service
 
     async def get_overview(self, query: GetOverviewQuery) -> OverviewDTO:
-        reminder_list = await self.reminder_service.list_reminders(
+        reminder_list = await self.reminder_service.list_active_reminders(
             ListRemindersQuery(
                 conversation_id=query.conversation_id,
                 session_id=query.session_id,
-                status="pending",
                 limit=query.reminder_limit,
             )
         )

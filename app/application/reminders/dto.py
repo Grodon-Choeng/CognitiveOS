@@ -34,6 +34,14 @@ class ReminderListDTO:
 
 
 @dataclass(slots=True, frozen=True)
+class ReminderBulkCancelSummaryDTO:
+    total_canceled: int
+    one_off_canceled: int
+    recurring_canceled: int
+    canceled_items: list[ReminderDTO] = field(default_factory=list)
+
+
+@dataclass(slots=True, frozen=True)
 class ReminderReplyDTO:
     reminder_id: str
     reply_text: str

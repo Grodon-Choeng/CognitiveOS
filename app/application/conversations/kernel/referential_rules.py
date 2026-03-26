@@ -13,6 +13,7 @@ _WORKING_SET_REQUESTS = {
     "当前工作集",
     "working set",
 }
+_CANCEL_ALL_REMINDER_HINTS = ("所有提醒", "全部提醒", "所有的提醒", "全部的提醒")
 
 
 def plan_with_referential_rules(
@@ -133,6 +134,15 @@ def plan_with_referential_rules(
         )
 
     if "取消" in text and object_type in {"task", "reminder"}:
+        if object_type == "reminder" and _is_cancel_all_reminders_request(text):
+            return AssistantActionPlan(
+                intent="reminder_cancel_all",
+                action="cancel_all_reminders",
+                object_type=None,
+                object_id=None,
+                confidence=0.94,
+                reasoning="rules",
+            )
         action = "cancel_task" if object_type == "task" else "cancel_reminder"
         return AssistantActionPlan(
             intent=f"{object_type}_cancel",
@@ -192,6 +202,7 @@ def infer_object_type(
             "list_reminders",
             "create_reminder",
             "cancel_reminder",
+            "cancel_all_reminders",
             "reschedule_reminder",
             "retry_failed_reminder",
             "convert_task_to_reminder",
@@ -226,6 +237,15 @@ def strip_action_noise(text: str) -> str:
         if normalized.startswith(prefix):
             normalized = normalized.removeprefix(prefix).strip()
     return normalized
+
+
+def _is_cancel_all_reminders_request(text: str) -> bool:
+    normalized = text.replace(" ", "")
+    if "取消" not in normalized:
+        return False
+    if any(hint in normalized for hint in _CANCEL_ALL_REMINDER_HINTS):
+        return True
+    return "所有" in normalized and "提醒" in normalized
 
 
 def plan_scoped_memory(

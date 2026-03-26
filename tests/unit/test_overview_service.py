@@ -13,6 +13,9 @@ from app.application.tasks.dto import TaskDTO, TaskListDTO
 
 @dataclass
 class FakeReminderService:
+    async def list_active_reminders(self, query: object) -> ReminderListDTO:
+        return await self.list_reminders(query)
+
     async def list_reminders(self, query: object) -> ReminderListDTO:
         _ = query
         return ReminderListDTO(

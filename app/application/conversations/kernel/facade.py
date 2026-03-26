@@ -150,6 +150,7 @@ def _reason_for_result(
         "cancel_task": f"task_canceled_via_{source}",
         "create_reminder": f"reminder_created_via_{source}",
         "cancel_reminder": f"reminder_canceled_via_{source}",
+        "cancel_all_reminders": f"reminder_all_canceled_via_{source}",
         "reschedule_reminder": f"reminder_rescheduled_via_{source}",
         "preview_structured_rule_plan": f"complex_rule_previewed_via_{source}",
         "execute_structured_rule_plan": f"complex_rule_executed_via_{source}",
@@ -258,6 +259,8 @@ def _build_assistant_turn_state(
 
 
 def _extract_visible_candidates(execution_result: AssistantExecutionResult) -> list[JSONObject]:
+    if execution_result.action not in {"list_tasks", "list_reminders", "list_memories"}:
+        return []
     payload_items = execution_result.payload.get("items")
     if not isinstance(payload_items, list):
         return []

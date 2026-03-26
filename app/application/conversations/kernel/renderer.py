@@ -105,6 +105,19 @@ def _render_execution_result(
             f"好，这条提醒我已经取消了。\n提醒内容是“{result.object_title}”。\n"
             "如果你要改时间，也可以直接重新告诉我。"
         )
+    if result.action == "cancel_all_reminders":
+        total_canceled = int(result.payload.get("total_canceled", 0) or 0)
+        if total_canceled <= 0:
+            return "当前没有可取消的提醒。"
+        one_off_canceled = int(result.payload.get("one_off_canceled", 0) or 0)
+        recurring_canceled = int(result.payload.get("recurring_canceled", 0) or 0)
+        lines = [f"好，当前会话里可见的提醒我已经全部取消了，共 {total_canceled} 条。"]
+        if one_off_canceled:
+            lines.append(f"- 单次提醒 {one_off_canceled} 条")
+        if recurring_canceled:
+            lines.append(f"- 循环提醒 {recurring_canceled} 条")
+        lines.append("你可以继续说“查看提醒”确认现在还剩什么。")
+        return "\n".join(lines)
     if result.action == "reschedule_reminder":
         payload = result.payload
         when = _format_when(payload.get("when"), payload.get("timezone"))
@@ -215,10 +228,10 @@ def _render_execution_result(
                 default_header=f"你现在有 {count} 个提醒：",
             ),
             line_builder=lambda index, item: (
-                f"{index}. {item['title']}（"
+                f"{index}. {_reminder_schedule_prefix(item)}{item['title']}（"
                 f"{_format_when(item.get('when'), item.get('timezone'))}）"
             ),
-            followup_hint="你可以直接说“取消第二个”或“取消买药那个提醒”。",
+            followup_hint="你可以直接说“取消第二个”“取消买药那个提醒”或“取消所有提醒”。",
         )
     if result.action == "list_memories":
         query = _optional_str(result.payload.get("query"))
@@ -273,6 +286,16 @@ def _payload_items(payload: dict[str, object], key: str) -> list[dict[str, str]]
             if normalized_item:
                 items.append(normalized_item)
     return items
+
+
+def _reminder_schedule_prefix(item: dict[str, str]) -> str:
+    schedule_kind = item.get("schedule_kind")
+    schedule_label = item.get("schedule_label")
+    if schedule_kind == "recurring":
+        if isinstance(schedule_label, str) and schedule_label:
+            return f"[循环 {schedule_label}] "
+        return "[循环] "
+    return "[单次] "
 
 
 def _render_working_set_view(result: AssistantExecutionResult) -> str:

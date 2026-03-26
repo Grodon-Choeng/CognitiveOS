@@ -355,6 +355,51 @@ reminder fast path 是 reminder reply 的过渡兼容 shortcut，不是通用对
 - 当前稳定承诺的 override 范围：结构化单日日期，如 `本周六`，会落成 one-off reminders。
 - 当前不承诺：任意 RRULE、节假日推导、复杂排班、跨规则冲突求解、对 recurring reminder 的完整 reply continuation 语义。
 
+## 3.1 Reminder Consistency Guarantees
+
+### 3.1.1 Active reminder list 的统一定义
+
+- 当前 assistant 面向用户展示的 active reminder list，统一来自当前会话下的 active reminder view。
+- active reminder view 只包含 `pending` 且可见的 reminder definitions。
+- 当前会展示的对象只有两类：
+  - one-off reminders
+  - recurring reminders
+- 当前不会混入 active reminder list 的对象：
+  - 已 `canceled` / `completed` / `failed` 的 reminder
+  - memory / preference / constraint
+  - 明显 malformed / legacy-invalid 的历史 reminder 文本
+
+### 3.1.2 当前 malformed / legacy-invalid reminder 的默认处理
+
+- 对于明显像“整段复杂规则说明”而不是单条 reminder 的历史 reminder，active reminder view 会默认隐藏。
+- 当前最小过滤规则优先拦截这类文本：
+  - 含 `另行通知`
+  - 明显包含多段动作连接词，并且整句中重复出现多个提醒语义
+  - 长度异常长、明显更像复杂规则描述而不是 reminder title
+- 这类对象当前保留在库里，不自动物理删除；但它们不再出现在用户看到的 active reminder list 中。
+
+### 3.1.3 `取消所有提醒` 的当前语义
+
+- 当前 `取消所有提醒` 的稳定语义是：
+  - 取消当前 conversation + session 下所有出现在 active reminder view 里的 reminder definitions。
+- 它会同时覆盖：
+  - one-off reminders
+  - recurring reminders 的 definition 本身
+- 它不会取消：
+  - memory / preference / constraint
+  - 已不在 active reminder view 中的 malformed / legacy-invalid reminder
+  - 已完成、已取消、已失败的 reminder
+- 执行完成后，回复会明确说明本次取消了几条，以及其中单次 / 循环提醒各有多少条。
+
+### 3.1.4 reminder 列表的当前展示承诺
+
+- 当前 `查看提醒` / `现在有哪些提醒` 默认展示 active reminder view，而不是原始 reminder 表的所有 `pending` 记录。
+- 列表中的每一项都必须是 reminder 域可管理、可取消的真实 reminder 对象。
+- 当前渲染会区分：
+  - `[单次] ...`
+  - `[循环 ...] ...`
+- 约束型 memory 与 complex-rule constraint 不属于 reminder list，不应混入 reminder 展示或 reminder 取消语义。
+
 ## 4. 解析优先级规范
 
 引用解析由 [app/application/conversations/kernel/resolver.py](/Users/gordon/Code/Personal/CognitiveOS/app/application/conversations/kernel/resolver.py) 定义。当前优先级不是一个抽象策略声明，而是现有代码行为：

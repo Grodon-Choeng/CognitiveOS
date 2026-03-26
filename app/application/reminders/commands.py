@@ -35,6 +35,12 @@ class CancelReminderCommand:
 
 
 @dataclass(slots=True, frozen=True)
+class CancelAllRemindersCommand:
+    conversation_id: str | None = None
+    session_id: str | None = None
+
+
+@dataclass(slots=True, frozen=True)
 class RetryFailedReminderCommand:
     reminder_id: str
 

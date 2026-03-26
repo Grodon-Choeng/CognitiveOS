@@ -18,12 +18,17 @@ from app.application.memory.queries import ListMemoriesQuery
 from app.application.overview.dto import OverviewDTO
 from app.application.overview.queries import GetOverviewQuery
 from app.application.reminders.commands import (
+    CancelAllRemindersCommand,
     CancelReminderCommand,
     CreateReminderCommand,
     RescheduleReminderCommand,
     RetryFailedReminderCommand,
 )
-from app.application.reminders.dto import ReminderDTO, ReminderListDTO
+from app.application.reminders.dto import (
+    ReminderBulkCancelSummaryDTO,
+    ReminderDTO,
+    ReminderListDTO,
+)
 from app.application.reminders.errors import ReminderApplicationError
 from app.application.reminders.queries import ListRemindersQuery
 from app.application.tasks.commands import CancelTaskCommand, CompleteTaskCommand, CreateTaskCommand
@@ -51,6 +56,11 @@ class TaskExecutorService(Protocol):
 
 
 class ReminderExecutorService(Protocol):
+    async def cancel_all_reminders(
+        self,
+        command: CancelAllRemindersCommand,
+    ) -> ReminderBulkCancelSummaryDTO: ...
+
     async def create_reminder(self, command: CreateReminderCommand) -> ReminderDTO: ...
     async def get_reminder(self, reminder_id: str) -> ReminderDTO: ...
     async def cancel_reminder(self, command: CancelReminderCommand) -> ReminderDTO: ...
@@ -63,6 +73,7 @@ class ReminderExecutorService(Protocol):
     async def retry_failed_reminder(self, command: RetryFailedReminderCommand) -> ReminderDTO: ...
     async def reschedule_reminder(self, command: RescheduleReminderCommand) -> ReminderDTO: ...
     async def list_reminders(self, query: ListRemindersQuery) -> ReminderListDTO: ...
+    async def list_active_reminders(self, query: ListRemindersQuery) -> ReminderListDTO: ...
 
 
 class MemoryExecutorService(Protocol):
@@ -365,13 +376,46 @@ class AssistantExecutor:
                 followup_options=["查看提醒", "查看概览"],
             )
         if plan.action == "list_reminders":
-            reminder_list = await self.reminder_service.list_reminders(
-                ListRemindersQuery(
+            status = _optional_str(plan.args.get("status"))
+            if status in {None, "pending"}:
+                reminder_list = await self.reminder_service.list_active_reminders(
+                    ListRemindersQuery(
+                        conversation_id=turn_context.conversation_id,
+                        session_id=turn_context.session_id,
+                        query=_optional_str(plan.args.get("query")),
+                        limit=5,
+                    )
+                )
+            else:
+                reminder_list = await self.reminder_service.list_reminders(
+                    ListRemindersQuery(
+                        conversation_id=turn_context.conversation_id,
+                        session_id=turn_context.session_id,
+                        status=status,
+                        query=_optional_str(plan.args.get("query")),
+                        limit=5,
+                    )
+                )
+            return AssistantExecutionResult(
+                success=True,
+                action=plan.action,
+                object_type="reminder",
+                payload={
+                    "status": status,
+                    "query": _optional_str(plan.args.get("query")),
+                    "items": [_reminder_item(reminder) for reminder in reminder_list.items],
+                },
+                followup_options=(
+                    ["重试第一个失败提醒", "查看概览"]
+                    if status == "failed"
+                    else ["取消第二个", "取消所有提醒"]
+                ),
+            )
+        if plan.action == "cancel_all_reminders":
+            summary = await self.reminder_service.cancel_all_reminders(
+                CancelAllRemindersCommand(
                     conversation_id=turn_context.conversation_id,
                     session_id=turn_context.session_id,
-                    status=_optional_str(plan.args.get("status")),
-                    query=_optional_str(plan.args.get("query")),
-                    limit=5,
                 )
             )
             return AssistantExecutionResult(
@@ -379,15 +423,12 @@ class AssistantExecutor:
                 action=plan.action,
                 object_type="reminder",
                 payload={
-                    "status": _optional_str(plan.args.get("status")),
-                    "query": _optional_str(plan.args.get("query")),
-                    "items": [_reminder_item(reminder) for reminder in reminder_list.items],
+                    "total_canceled": summary.total_canceled,
+                    "one_off_canceled": summary.one_off_canceled,
+                    "recurring_canceled": summary.recurring_canceled,
+                    "items": [_reminder_item(reminder) for reminder in summary.canceled_items],
                 },
-                followup_options=(
-                    ["重试第一个失败提醒", "查看概览"]
-                    if _optional_str(plan.args.get("status")) == "failed"
-                    else ["取消第二个", "查看概览"]
-                ),
+                followup_options=["查看提醒", "查看概览"],
             )
         if plan.action == "cancel_reminder":
             reminder = await self._cancel_reminder(plan, turn_context=turn_context)
@@ -660,6 +701,13 @@ def _task_item(task: TaskDTO) -> dict[str, str]:
 
 
 def _reminder_item(reminder: ReminderDTO) -> dict[str, str]:
+    schedule_kind = "recurring" if reminder.recurrence is not None else "one_off"
+    schedule_label = (
+        f"每周{_format_weekdays(reminder.recurrence.weekdays)} "
+        f"{reminder.recurrence.hour:02d}:{reminder.recurrence.minute:02d}"
+        if reminder.recurrence is not None
+        else "单次提醒"
+    )
     return {
         "object_type": "reminder",
         "object_id": reminder.reminder_id,
@@ -668,6 +716,8 @@ def _reminder_item(reminder: ReminderDTO) -> dict[str, str]:
         "when": reminder.remind_at.isoformat(),
         "timezone": reminder.timezone,
         "linked_task_id": reminder.linked_task_id or "",
+        "schedule_kind": schedule_kind,
+        "schedule_label": schedule_label,
     }
 
 
@@ -704,3 +754,16 @@ def _last_action_payload(turn_context: AssistantTurnContext) -> dict[str, str] |
         "object_type": last_action.object_type or "",
         "object_id": last_action.object_id or "",
     }
+
+
+def _format_weekdays(weekdays: list[str]) -> str:
+    labels = {
+        "mon": "一",
+        "tue": "二",
+        "wed": "三",
+        "thu": "四",
+        "fri": "五",
+        "sat": "六",
+        "sun": "日",
+    }
+    return "、".join(labels.get(day, day) for day in weekdays)

@@ -73,6 +73,9 @@ class DummyReminderService:
     async def list_reminders(self, query):  # noqa: ANN001
         raise AssertionError
 
+    async def list_active_reminders(self, query):  # noqa: ANN001
+        raise AssertionError
+
 
 class DummyMemoryService:
     async def create_memory(self, command):  # noqa: ANN001
