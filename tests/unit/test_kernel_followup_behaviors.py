@@ -15,6 +15,7 @@ from app.application.conversations.kernel.state import (
     FocusedObjectRef,
     LastAssistantAction,
 )
+from app.application.memory.dto import MemoryDTO
 from app.application.reminders.dto import ReminderDTO
 from app.application.tasks.dto import TaskDTO
 
@@ -112,13 +113,21 @@ class RecordingTaskService:
 
 class RecordingReminderService:
     def __init__(self) -> None:
+        self.created_reminder_payloads: list[tuple[str, datetime, str]] = []
         self.canceled_reminder_ids: list[str] = []
         self.rescheduled_reminder_ids: list[str] = []
         self.last_reschedule_when: datetime | None = None
         self.titles_by_id: dict[str, str] = {}
 
-    async def create_reminder(self, command):  # noqa: ANN001
-        raise AssertionError
+    async def create_reminder(self, command) -> ReminderDTO:  # noqa: ANN001
+        self.created_reminder_payloads.append((command.text, command.remind_at, command.timezone))
+        return ReminderDTO(
+            reminder_id="r-created",
+            text=command.text,
+            remind_at=command.remind_at,
+            timezone=command.timezone,
+            status="pending",
+        )
 
     async def get_reminder(self, reminder_id: str) -> ReminderDTO:
         return ReminderDTO(
@@ -160,9 +169,21 @@ class RecordingReminderService:
         raise AssertionError
 
 
-class DummyMemoryService:
-    async def create_memory(self, command):  # noqa: ANN001
-        raise AssertionError
+class RecordingMemoryService:
+    def __init__(self) -> None:
+        self.created_memory_payloads: list[tuple[str, str | None]] = []
+
+    async def create_memory(self, command) -> MemoryDTO:  # noqa: ANN001
+        self.created_memory_payloads.append((command.content, command.memory_type))
+        return MemoryDTO(
+            memory_id="m-created",
+            content=command.content,
+            created_at=datetime(2026, 3, 25, 9, 0, tzinfo=ZoneInfo("UTC")),
+            status="active",
+            memory_type=command.memory_type or "note",
+            scope_object_type=command.scope_object_type,
+            scope_object_id=command.scope_object_id,
+        )
 
     async def archive_memory(self, command):  # noqa: ANN001
         raise AssertionError
@@ -186,11 +207,12 @@ def _build_executor(
     *,
     task_service: RecordingTaskService | None = None,
     reminder_service: RecordingReminderService | None = None,
+    memory_service: RecordingMemoryService | None = None,
 ) -> AssistantExecutor:
     return AssistantExecutor(
         task_service=task_service or RecordingTaskService(),
         reminder_service=reminder_service or RecordingReminderService(),
-        memory_service=DummyMemoryService(),
+        memory_service=memory_service or RecordingMemoryService(),
         overview_service=DummyOverviewService(),
         resolver=ReferenceResolver(),
     )
@@ -202,11 +224,13 @@ async def _run_kernel_turn(
     turn_context: AssistantTurnContext,
     task_service: RecordingTaskService | None = None,
     reminder_service: RecordingReminderService | None = None,
+    memory_service: RecordingMemoryService | None = None,
 ) -> tuple[AssistantActionPlan, object, str | None]:
     planner = _build_planner()
     executor = _build_executor(
         task_service=task_service,
         reminder_service=reminder_service,
+        memory_service=memory_service,
     )
     renderer = AssistantResponseRenderer()
     command = _build_command(text)
@@ -241,6 +265,59 @@ async def test_不是这个_是另一个_仍然走_followup_规则() -> None:
     assert getattr(result, "object_id", None) == "t-2"
     assert response_text is not None
     assert "第二个任务" in response_text
+
+
+@pytest.mark.asyncio
+async def test_明天提醒我买药_创建提醒并返回自然确认() -> None:
+    reminder_service = RecordingReminderService()
+    turn_context = AssistantTurnContext(
+        conversation_id="conversation-1",
+        session_id="session-1",
+        latest_user_text="明天提醒我买药",
+    )
+
+    plan, result, response_text = await _run_kernel_turn(
+        text="明天提醒我买药",
+        turn_context=turn_context,
+        reminder_service=reminder_service,
+    )
+
+    assert plan.action == "create_reminder"
+    assert plan.status == "ready"
+    assert reminder_service.created_reminder_payloads == [
+        ("买药", datetime(2026, 3, 26, 9, 0, tzinfo=ZoneInfo("Asia/Shanghai")), "Asia/Shanghai")
+    ]
+    assert result is not None
+    assert getattr(result, "object_id", None) == "r-created"
+    assert response_text is not None
+    assert "已经记成提醒了" in response_text
+    assert "买药" in response_text
+    assert "2026-03-26 09:00" in response_text
+
+
+@pytest.mark.asyncio
+async def test_记一下我不想早上八点前被提醒_写入记忆并自然回复() -> None:
+    memory_service = RecordingMemoryService()
+    turn_context = AssistantTurnContext(
+        conversation_id="conversation-1",
+        session_id="session-1",
+        latest_user_text="记一下我不想早上八点前被提醒",
+    )
+
+    plan, result, response_text = await _run_kernel_turn(
+        text="记一下我不想早上八点前被提醒",
+        turn_context=turn_context,
+        memory_service=memory_service,
+    )
+
+    assert plan.action == "create_memory"
+    assert plan.args["memory_type"] == "note"
+    assert memory_service.created_memory_payloads == [("我不想早上八点前被提醒", "note")]
+    assert result is not None
+    assert getattr(result, "object_id", None) == "m-created"
+    assert response_text is not None
+    assert "记下了" in response_text
+    assert "我不想早上八点前被提醒" in response_text
 
 
 @pytest.mark.asyncio

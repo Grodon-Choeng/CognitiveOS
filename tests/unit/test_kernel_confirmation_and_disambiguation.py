@@ -251,3 +251,29 @@ async def test_当置信不足但可猜时_进入_needs_confirmation() -> None:
 
     assert isinstance(result, AssistantConfirmationResult)
     assert result.preview_text == "买药提醒"
+
+
+@pytest.mark.asyncio
+async def test_取消这个_低置信时进入_confirmation_而不是直接取消() -> None:
+    executor = _build_executor()
+    turn_context = _build_turn_context()
+
+    result = await executor.execute(
+        AssistantActionPlan(
+            intent="reminder_cancel",
+            action="cancel_reminder",
+            object_type="reminder",
+            object_id=None,
+            args={"reference_text": "这个"},
+            confidence=0.7,
+            reasoning="rules",
+        ),
+        command=_build_command("取消这个"),
+        turn_context=turn_context,
+    )
+
+    assert isinstance(result, AssistantConfirmationResult)
+    assert result.preview_text == "买药提醒"
+    response_text = _render_result(result, turn_context=turn_context)
+    assert "买药提醒" in response_text
+    assert "回复“是的”" in response_text

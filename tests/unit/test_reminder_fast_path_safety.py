@@ -238,6 +238,33 @@ async def test_同一聊天里的普通消息不会误命中最近_reminder() ->
 
 
 @pytest.mark.asyncio
+async def test_普通闲聊即使有高置信关联也仍然_pass_to_kernel() -> None:
+    service, repository, workflow_gateway = _build_service()
+    reminder_id = await _create_feishu_reminder(service)
+    repository.items[reminder_id].dispatch_message_id = "om_parent_1"
+
+    result = await service.handle_inbound_message(
+        HandleReminderInboundMessageCommand(
+            conversation_id=None,
+            session_id=None,
+            channel="feishu",
+            sender_id="ou_123",
+            message_id="om_reply_1",
+            root_message_id=None,
+            parent_message_id="om_parent_1",
+            chat_id="oc_123",
+            thread_id="ot-1",
+            text="今天天气不错",
+        )
+    )
+
+    assert result.decision == "pass_to_kernel"
+    assert result.reason == "not_reminder_reply"
+    assert repository.items[reminder_id].status.value == "pending"
+    assert workflow_gateway.recorded_replies == []
+
+
+@pytest.mark.asyncio
 async def test_低置信收到_进入_needs_confirmation_而不是自动完成() -> None:
     service, repository, workflow_gateway = _build_service()
     reminder_id = await _create_feishu_reminder(service)
