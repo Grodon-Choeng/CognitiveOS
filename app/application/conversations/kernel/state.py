@@ -148,6 +148,7 @@ class AssistantTurnContextBuilder:
         metadata.update(
             {
                 "last_state_metadata": state_metadata,
+                "pending_complex_plan": state_metadata.get("pending_complex_plan"),
                 "recent_activity": [
                     {
                         "kind": event.kind,

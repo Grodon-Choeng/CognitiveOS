@@ -115,6 +115,8 @@ def _handled_by_for_action(action: str | None) -> str | None:
         "reschedule_reminder",
         "retry_failed_reminder",
         "convert_task_to_reminder",
+        "preview_structured_rule_plan",
+        "execute_structured_rule_plan",
     }:
         return "reminder"
     if action in {"create_memory", "list_memories", "archive_memory"}:
@@ -149,6 +151,8 @@ def _reason_for_result(
         "create_reminder": f"reminder_created_via_{source}",
         "cancel_reminder": f"reminder_canceled_via_{source}",
         "reschedule_reminder": f"reminder_rescheduled_via_{source}",
+        "preview_structured_rule_plan": f"complex_rule_previewed_via_{source}",
+        "execute_structured_rule_plan": f"complex_rule_executed_via_{source}",
         "retry_failed_reminder": f"reminder_retried_via_{source}",
         "list_reminders": f"reminder_listed_via_{source}",
         "convert_task_to_reminder": f"task_converted_to_reminder_via_{source}",
@@ -213,6 +217,23 @@ def _build_assistant_turn_state(
                 "title": execution_result.preview_text,
             }
         return state
+
+    if execution_result.action == "complex_plan_preview":
+        return {
+            "dialogue_mode": "confirmation",
+            "pending_complex_plan": execution_result.payload.get("structured_plan"),
+            "pending_confirmation": {
+                "confirm_action": "execute_structured_rule_plan",
+                "preview_text": "复杂规则确认预览",
+            },
+            "last_assistant_action": {
+                "action_type": "execute_structured_rule_plan",
+                "success": True,
+                "object_type": None,
+                "object_id": None,
+                "summary": "复杂规则等待确认。",
+            },
+        }
 
     state_payload: JSONObject = {
         "dialogue_mode": "normal",

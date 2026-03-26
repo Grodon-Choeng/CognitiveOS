@@ -8,7 +8,9 @@ from app.application.conversations.kernel.results import (
     AssistantDisambiguationResult,
     AssistantExecutionResult,
 )
+from app.application.conversations.kernel.rule_executor import RuleExecutor
 from app.application.conversations.kernel.state import AssistantTurnContext
+from app.application.conversations.kernel.structured_plans import StructuredRulePlan
 from app.application.memory.commands import ArchiveMemoryCommand, CreateMemoryCommand
 from app.application.memory.dto import MemoryDTO, MemoryListDTO
 from app.application.memory.errors import MemoryApplicationError
@@ -84,12 +86,14 @@ class AssistantExecutor:
         memory_service: MemoryExecutorService,
         overview_service: OverviewExecutorService,
         resolver: ReferenceResolver,
+        rule_executor: RuleExecutor,
     ) -> None:
         self.task_service = task_service
         self.reminder_service = reminder_service
         self.memory_service = memory_service
         self.overview_service = overview_service
         self.resolver = resolver
+        self.rule_executor = rule_executor
 
     async def execute(
         self,
@@ -123,6 +127,22 @@ class AssistantExecutor:
     ) -> KernelExecutionResult:
         if plan.status == "unsupported" or plan.action is None:
             return None
+
+        if plan.action == "preview_structured_rule_plan":
+            structured_plan = _load_structured_rule_plan(plan)
+            if structured_plan is None:
+                return None
+            return await self.rule_executor.preview(structured_plan=structured_plan)
+
+        if plan.action == "execute_structured_rule_plan":
+            structured_plan = _load_structured_rule_plan(plan)
+            if structured_plan is None:
+                return None
+            return await self.rule_executor.execute(
+                structured_plan=structured_plan,
+                command=command,
+                turn_context=turn_context,
+            )
 
         if plan.action in {
             "complete_task",
@@ -620,6 +640,13 @@ class AssistantExecutor:
 
 def _optional_str(value: object) -> str | None:
     return value if isinstance(value, str) else None
+
+
+def _load_structured_rule_plan(plan: AssistantActionPlan) -> StructuredRulePlan | None:
+    structured_plan = plan.args.get("structured_plan")
+    if not isinstance(structured_plan, dict):
+        return None
+    return StructuredRulePlan.from_dict(structured_plan)
 
 
 def _task_item(task: TaskDTO) -> dict[str, str]:

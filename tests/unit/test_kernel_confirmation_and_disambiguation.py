@@ -9,6 +9,7 @@ from app.application.conversations.kernel.results import (
     AssistantConfirmationResult,
     AssistantDisambiguationResult,
 )
+from app.application.conversations.kernel.rule_executor import RuleExecutor
 from app.application.conversations.kernel.state import (
     AssistantTurnContext,
     CandidateObjectRef,
@@ -110,6 +111,10 @@ def _build_executor() -> AssistantExecutor:
         memory_service=DummyMemoryService(),
         overview_service=DummyOverviewService(),
         resolver=ReferenceResolver(),
+        rule_executor=RuleExecutor(
+            reminder_service=DummyReminderService(),
+            memory_service=DummyMemoryService(),
+        ),
     )
 
 

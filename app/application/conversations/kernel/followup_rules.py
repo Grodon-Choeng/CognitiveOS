@@ -13,7 +13,18 @@ _REFERENCE_FOLLOWUPS = {
     "另一个",
     "不是这个，是另一个",
 }
-_CONFIRM_YES = {"是", "是的", "对", "对的", "好的", "好"}
+_CONFIRM_YES = {
+    "是",
+    "是的",
+    "对",
+    "对的",
+    "好的",
+    "好",
+    "确认",
+    "按这个来",
+    "就这么建",
+    "就这么来",
+}
 
 
 def plan_from_dialogue_state(
@@ -27,11 +38,20 @@ def plan_from_dialogue_state(
     if not normalized or turn_context.last_assistant_action is None:
         return None
 
-    if (
-        turn_context.dialogue_mode == "confirmation"
-        and normalized in _CONFIRM_YES
-        and turn_context.focused_object is not None
-    ):
+    if turn_context.dialogue_mode == "confirmation" and normalized in _CONFIRM_YES:
+        pending_complex_plan = turn_context.metadata.get("pending_complex_plan")
+        if isinstance(pending_complex_plan, dict):
+            return AssistantActionPlan(
+                intent="complex_rule_execute",
+                action="execute_structured_rule_plan",
+                object_type=None,
+                object_id=None,
+                args={"structured_plan": pending_complex_plan},
+                confidence=0.98,
+                reasoning="rules",
+            )
+        if turn_context.focused_object is None:
+            return None
         action = turn_context.last_assistant_action.action_type
         return AssistantActionPlan(
             intent=action,

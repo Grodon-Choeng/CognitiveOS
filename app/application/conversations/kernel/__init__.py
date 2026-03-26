@@ -1,3 +1,7 @@
+from app.application.conversations.kernel.complexity import (
+    ComplexityAssessment,
+    ComplexRequestDetector,
+)
 from app.application.conversations.kernel.errors import (
     AssistantExecutionError,
     AssistantPlanningError,
@@ -21,6 +25,7 @@ from app.application.conversations.kernel.results import (
     AssistantDisambiguationResult,
     AssistantExecutionResult,
 )
+from app.application.conversations.kernel.rule_executor import RuleExecutor
 from app.application.conversations.kernel.state import (
     AssistantTurnContext,
     AssistantTurnContextBuilder,
@@ -28,6 +33,13 @@ from app.application.conversations.kernel.state import (
     FocusedObjectRef,
     LastAssistantAction,
 )
+from app.application.conversations.kernel.structured_plans import (
+    ConstraintPlan,
+    OverridePlan,
+    ScheduleSpec,
+    StructuredRulePlan,
+)
+from app.application.conversations.kernel.structured_rule_planner import StructuredRulePlanner
 
 __all__ = [
     "AssistantActionPlan",
@@ -44,10 +56,18 @@ __all__ = [
     "AssistantTurnContextBuilder",
     "CandidateObjectRef",
     "CandidateRef",
+    "ComplexityAssessment",
+    "ComplexRequestDetector",
+    "ConstraintPlan",
     "ConversationKernelFacade",
     "ConversationKernelOutcome",
     "FocusedObjectRef",
     "LastAssistantAction",
+    "OverridePlan",
     "ReferenceResolver",
+    "RuleExecutor",
+    "ScheduleSpec",
     "SubActionPlan",
+    "StructuredRulePlan",
+    "StructuredRulePlanner",
 ]

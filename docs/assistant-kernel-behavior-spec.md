@@ -31,6 +31,7 @@
 
 - `turn_context` 由 `AssistantTurnContextBuilder` 从 overview、message history、上一轮 assistant state 构建。
 - `planner` 先看对话状态 follow-up 规则，再看 referential / natural language 规则，最后才回退到 classifier。
+- 对于明显的复杂规则请求，`planner` 会在旧的单动作规则前先做复杂度识别，命中后转入受限的 structured rule plan 预览路径。
 - `executor` 对需要对象解析的动作统一走 `ReferenceResolver`。
 - `renderer` 负责把执行结果转成用户可见的中文回复。
 - 处理完成后，assistant turn state 会通过 state store 或消息审计记录，用于下一轮 follow-up。
@@ -191,6 +192,39 @@ reminder fast path 是 reminder reply 的过渡兼容 shortcut，不是通用对
   - 不应在高置信单对象场景直接进入确认
 
 ### C. 确认 / 歧义类
+
+#### C0. 复杂规则请求默认先进入确认预览
+
+- 输入示例：`以后工作日的早上9点55提醒我上班打卡，晚上9点05提醒我下班打卡，然后本周六需要加班，也得提醒我打卡，其他非工作日需要提醒打卡的我会另行通知`
+- 前置上下文：无特殊前置要求。
+- 期望计划状态：
+  - planner 不应把整句直接压成一条 `create_reminder`
+  - planner 应先识别为 `rule_with_overrides`
+  - planner 应产出 `StructuredRulePlan`
+- 期望执行结果：
+  - 第一轮只返回 preview，不直接执行业务写入
+  - assistant state 进入 `dialogue_mode=confirmation`
+  - state 中保存 `pending_complex_plan`
+- 期望渲染风格：
+  - 使用“我理解成以下动作，请确认”式回复
+  - 明确列出规则项、override 和 constraint
+- 不应发生的错误行为：
+  - 不应直接回复“已经记成提醒了”
+  - 不应把“其他非工作日我会另行通知”误建成一条 reminder
+
+#### C0.1 复杂规则确认后拆分执行
+
+- 输入示例：`确认`、`按这个来`
+- 前置上下文：
+  - 上一轮 assistant 已返回复杂规则 preview
+  - turn state 中已有 `pending_complex_plan`
+- 当前最小实现的期望执行结果：
+  - executor 读取 `pending_complex_plan`
+  - 会为 override 生成可落地的单次 reminders
+  - 会把 recurring 规则与 constraint 合并写成一条 memory note
+- 当前最小实现的非承诺范围：
+  - 还不会真正托管长期 recurring reminder
+  - recurring rule 目前只是被结构化保存并用于生成 override 拆分
 
 #### C1. 低置信但可猜时进入 `needs_confirmation`
 
@@ -416,6 +450,8 @@ reminder fast path 的行为由 [app/application/reminders/service.py](/Users/go
 
 | 规范条目 | 测试文件 | 测试名 | 是否已覆盖 | 备注 |
 | --- | --- | --- | --- | --- |
+| C0 复杂规则请求先进入预览确认 | [tests/unit/test_complex_rule_requests.py](/Users/gordon/Code/Personal/CognitiveOS/tests/unit/test_complex_rule_requests.py) | `test_复杂规则请求不会被压成一条_reminder`、`test_复杂规则请求默认进入_confirmation_preview` | 已覆盖 | 验证不会误压成单条 reminder，且默认返回 preview |
+| C0.1 复杂规则确认后拆分执行 | [tests/unit/test_complex_rule_requests.py](/Users/gordon/Code/Personal/CognitiveOS/tests/unit/test_complex_rule_requests.py) | `test_确认后会拆成多个动作执行`、`test_其他非工作日我另行通知_不会被误建成_reminder_文本` | 已覆盖 | 当前只落地 override reminders + 一条 memory note |
 | A1 明天提醒我买药 -> create_reminder | [tests/unit/test_kernel_followup_behaviors.py](/Users/gordon/Code/Personal/CognitiveOS/tests/unit/test_kernel_followup_behaviors.py) | `test_明天提醒我买药_创建提醒并返回自然确认` | 已覆盖 | 断言 plan、执行调用与渲染 |
 | A2 记一下我不想早上八点前被提醒 -> create_memory | [tests/unit/test_kernel_followup_behaviors.py](/Users/gordon/Code/Personal/CognitiveOS/tests/unit/test_kernel_followup_behaviors.py) | `test_记一下我不想早上八点前被提醒_写入记忆并自然回复` | 已覆盖 | 当前按 `note` 收口，不把该精确话术承诺为 preference typing |
 | A3 帮我加一个待办：整理周报 | 无稳定承诺测试 | 无 | 缺失但不补 | 当前仅部分支持，不列为稳定承诺 |

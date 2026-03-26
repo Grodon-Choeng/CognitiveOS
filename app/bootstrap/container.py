@@ -8,12 +8,15 @@ from app.application.conversations.intent_handler import (
     LegacyIntentConversationHandler,
     LLMFirstConversationIntentClassifier,
 )
+from app.application.conversations.kernel.complexity import ComplexRequestDetector
 from app.application.conversations.kernel.executor import AssistantExecutor
 from app.application.conversations.kernel.facade import ConversationKernelFacade
 from app.application.conversations.kernel.planner import AssistantActionPlanner
 from app.application.conversations.kernel.renderer import AssistantResponseRenderer
 from app.application.conversations.kernel.resolver import ReferenceResolver
+from app.application.conversations.kernel.rule_executor import RuleExecutor
 from app.application.conversations.kernel.state import AssistantTurnContextBuilder
+from app.application.conversations.kernel.structured_rule_planner import StructuredRulePlanner
 from app.application.conversations.ports import AssistantTurnStateStore
 from app.application.conversations.service import (
     ConversationApplicationService,
@@ -324,6 +327,14 @@ class ApplicationProvider(Provider):
         return ReferenceResolver()
 
     @provide(scope=Scope.APP)
+    def provide_complex_request_detector(self) -> ComplexRequestDetector:
+        return ComplexRequestDetector()
+
+    @provide(scope=Scope.APP)
+    def provide_structured_rule_planner(self) -> StructuredRulePlanner:
+        return StructuredRulePlanner()
+
+    @provide(scope=Scope.APP)
     def provide_assistant_turn_state_store(
         self,
         session_factory: AsyncSessionFactory,
@@ -349,8 +360,25 @@ class ApplicationProvider(Provider):
     def provide_assistant_action_planner(
         self,
         conversation_intent_classifier: LLMFirstConversationIntentClassifier,
+        complex_request_detector: ComplexRequestDetector,
+        structured_rule_planner: StructuredRulePlanner,
     ) -> AssistantActionPlanner:
-        return AssistantActionPlanner(classifier=conversation_intent_classifier)
+        return AssistantActionPlanner(
+            classifier=conversation_intent_classifier,
+            complex_request_detector=complex_request_detector,
+            structured_rule_planner=structured_rule_planner,
+        )
+
+    @provide(scope=Scope.APP)
+    def provide_rule_executor(
+        self,
+        reminder_service: ReminderApplicationService,
+        memory_service: MemoryApplicationService,
+    ) -> RuleExecutor:
+        return RuleExecutor(
+            reminder_service=reminder_service,
+            memory_service=memory_service,
+        )
 
     @provide(scope=Scope.APP)
     def provide_assistant_executor(
@@ -360,6 +388,7 @@ class ApplicationProvider(Provider):
         memory_service: MemoryApplicationService,
         overview_service: OverviewApplicationService,
         reference_resolver: ReferenceResolver,
+        rule_executor: RuleExecutor,
     ) -> AssistantExecutor:
         return AssistantExecutor(
             task_service=task_service,
@@ -367,6 +396,7 @@ class ApplicationProvider(Provider):
             memory_service=memory_service,
             overview_service=overview_service,
             resolver=reference_resolver,
+            rule_executor=rule_executor,
         )
 
     @provide(scope=Scope.APP)

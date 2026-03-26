@@ -4,12 +4,14 @@ from zoneinfo import ZoneInfo
 import pytest
 
 from app.application.conversations.commands import HandleInboundConversationMessageCommand
+from app.application.conversations.kernel.complexity import ComplexRequestDetector
 from app.application.conversations.kernel.planner import AssistantActionPlanner
 from app.application.conversations.kernel.state import (
     AssistantTurnContext,
     CandidateObjectRef,
     LastAssistantAction,
 )
+from app.application.conversations.kernel.structured_rule_planner import StructuredRulePlanner
 
 
 class FailingClassifier:
@@ -58,6 +60,10 @@ def _build_disambiguation_context() -> AssistantTurnContext:
 def _build_planner() -> AssistantActionPlanner:
     return AssistantActionPlanner(
         classifier=FailingClassifier(),
+        complex_request_detector=ComplexRequestDetector(),
+        structured_rule_planner=StructuredRulePlanner(
+            now_provider=lambda: datetime(2026, 3, 25, 9, 0, tzinfo=ZoneInfo("Asia/Shanghai"))
+        ),
         now_provider=lambda: datetime(2026, 3, 25, 9, 0, tzinfo=ZoneInfo("Asia/Shanghai")),
     )
 

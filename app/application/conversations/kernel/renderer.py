@@ -120,6 +120,23 @@ def _render_execution_result(
             f"新的时间是 {when}，内容还是“{result.object_title}”。\n"
             "如果还要再改，也可以直接继续说。"
         )
+    if result.action == "complex_plan_preview":
+        preview_items = result.payload.get("preview_items")
+        lines = ["我理解成以下动作，请确认："]
+        if isinstance(preview_items, list):
+            for index, item in enumerate(preview_items, start=1):
+                if isinstance(item, str):
+                    lines.append(f"{index}. {item}")
+        lines.append("如果没问题，你可以直接回复“确认”或“按这个来”。")
+        return "\n".join(lines)
+    if result.action == "complex_plan_executed":
+        reminders = _payload_items(result.payload, "created_reminders")
+        lines = ["我已经按这个方案先落地了当前可执行的部分。"]
+        if reminders:
+            lines.append(f"- 已创建 {len(reminders)} 条单次提醒")
+        lines.append("- 已把工作日规则和约束记成一条说明，方便你后续继续沿用")
+        lines.append("当前还不会自动托管真正的循环规则。")
+        return "\n".join(lines)
     if result.action == "retry_failed_reminder":
         return (
             "好，我已经重新尝试启动这条失败提醒了。\n"

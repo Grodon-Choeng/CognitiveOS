@@ -4,17 +4,20 @@ from zoneinfo import ZoneInfo
 import pytest
 
 from app.application.conversations.commands import HandleInboundConversationMessageCommand
+from app.application.conversations.kernel.complexity import ComplexRequestDetector
 from app.application.conversations.kernel.executor import AssistantExecutor
 from app.application.conversations.kernel.planner import AssistantActionPlanner
 from app.application.conversations.kernel.plans import AssistantActionPlan
 from app.application.conversations.kernel.renderer import AssistantResponseRenderer
 from app.application.conversations.kernel.resolver import ReferenceResolver
+from app.application.conversations.kernel.rule_executor import RuleExecutor
 from app.application.conversations.kernel.state import (
     AssistantTurnContext,
     CandidateObjectRef,
     FocusedObjectRef,
     LastAssistantAction,
 )
+from app.application.conversations.kernel.structured_rule_planner import StructuredRulePlanner
 from app.application.memory.dto import MemoryDTO
 from app.application.reminders.dto import ReminderDTO
 from app.application.tasks.dto import TaskDTO
@@ -37,6 +40,10 @@ class FailingClassifier:
 def _build_planner() -> AssistantActionPlanner:
     return AssistantActionPlanner(
         classifier=FailingClassifier(),
+        complex_request_detector=ComplexRequestDetector(),
+        structured_rule_planner=StructuredRulePlanner(
+            now_provider=lambda: datetime(2026, 3, 25, 9, 0, tzinfo=ZoneInfo("Asia/Shanghai"))
+        ),
         now_provider=lambda: datetime(2026, 3, 25, 9, 0, tzinfo=ZoneInfo("Asia/Shanghai")),
     )
 
@@ -209,12 +216,19 @@ def _build_executor(
     reminder_service: RecordingReminderService | None = None,
     memory_service: RecordingMemoryService | None = None,
 ) -> AssistantExecutor:
+    resolved_task_service = task_service or RecordingTaskService()
+    resolved_reminder_service = reminder_service or RecordingReminderService()
+    resolved_memory_service = memory_service or RecordingMemoryService()
     return AssistantExecutor(
-        task_service=task_service or RecordingTaskService(),
-        reminder_service=reminder_service or RecordingReminderService(),
-        memory_service=memory_service or RecordingMemoryService(),
+        task_service=resolved_task_service,
+        reminder_service=resolved_reminder_service,
+        memory_service=resolved_memory_service,
         overview_service=DummyOverviewService(),
         resolver=ReferenceResolver(),
+        rule_executor=RuleExecutor(
+            reminder_service=resolved_reminder_service,
+            memory_service=resolved_memory_service,
+        ),
     )
 
 
