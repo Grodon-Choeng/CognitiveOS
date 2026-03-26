@@ -1,4 +1,5 @@
 UV := uv
+UV_DEFAULT_INDEX := https://mirrors.aliyun.com/pypi/simple
 DOCKER_COMPOSE := docker compose
 COMPOSE_SERVICES := postgres redis temporal temporal-ui
 
@@ -36,7 +37,7 @@ help:
 	@echo "  make compose-config  校验 docker compose 配置"
 
 install:
-	$(UV) sync --extra dev
+	UV_DEFAULT_INDEX=$(UV_DEFAULT_INDEX) $(UV) sync --extra dev
 
 infra-up:
 	$(DOCKER_COMPOSE) up -d $(COMPOSE_SERVICES)
@@ -48,28 +49,28 @@ infra-logs:
 	$(DOCKER_COMPOSE) logs -f --tail=200 $(COMPOSE_SERVICES)
 
 migrate:
-	$(UV) run alembic upgrade head
+	UV_DEFAULT_INDEX=$(UV_DEFAULT_INDEX) $(UV) run alembic upgrade head
 
 api:
-	COGNITIVE_OS_PROCESS_ROLE=api $(UV) run uvicorn app.main:app --reload
+	UV_DEFAULT_INDEX=$(UV_DEFAULT_INDEX) COGNITIVE_OS_PROCESS_ROLE=api $(UV) run uvicorn app.main:app --reload
 
 worker:
-	COGNITIVE_OS_PROCESS_ROLE=worker $(UV) run python -m app.bootstrap.temporal
+	UV_DEFAULT_INDEX=$(UV_DEFAULT_INDEX) COGNITIVE_OS_PROCESS_ROLE=worker $(UV) run python -m app.bootstrap.temporal
 
 feishu-longconn:
-	COGNITIVE_OS_PROCESS_ROLE=feishu-longconn $(UV) run python -m app.bootstrap.feishu_long_connection
+	UV_DEFAULT_INDEX=$(UV_DEFAULT_INDEX) COGNITIVE_OS_PROCESS_ROLE=feishu-longconn $(UV) run python -m app.bootstrap.feishu_long_connection
 
 services-up:
-	$(UV) run python -m app.bootstrap.services up --services "$(SERVICES)" $(if $(filter 1 true TRUE yes YES,$(API_RELOAD)),--reload,)
+	UV_DEFAULT_INDEX=$(UV_DEFAULT_INDEX) $(UV) run python -m app.bootstrap.services up --services "$(SERVICES)" $(if $(filter 1 true TRUE yes YES,$(API_RELOAD)),--reload,)
 
 services-stop:
-	$(UV) run python -m app.bootstrap.services down --services "$(SERVICES)"
+	UV_DEFAULT_INDEX=$(UV_DEFAULT_INDEX) $(UV) run python -m app.bootstrap.services down --services "$(SERVICES)"
 
 services-status:
-	$(UV) run python -m app.bootstrap.services status --services "$(SERVICES)"
+	UV_DEFAULT_INDEX=$(UV_DEFAULT_INDEX) $(UV) run python -m app.bootstrap.services status --services "$(SERVICES)"
 
 services-restart:
-	$(UV) run python -m app.bootstrap.services restart --services "$(SERVICES)" $(if $(filter 1 true TRUE yes YES,$(API_RELOAD)),--reload,)
+	UV_DEFAULT_INDEX=$(UV_DEFAULT_INDEX) $(UV) run python -m app.bootstrap.services restart --services "$(SERVICES)" $(if $(filter 1 true TRUE yes YES,$(API_RELOAD)),--reload,)
 
 image-build:
 	COGNITIVEOS_APP_IMAGE=$(APP_IMAGE) docker build -t $(APP_IMAGE) .
@@ -91,17 +92,17 @@ image-logs:
 	COGNITIVEOS_APP_IMAGE=$(APP_IMAGE) $(DOCKER_COMPOSE) logs -f --tail=200 $(IMAGE_SERVICES)
 
 fmt:
-	$(UV) run ruff check --fix app tests
-	$(UV) run ruff format app tests
+	UV_DEFAULT_INDEX=$(UV_DEFAULT_INDEX) $(UV) run ruff check --fix app tests
+	UV_DEFAULT_INDEX=$(UV_DEFAULT_INDEX) $(UV) run ruff format app tests
 
 lint:
-	$(UV) run ruff check app tests
+	UV_DEFAULT_INDEX=$(UV_DEFAULT_INDEX) $(UV) run ruff check app tests
 
 test:
-	$(UV) run pytest
+	UV_DEFAULT_INDEX=$(UV_DEFAULT_INDEX) $(UV) run pytest
 
 typecheck:
-	$(UV) run mypy app tests
+	UV_DEFAULT_INDEX=$(UV_DEFAULT_INDEX) $(UV) run mypy app tests
 
 check: lint test typecheck
 

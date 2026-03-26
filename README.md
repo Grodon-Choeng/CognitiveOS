@@ -74,6 +74,11 @@ make help
 make install
 ```
 
+仓库默认通过项目级 `uv` 配置和 `Makefile` 环境变量使用阿里云 PyPI 镜像：
+
+- `https://mirrors.aliyun.com/pypi/simple`
+- 如需临时覆盖，可在命令前显式指定 `UV_DEFAULT_INDEX=...`
+
 ### 2. 准备环境变量
 
 ```bash
