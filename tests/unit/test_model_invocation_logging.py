@@ -5,8 +5,14 @@ from typing import cast
 import pytest
 
 from app.config.settings import Settings
-from app.infrastructure.agents.models import AgentTurnRequest, AgentTurnResult
-from app.infrastructure.agents.runtime import RecordingAgentRuntime
+from app.infrastructure.agents.models import (
+    AgentChatTurnRequest,
+    AgentChatTurnResult,
+    AgentTurnRequest,
+    AgentTurnResult,
+    ChatMessage,
+)
+from app.infrastructure.agents.runtime import RecordingAgentChatRuntime, RecordingAgentRuntime
 from app.infrastructure.db.session import get_session_factory
 from app.infrastructure.llm.gateway import RecordingLLMGateway
 from app.infrastructure.llm.models import GenerateRequest, GenerateResult
@@ -49,6 +55,19 @@ class FakeAgentRuntime:
             usage={"input_tokens": 12, "output_tokens": 7, "total_tokens": 19},
             raw_output={"output_text": "已处理"},
             metadata={"agent_mode": "single_turn"},
+        )
+
+
+class FakeAgentChatRuntime:
+    async def run_chat_turn(self, request: AgentChatTurnRequest) -> AgentChatTurnResult:
+        _ = request
+        return AgentChatTurnResult(
+            output_text="聊天回合已处理",
+            provider="openai",
+            model="gpt-chat-test",
+            usage={"prompt_tokens": 20, "completion_tokens": 8, "total_tokens": 28},
+            raw_output={"output_text": "聊天回合已处理"},
+            metadata={"agent_mode": "chat_turn"},
         )
 
 
@@ -163,6 +182,39 @@ async def test_recording_agent_runtime_records_success(tmp_path: Path) -> None:
     raw_output = cast(JSONObject, record["raw_output"])
     assert raw_input["user_message"] == "帮我总结一下"
     assert raw_output["output_text"] == "已处理"
+
+
+@pytest.mark.asyncio
+async def test_recording_agent_chat_runtime_records_success(tmp_path: Path) -> None:
+    log_path = tmp_path / "model_invocations.jsonl"
+    recorder = JsonlModelInvocationRecorder(str(log_path))
+    runtime = RecordingAgentChatRuntime(FakeAgentChatRuntime(), recorder)
+
+    await runtime.run_chat_turn(
+        AgentChatTurnRequest(
+            system_prompt="你是测试助手",
+            messages=[ChatMessage(role="user", content="帮我总结一下")],
+            conversation_id="conversation-3",
+            session_id="session-3",
+            trace_id="trace-3",
+            chain_id="chain-3",
+            request_id="request-3",
+            provider="openai",
+            model="gpt-chat-test",
+            api_key_suffix="abcdef12",
+        )
+    )
+
+    record = read_first_record(log_path)
+    assert record["operation"] == "agent.chat_turn"
+    assert record["provider"] == "openai"
+    assert record["model"] == "gpt-chat-test"
+    raw_input = cast(JSONObject, record["raw_input"])
+    raw_output = cast(JSONObject, record["raw_output"])
+    assert raw_input["system_prompt"] == "你是测试助手"
+    messages = cast(list[JSONObject], raw_input["messages"])
+    assert messages[0]["content"] == "帮我总结一下"
+    assert raw_output["output_text"] == "聊天回合已处理"
 
 
 @pytest.mark.asyncio

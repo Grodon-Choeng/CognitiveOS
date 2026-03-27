@@ -18,6 +18,7 @@ from app.application.conversations.kernel.plans import (
     CandidateRef,
     SubActionPlan,
 )
+from app.application.conversations.kernel.react_kernel import ReActAgentKernel
 from app.application.conversations.kernel.renderer import AssistantResponseRenderer
 from app.application.conversations.kernel.resolver import ReferenceResolver
 from app.application.conversations.kernel.results import (
@@ -40,6 +41,13 @@ from app.application.conversations.kernel.structured_plans import (
     StructuredRulePlan,
 )
 from app.application.conversations.kernel.structured_rule_planner import StructuredRulePlanner
+from app.application.conversations.kernel.tool_registry import (
+    RegisteredTool,
+    RegistryToolRuntime,
+    ToolExecutionContext,
+    ToolRegistry,
+    build_default_tool_registry,
+)
 
 __all__ = [
     "AssistantActionPlan",
@@ -64,10 +72,16 @@ __all__ = [
     "FocusedObjectRef",
     "LastAssistantAction",
     "OverridePlan",
+    "ReActAgentKernel",
     "ReferenceResolver",
+    "RegisteredTool",
+    "RegistryToolRuntime",
     "RuleExecutor",
     "ScheduleSpec",
     "SubActionPlan",
     "StructuredRulePlan",
     "StructuredRulePlanner",
+    "ToolExecutionContext",
+    "ToolRegistry",
+    "build_default_tool_registry",
 ]
