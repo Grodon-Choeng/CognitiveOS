@@ -30,6 +30,12 @@ class HandleReminderReplyCommand:
 
 
 @dataclass(slots=True, frozen=True)
+class AcknowledgeReminderCommand:
+    reminder_id: str
+    reply_text: str
+
+
+@dataclass(slots=True, frozen=True)
 class CancelReminderCommand:
     reminder_id: str
 

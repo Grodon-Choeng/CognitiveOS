@@ -100,6 +100,11 @@ def _render_execution_result(
             f"时间是 {when}，内容是“{result.object_title}”。\n"
             "之后你也可以直接说“取消这个提醒”。"
         )
+    if result.action == "acknowledge_reminder":
+        return (
+            f"明白了，这条提醒我已经记为完成。\n提醒内容是“{result.object_title}”。\n"
+            "之后再看当前提醒时，这条就不会继续出现了。"
+        )
     if result.action == "cancel_reminder":
         return (
             f"好，这条提醒我已经取消了。\n提醒内容是“{result.object_title}”。\n"

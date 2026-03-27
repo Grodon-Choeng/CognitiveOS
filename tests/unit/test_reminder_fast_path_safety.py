@@ -277,6 +277,32 @@ async def test_低置信收到_进入_needs_confirmation_而不是自动完成()
     assert workflow_gateway.recorded_replies == []
 
 
+@pytest.mark.asyncio
+async def test_这个提醒已经提醒过了呀_低置信时回到_kernel做真实对象解析() -> None:
+    service, repository, workflow_gateway = _build_service()
+    reminder_id = await _create_feishu_reminder(service)
+
+    result = await service.handle_inbound_message(
+        HandleReminderInboundMessageCommand(
+            conversation_id=None,
+            session_id=None,
+            channel="feishu",
+            sender_id="ou_123",
+            message_id="om_reply_1",
+            root_message_id=None,
+            parent_message_id=None,
+            chat_id="oc_123",
+            thread_id="ot-1",
+            text="这个提醒已经提醒过了呀",
+        )
+    )
+
+    assert result.decision == "pass_to_kernel"
+    assert result.reason == "reminder_followup_acknowledgement_needs_kernel_resolution"
+    assert repository.items[reminder_id].status.value == "pending"
+    assert workflow_gateway.recorded_replies == []
+
+
 class FakeConversationContextResolverForFastPath(ConversationContextResolver):
     async def resolve_for_outbound(
         self,

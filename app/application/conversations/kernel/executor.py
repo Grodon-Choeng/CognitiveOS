@@ -18,6 +18,7 @@ from app.application.memory.queries import ListMemoriesQuery
 from app.application.overview.dto import OverviewDTO
 from app.application.overview.queries import GetOverviewQuery
 from app.application.reminders.commands import (
+    AcknowledgeReminderCommand,
     CancelAllRemindersCommand,
     CancelReminderCommand,
     CreateReminderCommand,
@@ -63,6 +64,7 @@ class ReminderExecutorService(Protocol):
 
     async def create_reminder(self, command: CreateReminderCommand) -> ReminderDTO: ...
     async def get_reminder(self, reminder_id: str) -> ReminderDTO: ...
+    async def acknowledge_reminder(self, command: AcknowledgeReminderCommand) -> ReminderDTO: ...
     async def cancel_reminder(self, command: CancelReminderCommand) -> ReminderDTO: ...
     async def link_task(
         self,
@@ -159,6 +161,7 @@ class AssistantExecutor:
             "complete_task",
             "cancel_task",
             "cancel_reminder",
+            "acknowledge_reminder",
             "archive_memory",
             "retry_failed_reminder",
             "convert_task_to_reminder",
@@ -338,6 +341,23 @@ class AssistantExecutor:
                 object_title=reminder.text,
                 payload=_reminder_item(reminder),
                 followup_options=["查看提醒", "取消这个提醒"],
+            )
+        if plan.action == "acknowledge_reminder":
+            assert plan.object_id is not None
+            reminder = await self.reminder_service.acknowledge_reminder(
+                AcknowledgeReminderCommand(
+                    reminder_id=plan.object_id,
+                    reply_text=command.text or "已确认这条提醒已经提醒过",
+                )
+            )
+            return AssistantExecutionResult(
+                success=True,
+                action=plan.action,
+                object_type="reminder",
+                object_id=reminder.reminder_id,
+                object_title=reminder.text,
+                payload=_reminder_item(reminder),
+                followup_options=["查看提醒", "查看概览"],
             )
         if plan.action == "reschedule_reminder":
             assert plan.object_id is not None

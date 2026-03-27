@@ -330,6 +330,20 @@ reminder fast path 是 reminder reply 的过渡兼容 shortcut，不是通用对
 - 不应发生的错误行为：
   - 不应因为 `parent_message_id`/thread relation 命中而 shortcut 完成
 
+#### D5. `这个提醒已经提醒过了呀`
+
+- 输入示例：`这个提醒已经提醒过了呀`
+- 前置上下文：
+  - fast path 只能低置信匹配到最近 reminder，或者当前语义明显依赖上一轮 reminder list / focused reminder
+- 期望计划状态：`pass_to_kernel`
+- 期望执行结果：
+  - fast path 不直接 shortcut 完成
+  - 由 kernel 基于 `focused_object` / `visible_candidates` / working set 解析用户指的那条 reminder
+  - 命中 one-off reminder 后，执行真实的 reminder acknowledgement 状态迁移
+- 不应发生的错误行为：
+  - 不应在 low-confidence relation 下直接把“最近一条 pending reminder”完成掉
+  - 不应只回复“明白了”而不更新 reminder 底层状态
+
 ### E. 复杂规则请求类
 
 #### E1. 复杂规则默认进入 preview，不直接执行
@@ -359,12 +373,12 @@ reminder fast path 是 reminder reply 的过渡兼容 shortcut，不是通用对
 
 ### 3.1.1 Active reminder list 的统一定义
 
-- 当前 assistant 面向用户展示的 active reminder list，统一来自当前会话下的 active reminder view。
-- active reminder view 只包含 `pending` 且可见的 reminder definitions。
-- 当前会展示的对象只有两类：
-  - one-off reminders
-  - recurring reminders
+- 当前 assistant 面向用户展示的“当前提醒”列表，统一来自当前会话下的 active future reminder view。
+- active future reminder view 只包含“未来仍然有效”的 reminder definitions：
+  - future one-off reminders：`status == pending` 且 `remind_at > now`
+  - active recurring reminders：`status == pending` 且 recurrence definition 仍有效
 - 当前不会混入 active reminder list 的对象：
+  - 已经过了触发时间的 one-off reminder
   - 已 `canceled` / `completed` / `failed` 的 reminder
   - memory / preference / constraint
   - 明显 malformed / legacy-invalid 的历史 reminder 文本
@@ -393,12 +407,28 @@ reminder fast path 是 reminder reply 的过渡兼容 shortcut，不是通用对
 
 ### 3.1.4 reminder 列表的当前展示承诺
 
-- 当前 `查看提醒` / `现在有哪些提醒` 默认展示 active reminder view，而不是原始 reminder 表的所有 `pending` 记录。
+- 当前 `查看提醒` / `现在有哪些提醒` 默认展示 active future reminder view，而不是原始 reminder 表的所有 `pending` 记录。
 - 列表中的每一项都必须是 reminder 域可管理、可取消的真实 reminder 对象。
 - 当前渲染会区分：
   - `[单次] ...`
   - `[循环 ...] ...`
 - 约束型 memory 与 complex-rule constraint 不属于 reminder list，不应混入 reminder 展示或 reminder 取消语义。
+
+### 3.1.5 Reminder lifecycle guarantees
+
+- one-off reminder 当前持久化状态仍统一使用 `pending / completed / canceled / failed`；本轮收口没有额外引入新的持久化状态枚举。
+- 对 one-off reminder，生命周期阶段按行为语义收口为：
+  - future pending：时间未到，且仍应出现在“当前提醒”里
+  - fired / delivered：时间已过，但 reminder 记录仍可能暂时保持 `pending`
+  - acknowledged / completed：用户确认“收到”“已经提醒过了”等后，状态迁移到 `completed`
+  - canceled / failed：按原有语义处理
+- 当前系统保证：
+  - 过去时间的 one-off reminder 不再出现在 active future reminder list 中，即使底层记录暂时还停留在 `pending`
+  - 用户说“这个提醒已经提醒过了”时，系统会把命中的 one-off reminder 真正更新为 `completed`
+  - recurring reminder 不会因为单次提醒的 fired / acknowledged 语义被从 active list 误删
+- 当前不承诺：
+  - 持久化层单独暴露 `fired` / `delivered` 状态
+  - 单独的“最近已提醒待确认”用户视图；这类对象本轮不再混进“当前提醒”列表
 
 ## 4. 解析优先级规范
 
@@ -517,6 +547,13 @@ reminder fast path 的行为由 [app/application/reminders/service.py](/Users/go
 
 此时 fast path 可以返回提示文本与最小 assistant state，但不能把 reminder 自动完成。
 
+### 5.5 什么时候必须回到 kernel 做 reminder acknowledgement
+
+- 如果用户说法本身像是在引用上一轮列表或当前焦点，例如 `这个提醒已经提醒过了呀`，而 fast path 只能低置信匹配最近 reminder：
+  - fast path 必须回到 kernel
+  - kernel 再基于 `focused_object` / `visible_candidates` 解析对象
+  - 最终状态迁移必须落到 reminder domain/service，而不是只改回复文案
+
 ## 6. 行为测试映射
 
 | 规范条目 | 测试文件 | 测试名 | 是否已覆盖 | 备注 |
@@ -543,6 +580,11 @@ reminder fast path 的行为由 [app/application/reminders/service.py](/Users/go
 | D2 改成明天 -> needs_confirmation | [tests/unit/test_reminder_fast_path_safety.py](/Users/gordon/Code/Personal/CognitiveOS/tests/unit/test_reminder_fast_path_safety.py) | `test_改成明天_不会把提醒直接标记_completed` | 已覆盖 | 验证不自动完成 |
 | D3 不是这个 -> pass_to_kernel | [tests/unit/test_reminder_fast_path_safety.py](/Users/gordon/Code/Personal/CognitiveOS/tests/unit/test_reminder_fast_path_safety.py) | `test_不是这个_不会把提醒直接标记_completed` | 已覆盖 | 验证拒绝类回 kernel |
 | D4 普通闲聊 -> pass_to_kernel | [tests/unit/test_reminder_fast_path_safety.py](/Users/gordon/Code/Personal/CognitiveOS/tests/unit/test_reminder_fast_path_safety.py) | `test_同一聊天里的普通消息不会误命中最近_reminder`、`test_普通闲聊即使有高置信关联也仍然_pass_to_kernel` | 已覆盖 | 分别验证低关联和高关联下都不 shortcut |
+| D5 列表引用式 acknowledgement -> pass_to_kernel | [tests/unit/test_reminder_fast_path_safety.py](/Users/gordon/Code/Personal/CognitiveOS/tests/unit/test_reminder_fast_path_safety.py) | `test_这个提醒已经提醒过了呀_低置信时回到_kernel做真实对象解析` | 已覆盖 | 验证列表 follow-up 不被 fast path 错误吞掉 |
+| R1 past one-off 不进入 active future list | [tests/unit/test_reminder_lifecycle.py](/Users/gordon/Code/Personal/CognitiveOS/tests/unit/test_reminder_lifecycle.py) | `test_past_one_off_reminder_is_not_returned_in_active_reminder_list` | 已覆盖 | 验证 past one-off 不再出现在当前提醒 |
+| R2 用户 acknowledgement 触发真实状态迁移 | [tests/unit/test_reminder_lifecycle.py](/Users/gordon/Code/Personal/CognitiveOS/tests/unit/test_reminder_lifecycle.py) | `test_user_acknowledges_past_one_off_reminder_and_it_disappears_from_active_list` | 已覆盖 | 验证状态落到 `completed` 且 relist 消失 |
+| R3 list -> acknowledge -> relist 一致 | [tests/unit/test_reminder_lifecycle.py](/Users/gordon/Code/Personal/CognitiveOS/tests/unit/test_reminder_lifecycle.py) | `test_acknowledging_fired_reminder_updates_state_and_relist_is_consistent` | 已覆盖 | 验证 kernel follow-up、底层状态和二次查询一致 |
+| R4 recurring reminder 不受 one-off acknowledgement 影响 | [tests/unit/test_reminder_lifecycle.py](/Users/gordon/Code/Personal/CognitiveOS/tests/unit/test_reminder_lifecycle.py) | `test_recurring_reminder_remains_visible_in_active_list_after_one_off_acknowledgement` | 已覆盖 | 验证循环提醒仍保留在 active future list |
 
 ## 维护规则
 

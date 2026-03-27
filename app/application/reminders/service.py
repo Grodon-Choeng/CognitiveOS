@@ -1,5 +1,9 @@
+from collections.abc import Callable
+from datetime import UTC, datetime
+
 from app.application.conversations.ports import ConversationContextResolver
 from app.application.reminders.commands import (
+    AcknowledgeReminderCommand,
     CancelAllRemindersCommand,
     CancelReminderCommand,
     CreateReminderCommand,
@@ -71,6 +75,11 @@ _REMINDER_REPLY_ACK_PHRASES = (
     "已处理",
     "done",
 )
+_REMINDER_REPLY_PAST_DUE_ACK_PHRASES = (
+    "已经提醒过",
+    "提醒过了",
+    "已提醒过",
+)
 _REMINDER_REPLY_REJECT_PHRASES = ("不是这个", "先不用", "不用了", "不相关", "你说啥")
 _REMINDER_REPLY_FOLLOWUP_REFERENCE_PHRASES = ("另一个", "第二个", "上一个", "刚才那个", "这个")
 _MALFORMED_REMINDER_CONNECTORS = ("然后", "也得", "另行通知", "其他非工作日", "并且", "同时")
@@ -82,10 +91,12 @@ class ReminderApplicationService:
         unit_of_work_factory: ReminderUnitOfWorkFactory,
         workflow_gateway: ReminderWorkflowGateway,
         conversation_context_resolver: ConversationContextResolver,
+        now_provider: Callable[[], datetime] | None = None,
     ) -> None:
         self.unit_of_work_factory = unit_of_work_factory
         self.workflow_gateway = workflow_gateway
         self.conversation_context_resolver = conversation_context_resolver
+        self.now_provider = now_provider or (lambda: datetime.now(UTC))
 
     async def create_reminder(self, command: CreateReminderCommand) -> ReminderDTO:
         conversation_context = await self.conversation_context_resolver.resolve_for_outbound(
@@ -160,24 +171,50 @@ class ReminderApplicationService:
             if reminder.status != ReminderStatus.PENDING:
                 raise ReminderStateConflictError(f"提醒当前状态不允许回复：{reminder.status.value}")
 
-            if reminder.workflow_id is None:
-                raise ReminderWorkflowNotStartedError(f"提醒尚未启动工作流：{command.reminder_id}")
-
-            await self.workflow_gateway.record_user_reply(
-                workflow_id=reminder.workflow_id,
+        reminder = await self.acknowledge_reminder(
+            AcknowledgeReminderCommand(
+                reminder_id=command.reminder_id,
                 reply_text=command.reply_text,
             )
-            reminder.last_user_reply = command.reply_text
-            reminder.status = ReminderStatus.COMPLETED
-            await unit_of_work.reminders.update(reminder)
-            await unit_of_work.commit()
+        )
 
         return ReminderReplyDTO(
             reminder_id=command.reminder_id,
             reply_text=command.reply_text,
             accepted=True,
-            status=ReminderStatus.COMPLETED.value,
+            status=reminder.status,
         )
+
+    async def acknowledge_reminder(self, command: AcknowledgeReminderCommand) -> ReminderDTO:
+        reminder_id = ReminderId.from_string(command.reminder_id)
+
+        async with self.unit_of_work_factory() as unit_of_work:
+            reminder = await unit_of_work.reminders.get(reminder_id)
+            if reminder is None:
+                raise ReminderNotFoundError(f"提醒不存在：{command.reminder_id}")
+            if reminder.schedule.is_recurring:
+                raise ReminderStateConflictError("当前不支持把循环提醒记为已提醒。")
+            if reminder.status == ReminderStatus.COMPLETED:
+                return self._to_dto(reminder)
+            if reminder.status != ReminderStatus.PENDING:
+                raise ReminderStateConflictError(f"提醒当前状态不允许确认：{reminder.status.value}")
+            if _is_future_one_off_reminder(reminder, now=self.now_provider()):
+                raise ReminderStateConflictError("这条单次提醒还没到时间，不能记为已提醒。")
+
+            if reminder.workflow_id is not None:
+                await self.workflow_gateway.record_user_reply(
+                    workflow_id=reminder.workflow_id,
+                    reply_text=command.reply_text,
+                )
+            else:
+                raise ReminderWorkflowNotStartedError(f"提醒尚未启动工作流：{command.reminder_id}")
+
+            reminder.last_user_reply = command.reply_text
+            reminder.status = ReminderStatus.COMPLETED
+            await unit_of_work.reminders.update(reminder)
+            await unit_of_work.commit()
+
+        return self._to_dto(reminder)
 
     async def get_reminder(self, reminder_id: str) -> ReminderDTO:
         parsed_reminder_id = ReminderId.from_string(reminder_id)
@@ -205,17 +242,20 @@ class ReminderApplicationService:
         return ReminderListDTO(items=[self._to_dto(reminder) for reminder in reminders])
 
     async def list_active_reminders(self, query: ListRemindersQuery) -> ReminderListDTO:
+        now = self.now_provider()
         async with self.unit_of_work_factory() as unit_of_work:
             reminders = await unit_of_work.reminders.list(
                 conversation_id=query.conversation_id,
                 session_id=query.session_id,
                 status=ReminderStatus.PENDING.value,
                 query=query.query,
-                limit=max(query.limit * 3, query.limit),
+                limit=max(query.limit * 10, 200),
             )
 
         visible_reminders = [
-            reminder for reminder in reminders if not _is_hidden_active_reminder(reminder)
+            reminder
+            for reminder in reminders
+            if _is_visible_active_future_reminder(reminder, now=now)
         ]
         return ReminderListDTO(
             items=[self._to_dto(reminder) for reminder in visible_reminders[: query.limit]]
@@ -492,6 +532,14 @@ class ReminderApplicationService:
                 )
 
             if matched.confidence != "high":
+                if _looks_like_followup_acknowledgement(command.text):
+                    return ReminderInboundMessageResult(
+                        handled=False,
+                        reminder_id=str(reminder.reminder_id.value),
+                        reason="reminder_followup_acknowledgement_needs_kernel_resolution",
+                        decision="pass_to_kernel",
+                        match_source=matched.source,
+                    )
                 return ReminderInboundMessageResult(
                     handled=False,
                     reminder_id=str(reminder.reminder_id.value),
@@ -509,19 +557,16 @@ class ReminderApplicationService:
                     decision="pass_to_kernel",
                     match_source=matched.source,
                 )
-
-            await self.workflow_gateway.record_user_reply(
-                workflow_id=reminder.workflow_id,
-                reply_text=command.text,
+            completed = await self.acknowledge_reminder(
+                AcknowledgeReminderCommand(
+                    reminder_id=str(reminder.reminder_id.value),
+                    reply_text=command.text,
+                )
             )
-            reminder.last_user_reply = command.text
-            reminder.status = ReminderStatus.COMPLETED
-            await unit_of_work.reminders.update(reminder)
-            await unit_of_work.commit()
 
         return ReminderInboundMessageResult(
             handled=True,
-            reminder_id=str(reminder.reminder_id.value),
+            reminder_id=completed.reminder_id,
             reason="reminder_replied",
             response_text="好的，这条提醒我帮你记为已收到。",
             decision="completed",
@@ -581,6 +626,8 @@ def _classify_reminder_reply_semantics(text: str) -> str:
         if any(phrase in normalized for phrase in _REMINDER_REPLY_FOLLOWUP_REFERENCE_PHRASES):
             return "pass_to_kernel"
         return "reject_or_not_related"
+    if _looks_like_past_due_acknowledgement(normalized):
+        return "acknowledge"
     if normalized in _REMINDER_REPLY_ACK_PHRASES:
         return "acknowledge"
     if normalized.startswith(("我已经", "已经", "已")):
@@ -617,3 +664,34 @@ def _is_hidden_active_reminder(reminder: Reminder) -> bool:
     if connector_hits >= 2 and len(normalized) >= 20:
         return True
     return False
+
+
+def _is_visible_active_future_reminder(reminder: Reminder, *, now: datetime) -> bool:
+    if reminder.status != ReminderStatus.PENDING:
+        return False
+    if _is_hidden_active_reminder(reminder):
+        return False
+    if reminder.schedule.is_recurring:
+        return True
+    return _is_future_one_off_reminder(reminder, now=now)
+
+
+def _is_future_one_off_reminder(reminder: Reminder, *, now: datetime) -> bool:
+    if reminder.schedule.is_recurring:
+        return False
+    reminder_time = reminder.schedule.remind_at
+    current_time = now if now.tzinfo is not None else now.replace(tzinfo=UTC)
+    return reminder_time > current_time
+
+
+def _looks_like_past_due_acknowledgement(normalized_text: str) -> bool:
+    if "没有提醒过" in normalized_text or "没提醒过" in normalized_text:
+        return False
+    return any(phrase in normalized_text for phrase in _REMINDER_REPLY_PAST_DUE_ACK_PHRASES)
+
+
+def _looks_like_followup_acknowledgement(text: str) -> bool:
+    normalized = text.strip().casefold()
+    if not _looks_like_past_due_acknowledgement(normalized):
+        return False
+    return any(phrase in normalized for phrase in _REMINDER_REPLY_FOLLOWUP_REFERENCE_PHRASES)

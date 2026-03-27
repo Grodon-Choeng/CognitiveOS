@@ -14,6 +14,7 @@ _WORKING_SET_REQUESTS = {
     "working set",
 }
 _CANCEL_ALL_REMINDER_HINTS = ("所有提醒", "全部提醒", "所有的提醒", "全部的提醒")
+_ACKNOWLEDGE_REMINDER_HINTS = ("已经提醒过", "提醒过了", "已提醒过")
 
 
 def plan_with_referential_rules(
@@ -104,6 +105,13 @@ def plan_with_referential_rules(
             confidence=0.9,
             reasoning="rules",
         )
+
+    reminder_acknowledgement_plan = plan_reminder_acknowledgement(
+        text,
+        object_type=object_type,
+    )
+    if reminder_acknowledgement_plan is not None:
+        return reminder_acknowledgement_plan
 
     reminder_reschedule_plan = plan_reminder_reschedule(
         text,
@@ -233,9 +241,13 @@ def extract_reference_after_action(text: str, *, action: str) -> str | None:
 
 def strip_action_noise(text: str) -> str:
     normalized = text
-    for prefix in ("任务", "待办", "提醒", "记忆", "这条", "那个", "这个"):
-        if normalized.startswith(prefix):
-            normalized = normalized.removeprefix(prefix).strip()
+    changed = True
+    while changed:
+        changed = False
+        for prefix in ("任务", "待办", "提醒", "记忆", "这条", "那个", "这个"):
+            if normalized.startswith(prefix):
+                normalized = normalized.removeprefix(prefix).strip()
+                changed = True
     return normalized
 
 
@@ -444,6 +456,31 @@ def plan_reminder_reschedule(
     )
 
 
+def plan_reminder_acknowledgement(
+    text: str,
+    *,
+    object_type: str | None,
+) -> AssistantActionPlan | None:
+    if object_type != "reminder":
+        return None
+    if not any(hint in text for hint in _ACKNOWLEDGE_REMINDER_HINTS):
+        return None
+    return AssistantActionPlan(
+        intent="reminder_acknowledge",
+        action="acknowledge_reminder",
+        object_type="reminder",
+        object_id=None,
+        args={
+            "reference_text": extract_reference_before_any_phrase(
+                text,
+                _ACKNOWLEDGE_REMINDER_HINTS,
+            )
+        },
+        confidence=0.9,
+        reasoning="rules",
+    )
+
+
 def strip_retry_prefix(text: str) -> str | None:
     normalized = text
     for prefix in ("重试失败提醒", "重试提醒", "重试"):
@@ -458,3 +495,10 @@ def extract_reference_before_phrase(text: str, phrase: str) -> str | None:
     before, _, _ = text.partition(phrase)
     normalized = strip_action_noise(before.strip())
     return normalized or None
+
+
+def extract_reference_before_any_phrase(text: str, phrases: tuple[str, ...]) -> str | None:
+    for phrase in phrases:
+        if phrase in text:
+            return extract_reference_before_phrase(text, phrase)
+    return None

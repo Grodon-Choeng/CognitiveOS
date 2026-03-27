@@ -58,7 +58,7 @@ async def test_cancel_all_reminders_removes_everything_visible_in_active_reminde
     one_off = await service.create_reminder(
         CreateReminderCommand(
             text="明早买药",
-            remind_at=datetime(2026, 3, 27, 1, 0, tzinfo=UTC),
+            remind_at=datetime(2026, 3, 28, 1, 0, tzinfo=UTC),
             timezone="Asia/Shanghai",
             conversation_id="conversation-1",
             session_id="session-1",
@@ -93,10 +93,10 @@ async def test_cancel_all_reminders_removes_everything_visible_in_active_reminde
         )
     )
 
-    assert [item.reminder_id for item in visible_before.items] == [
+    assert {item.reminder_id for item in visible_before.items} == {
         recurring.reminder_id,
         one_off.reminder_id,
-    ]
+    }
 
     canceled = await service.cancel_all_reminders(
         CancelAllRemindersCommand(
@@ -120,10 +120,10 @@ async def test_cancel_all_reminders_removes_everything_visible_in_active_reminde
     assert repository.items[one_off.reminder_id].status == ReminderStatus.CANCELED
     assert repository.items[recurring.reminder_id].status == ReminderStatus.CANCELED
     assert repository.items[str(malformed.reminder_id.value)].status == ReminderStatus.PENDING
-    assert workflow_gateway.canceled_workflows == [
+    assert set(workflow_gateway.canceled_workflows) == {
         recurring.workflow_id or "",
         one_off.workflow_id or "",
-    ]
+    }
 
 
 @pytest.mark.asyncio

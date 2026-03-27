@@ -111,6 +111,7 @@ def _handled_by_for_action(action: str | None) -> str | None:
     if action in {
         "create_reminder",
         "list_reminders",
+        "acknowledge_reminder",
         "cancel_reminder",
         "reschedule_reminder",
         "retry_failed_reminder",
@@ -149,6 +150,7 @@ def _reason_for_result(
         "complete_task": f"task_completed_via_{source}",
         "cancel_task": f"task_canceled_via_{source}",
         "create_reminder": f"reminder_created_via_{source}",
+        "acknowledge_reminder": f"reminder_acknowledged_via_{source}",
         "cancel_reminder": f"reminder_canceled_via_{source}",
         "cancel_all_reminders": f"reminder_all_canceled_via_{source}",
         "reschedule_reminder": f"reminder_rescheduled_via_{source}",

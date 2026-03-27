@@ -269,7 +269,7 @@ async def test_list_reminders_supports_query_filter() -> None:
     target = await service.create_reminder(
         CreateReminderCommand(
             text="晚上提醒我复盘纪要",
-            remind_at=datetime(2026, 3, 20, 18, 0, tzinfo=UTC),
+            remind_at=datetime(2026, 3, 28, 18, 0, tzinfo=UTC),
             timezone="Asia/Shanghai",
             conversation_id="conversation-1",
             dispatch_channel="console",
@@ -279,7 +279,7 @@ async def test_list_reminders_supports_query_filter() -> None:
     await service.create_reminder(
         CreateReminderCommand(
             text="明天提醒我打卡",
-            remind_at=datetime(2026, 3, 21, 9, 0, tzinfo=UTC),
+            remind_at=datetime(2026, 3, 29, 9, 0, tzinfo=UTC),
             timezone="Asia/Shanghai",
             conversation_id="conversation-1",
             dispatch_channel="console",
@@ -420,7 +420,7 @@ async def test_list_reminders_returns_filtered_items() -> None:
     first = await service.create_reminder(
         CreateReminderCommand(
             text="第一个提醒",
-            remind_at=datetime(2026, 3, 20, 9, 0, tzinfo=UTC),
+            remind_at=datetime(2026, 3, 28, 9, 0, tzinfo=UTC),
             timezone="Asia/Shanghai",
             conversation_id="conversation-1",
             session_id="session-1",
