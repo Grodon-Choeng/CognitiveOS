@@ -40,6 +40,8 @@ async def test_runtime_container_reuses_app_scoped_singletons() -> None:
         assert legacy_intent_handler is await container.get(IntentConversationHandler)
         assert conversation_service.reminder_handler is not None
         assert conversation_service.kernel_facade is not None
+        assert conversation_service.react_kernel is not None
+        assert conversation_service.conversation_use_react_agent is False
         assert conversation_service.turn_context_builder is not None
         assert conversation_service.turn_state_store is not None
         assert conversation_service.planner is not None

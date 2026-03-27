@@ -1,5 +1,6 @@
 import json
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass, replace
 from datetime import datetime
 from time import perf_counter
@@ -11,7 +12,11 @@ from app.application.conversations.dto import (
     ConversationFastPathResult,
     ConversationInboundResult,
 )
-from app.application.conversations.kernel.facade import ConversationKernelFacade
+from app.application.conversations.kernel.facade import (
+    ConversationKernelFacade,
+    ConversationKernelOutcome,
+)
+from app.application.conversations.kernel.react_kernel import ReActAgentKernel
 from app.application.conversations.ports import AssistantTurnStateStore, ConversationContextResolver
 from app.infrastructure.llm.gateway import LLMGateway
 from app.infrastructure.llm.models import GenerateRequest
@@ -168,6 +173,8 @@ class ConversationApplicationService:
         message_event_recorder: MessageEventRecorder,
         reminder_handler: ReminderFastPathHandler,
         kernel_facade: ConversationKernelFacade,
+        react_kernel: ReActAgentKernel,
+        conversation_use_react_agent: bool,
         turn_state_store: AssistantTurnStateStore | None,
         fallback_responder: LLMConversationFallbackResponder | None = None,
     ) -> None:
@@ -175,6 +182,8 @@ class ConversationApplicationService:
         self.message_event_recorder = message_event_recorder
         self.reminder_handler = reminder_handler
         self.kernel_facade = kernel_facade
+        self.react_kernel = react_kernel
+        self.conversation_use_react_agent = conversation_use_react_agent
         self.turn_state_store = turn_state_store
         self.fallback_responder = fallback_responder
         self.turn_context_builder = kernel_facade.turn_context_builder
@@ -275,25 +284,29 @@ class ConversationApplicationService:
                 debug=reminder_result.debug,
             )
 
-        kernel_outcome = await self.kernel_facade.handle(
-            command,
-            conversation_id=conversation_id,
-            session_id=session_id,
-        )
-        if kernel_outcome.execution_result is not None and kernel_outcome.response_text is not None:
-            result = ConversationInboundResult(
-                handled=True,
+        if self.conversation_use_react_agent:
+            kernel_outcome = await self.react_kernel.handle(
+                command,
                 conversation_id=conversation_id,
                 session_id=session_id,
-                handled_by=kernel_outcome.handled_by,
-                reason=kernel_outcome.reason,
-                response_text=kernel_outcome.response_text,
             )
-            return _ConversationTurnOutcome(
-                result=result,
-                assistant_turn_state=kernel_outcome.assistant_turn_state,
-                debug=self.kernel_facade.build_debug_payload(kernel_outcome),
+            handled_outcome = self._map_kernel_outcome(
+                kernel_outcome=kernel_outcome,
+                debug_payload_builder=self.react_kernel.build_debug_payload,
             )
+        else:
+            kernel_outcome = await self.kernel_facade.handle(
+                command,
+                conversation_id=conversation_id,
+                session_id=session_id,
+            )
+            handled_outcome = self._map_kernel_outcome(
+                kernel_outcome=kernel_outcome,
+                debug_payload_builder=self.kernel_facade.build_debug_payload,
+            )
+
+        if handled_outcome is not None:
+            return handled_outcome
 
         if self.fallback_responder is not None:
             fallback_reply = await self.fallback_responder.generate_reply(
@@ -351,6 +364,28 @@ class ConversationApplicationService:
                 },
             },
             debug={"stage": "no_handler", "response_text": "default_guidance"},
+        )
+
+    def _map_kernel_outcome(
+        self,
+        *,
+        kernel_outcome: ConversationKernelOutcome,
+        debug_payload_builder: Callable[[ConversationKernelOutcome], JSONObject],
+    ) -> _ConversationTurnOutcome | None:
+        if kernel_outcome.execution_result is None or kernel_outcome.response_text is None:
+            return None
+
+        return _ConversationTurnOutcome(
+            result=ConversationInboundResult(
+                handled=True,
+                conversation_id=kernel_outcome.turn_context.conversation_id,
+                session_id=kernel_outcome.turn_context.session_id,
+                handled_by=kernel_outcome.handled_by,
+                reason=kernel_outcome.reason,
+                response_text=kernel_outcome.response_text,
+            ),
+            assistant_turn_state=kernel_outcome.assistant_turn_state,
+            debug=debug_payload_builder(kernel_outcome),
         )
 
 

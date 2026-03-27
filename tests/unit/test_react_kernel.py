@@ -151,6 +151,31 @@ class FakeMessageEventRecorder:
         _ = record
 
 
+class FakeKernelFacade:
+    def __init__(self) -> None:
+        self.turn_context_builder = object()
+        self.planner = object()
+        self.executor = object()
+        self.renderer = object()
+        self.calls: list[str | None] = []
+
+    async def handle(
+        self,
+        command: HandleInboundConversationMessageCommand,
+        *,
+        conversation_id: str,
+        session_id: str,
+    ):  # noqa: ANN201
+        _ = (conversation_id, session_id)
+        self.calls.append(command.text)
+        raise AssertionError("开启 ReAct 开关后不应走旧 kernel facade。")
+
+    @staticmethod
+    def build_debug_payload(outcome):  # noqa: ANN001, ANN205
+        _ = outcome
+        return {"stage": "kernel"}
+
+
 def _build_command(text: str) -> HandleInboundConversationMessageCommand:
     return HandleInboundConversationMessageCommand(
         channel="web",
@@ -210,11 +235,14 @@ async def test_react_kernel_works_with_conversation_service_and_saves_state() ->
         model="gpt-4.1-mini",
     )
     turn_state_store = FakeTurnStateStore()
+    kernel_facade = FakeKernelFacade()
     service = ConversationApplicationService(
         conversation_context_resolver=FakeConversationContextResolver(),
         message_event_recorder=FakeMessageEventRecorder(),
         reminder_handler=FakeReminderHandler(),
-        kernel_facade=kernel,
+        kernel_facade=kernel_facade,
+        react_kernel=kernel,
+        conversation_use_react_agent=True,
         turn_state_store=turn_state_store,
     )
 
@@ -234,6 +262,7 @@ async def test_react_kernel_works_with_conversation_service_and_saves_state() ->
     assert tool_recorder.records[0].tool_name == "tasks.list"
     saved_state = turn_state_store.saved[0][2]
     assert saved_state["agent_loop"]["iterations"] == 2
+    assert kernel_facade.calls == []
 
 
 @pytest.mark.asyncio

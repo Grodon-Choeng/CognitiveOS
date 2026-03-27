@@ -13,6 +13,7 @@ def test_settings_defaults() -> None:
     assert settings.openai_base_url == "https://api.openai.com/v1"
     assert settings.local_llm_base_url == "http://localhost:1234/api/v1/chat"
     assert settings.conversation_intent_model is None
+    assert settings.conversation_use_react_agent is False
     assert settings.effective_conversation_llm_provider == "openai"
     assert settings.effective_conversation_llm_endpoint == "https://api.openai.com/v1"
     assert settings.effective_conversation_intent_model is None

@@ -1,5 +1,6 @@
 import asyncio
 import json
+import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import asdict, dataclass, is_dataclass
 from datetime import datetime
@@ -39,6 +40,8 @@ from app.infrastructure.tools.mcp.protocol import (
 )
 from app.infrastructure.tools.runtime.executor import ToolRuntime
 from app.infrastructure.types import JSONObject, JSONValue
+
+logger = logging.getLogger(__name__)
 
 
 class ReminderToolService(Protocol):
@@ -203,6 +206,10 @@ class OverviewToolInput(ConversationScopedToolInput):
     task_limit: int = Field(default=5, ge=0, le=100, description="待办数量上限。")
     memory_limit: int = Field(default=5, ge=0, le=100, description="记忆数量上限。")
     recent_activity_limit: int = Field(default=5, ge=0, le=100, description="活动数量上限。")
+
+
+class SpawnBackgroundWorkerInput(ToolInputModel):
+    goal: str = Field(..., description="后台任务目标。")
 
 
 ToolHandler = Callable[[BaseModel, "ToolExecutionContext"], Awaitable[object]]
@@ -610,6 +617,27 @@ def build_default_tool_registry(
         parsed = cast(OverviewToolInput, payload)
         return await overview_service.get_working_set_view(_build_overview_query(parsed, context))
 
+    async def spawn_background_worker(
+        payload: BaseModel,
+        context: ToolExecutionContext,
+    ) -> object:
+        parsed = cast(SpawnBackgroundWorkerInput, payload)
+        logger.info(
+            "收到后台委托工具调用，当前返回骨架结果。",
+            extra={
+                "conversation_id": context.conversation_id,
+                "session_id": context.session_id,
+                "goal": parsed.goal,
+                "trace_id": context.trace_id,
+                "chain_id": context.chain_id,
+                "request_id": context.request_id,
+            },
+        )
+        return {
+            "status": "background_workflow_started",
+            "goal": parsed.goal,
+        }
+
     registry.register(
         name="reminders.create",
         description="创建一个新的提醒。",
@@ -771,6 +799,15 @@ def build_default_tool_registry(
         description="查看当前 working set 概览。",
         input_model=OverviewToolInput,
         handler=get_working_set_view,
+    )
+    registry.register(
+        name="system.spawn_background_worker",
+        description=(
+            "当用户的请求极其复杂、需要长耗时处理（例如批量数据分析、长文本总结、复杂规划）时调用。"
+            "调用此工具后系统会在后台启动独立进程处理，并立即向用户回复后台已接管。"
+        ),
+        input_model=SpawnBackgroundWorkerInput,
+        handler=spawn_background_worker,
     )
     return registry
 

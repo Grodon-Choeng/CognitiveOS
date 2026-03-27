@@ -282,6 +282,8 @@ def _build_conversation_service(
         message_event_recorder=NoopMessageEventRecorder(),
         reminder_handler=PassThroughReminderHandler(),
         kernel_facade=kernel_facade,
+        react_kernel=kernel_facade,
+        conversation_use_react_agent=False,
         turn_state_store=turn_state_store,
     )
 

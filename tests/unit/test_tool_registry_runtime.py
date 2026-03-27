@@ -12,6 +12,7 @@ from app.application.conversations.kernel.tool_registry import (
     ToolExecutionContext,
     ToolInputModel,
     ToolRegistry,
+    build_default_tool_registry,
 )
 from app.infrastructure.tools.mcp.protocol import ToolCall, ToolExecutionOptions
 
@@ -24,6 +25,10 @@ class EchoInput(ToolInputModel):
 class EchoPayload:
     text: str
     created_at: datetime
+
+
+class UnusedToolService:
+    pass
 
 
 def _build_execution_context() -> ToolExecutionContext:
@@ -141,3 +146,29 @@ async def test_registry_tool_runtime_retries_and_returns_tool_error() -> None:
     assert result.error.code == "RuntimeError"
     parsed = json.loads(result.content)
     assert parsed["error"]["details"]["attempt_count"] == 2
+
+
+@pytest.mark.asyncio
+async def test_default_tool_registry_registers_background_worker_tool() -> None:
+    registry = build_default_tool_registry(
+        reminder_service=UnusedToolService(),
+        task_service=UnusedToolService(),
+        memory_service=UnusedToolService(),
+        overview_service=UnusedToolService(),
+    )
+    runtime = RegistryToolRuntime(registry=registry, execution_context=_build_execution_context())
+
+    result = await runtime.execute(
+        ToolCall(
+            name="system.spawn_background_worker",
+            arguments={"goal": "整理最近 30 天的待办与提醒并给出规划"},
+        )
+    )
+
+    assert registry.get("system.spawn_background_worker") is not None
+    assert result.is_error is False
+    parsed = json.loads(result.content)
+    assert parsed == {
+        "status": "background_workflow_started",
+        "goal": "整理最近 30 天的待办与提醒并给出规划",
+    }

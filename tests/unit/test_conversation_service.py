@@ -113,6 +113,7 @@ class FakeKernelFacade(ConversationKernelFacade):
         self.executor = object()
         self.renderer = object()
         self.outcome = outcome
+        self.calls: list[str | None] = []
 
     async def handle(
         self,
@@ -122,6 +123,7 @@ class FakeKernelFacade(ConversationKernelFacade):
         session_id: str,
     ) -> ConversationKernelOutcome:
         _ = (command, conversation_id, session_id)
+        self.calls.append(command.text)
         return self.outcome
 
     @staticmethod
@@ -129,6 +131,31 @@ class FakeKernelFacade(ConversationKernelFacade):
         return {
             "stage": "kernel",
             "plan_action": outcome.plan.action,
+            "response_text": outcome.response_text,
+        }
+
+
+class FakeReactKernel:
+    def __init__(self, outcome: ConversationKernelOutcome) -> None:
+        self.outcome = outcome
+        self.calls: list[str | None] = []
+
+    async def handle(
+        self,
+        command: HandleInboundConversationMessageCommand,
+        *,
+        conversation_id: str,
+        session_id: str,
+    ) -> ConversationKernelOutcome:
+        _ = (conversation_id, session_id)
+        self.calls.append(command.text)
+        return self.outcome
+
+    @staticmethod
+    def build_debug_payload(outcome: ConversationKernelOutcome) -> JSONObject:
+        return {
+            "stage": "react_kernel",
+            "reason": outcome.reason,
             "response_text": outcome.response_text,
         }
 
@@ -182,13 +209,19 @@ def _build_service(
     *,
     reminder_result: ConversationFastPathResult,
     kernel_outcome: ConversationKernelOutcome,
+    react_kernel_outcome: ConversationKernelOutcome | None = None,
+    conversation_use_react_agent: bool = False,
     turn_state_store: FakeTurnStateStore | None = None,
 ) -> ConversationApplicationService:
+    kernel_facade = FakeKernelFacade(kernel_outcome)
+    react_kernel = FakeReactKernel(react_kernel_outcome or kernel_outcome)
     return ConversationApplicationService(
         conversation_context_resolver=FakeConversationContextResolver(),
         message_event_recorder=FakeMessageEventRecorder(),
         reminder_handler=FakeReminderHandler(reminder_result),
-        kernel_facade=FakeKernelFacade(kernel_outcome),
+        kernel_facade=kernel_facade,
+        react_kernel=react_kernel,
+        conversation_use_react_agent=conversation_use_react_agent,
         turn_state_store=turn_state_store or FakeTurnStateStore(),
     )
 
@@ -261,10 +294,12 @@ async def test_conversation_service_returns_fast_path_confirmation_without_enter
     assert result.handled is True
     assert result.reason == "reminder_match_low_confidence"
     assert "不自动完成" in (result.response_text or "")
+    assert service.kernel_facade.calls == []
+    assert service.react_kernel.calls == []
 
 
 @pytest.mark.asyncio
-async def test_conversation_service_runs_kernel_when_fast_path_passes() -> None:
+async def test_conversation_service_runs_kernel_facade_when_react_flag_disabled() -> None:
     turn_state_store = FakeTurnStateStore()
     service = _build_service(
         reminder_result=ConversationFastPathResult(
@@ -295,6 +330,56 @@ async def test_conversation_service_runs_kernel_when_fast_path_passes() -> None:
     assert result.handled is True
     assert result.handled_by == "task"
     assert turn_state_store.saved[0][2]["focused_object"]["object_id"] == "task-1"
+    assert service.kernel_facade.calls == ["完成这个"]
+    assert service.react_kernel.calls == []
+
+
+@pytest.mark.asyncio
+async def test_conversation_service_runs_react_kernel_when_flag_enabled() -> None:
+    service = _build_service(
+        reminder_result=ConversationFastPathResult(
+            decision="pass_to_kernel",
+            conversation_id="conversation-test",
+            session_id="session-test",
+        ),
+        kernel_outcome=_build_kernel_outcome(
+            execution_result=AssistantExecutionResult(
+                success=True,
+                action="complete_task",
+                object_type="task",
+                object_id="task-1",
+                object_title="旧内核结果",
+            ),
+            response_text="这是旧内核结果。",
+            assistant_turn_state={"dialogue_mode": "normal"},
+            reason="task_completed_via_rules",
+        ),
+        react_kernel_outcome=_build_kernel_outcome(
+            execution_result=AssistantExecutionResult(
+                success=True,
+                action="react_agent_loop",
+                object_type=None,
+                object_id=None,
+            ),
+            response_text="这是 ReAct 内核结果。",
+            assistant_turn_state={
+                "dialogue_mode": "normal",
+                "agent_loop": {"iterations": 1},
+            },
+            reason="react_agent_completed",
+            handled_by="agent",
+        ),
+        conversation_use_react_agent=True,
+    )
+
+    result = await service.handle_inbound_message(_build_command("帮我处理这个复杂请求"))
+
+    assert result.handled is True
+    assert result.handled_by == "agent"
+    assert result.reason == "react_agent_completed"
+    assert result.response_text == "这是 ReAct 内核结果。"
+    assert service.kernel_facade.calls == []
+    assert service.react_kernel.calls == ["帮我处理这个复杂请求"]
 
 
 @pytest.mark.asyncio

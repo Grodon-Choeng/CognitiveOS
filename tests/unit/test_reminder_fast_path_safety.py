@@ -374,6 +374,8 @@ async def test_fast_path_低置信时会回到_kernel主流程() -> None:
             )
         ),
         kernel_facade=kernel_facade,
+        react_kernel=kernel_facade,
+        conversation_use_react_agent=False,
         turn_state_store=FakeTurnStateStore(),
     )
 

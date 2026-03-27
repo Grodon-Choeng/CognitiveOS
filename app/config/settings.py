@@ -49,6 +49,7 @@ class Settings(BaseSettings):
     local_llm_base_url: str = "http://localhost:1234/api/v1/chat"
     conversation_intent_model: str | None = None
     conversation_intent_llm_timeout_seconds: float = 10.0
+    conversation_use_react_agent: bool = False
 
     model_config = SettingsConfigDict(
         env_prefix="COGNITIVE_OS_",
@@ -97,10 +98,9 @@ class Settings(BaseSettings):
 
     @property
     def effective_conversation_intent_model(self) -> str | None:
-        return (
-            _normalized_optional_string(self.conversation_intent_model)
-            or _normalized_optional_string(self.llm_default_small_model)
-        )
+        return _normalized_optional_string(
+            self.conversation_intent_model
+        ) or _normalized_optional_string(self.llm_default_small_model)
 
     @property
     def effective_default_small_model(self) -> str | None:

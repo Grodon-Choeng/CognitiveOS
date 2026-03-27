@@ -12,11 +12,16 @@ from app.application.conversations.kernel.complexity import ComplexRequestDetect
 from app.application.conversations.kernel.executor import AssistantExecutor
 from app.application.conversations.kernel.facade import ConversationKernelFacade
 from app.application.conversations.kernel.planner import AssistantActionPlanner
+from app.application.conversations.kernel.react_kernel import ReActAgentKernel
 from app.application.conversations.kernel.renderer import AssistantResponseRenderer
 from app.application.conversations.kernel.resolver import ReferenceResolver
 from app.application.conversations.kernel.rule_executor import RuleExecutor
 from app.application.conversations.kernel.state import AssistantTurnContextBuilder
 from app.application.conversations.kernel.structured_rule_planner import StructuredRulePlanner
+from app.application.conversations.kernel.tool_registry import (
+    ToolRegistry,
+    build_default_tool_registry,
+)
 from app.application.conversations.ports import AssistantTurnStateStore
 from app.application.conversations.service import (
     ConversationApplicationService,
@@ -34,6 +39,10 @@ from app.application.tasks.ports import TaskUnitOfWorkFactory
 from app.application.tasks.service import TaskApplicationService
 from app.bootstrap.inbound_events import ConversationInboundEventRecorder
 from app.config.settings import Settings
+from app.infrastructure.agents.local_chat_runtime import LocalChatAgentRuntime
+from app.infrastructure.agents.models import AgentChatTurnRequest, AgentChatTurnResult
+from app.infrastructure.agents.openai_chat_runtime import OpenAIChatAgentRuntime
+from app.infrastructure.agents.runtime import AgentChatRuntime, RecordingAgentChatRuntime
 from app.infrastructure.conversations import SqlAlchemyConversationContextResolver
 from app.infrastructure.conversations.turn_state_store import SQLAlchemyAssistantTurnStateStore
 from app.infrastructure.db.session import get_session_factory
@@ -80,6 +89,15 @@ from app.observability.workflow_events import (
 )
 
 AsyncSessionFactory = async_sessionmaker[AsyncSession]
+
+
+class _UnavailableAgentChatRuntime:
+    def __init__(self, message: str) -> None:
+        self.message = message
+
+    async def run_chat_turn(self, request: AgentChatTurnRequest) -> AgentChatTurnResult:
+        _ = request
+        raise RuntimeError(self.message)
 
 
 class ContextProvider(Provider):
@@ -357,6 +375,21 @@ class ApplicationProvider(Provider):
         )
 
     @provide(scope=Scope.APP)
+    def provide_tool_registry(
+        self,
+        reminder_service: ReminderApplicationService,
+        task_service: TaskApplicationService,
+        memory_service: MemoryApplicationService,
+        overview_service: OverviewApplicationService,
+    ) -> ToolRegistry:
+        return build_default_tool_registry(
+            reminder_service=reminder_service,
+            task_service=task_service,
+            memory_service=memory_service,
+            overview_service=overview_service,
+        )
+
+    @provide(scope=Scope.APP)
     def provide_assistant_action_planner(
         self,
         conversation_intent_classifier: LLMFirstConversationIntentClassifier,
@@ -404,6 +437,69 @@ class ApplicationProvider(Provider):
         return AssistantResponseRenderer()
 
     @provide(scope=Scope.APP)
+    def provide_agent_chat_runtime(
+        self,
+        settings: Settings,
+        model_invocation_recorder: MultiModelInvocationRecorder,
+    ) -> AgentChatRuntime:
+        provider = settings.effective_conversation_llm_provider
+        endpoint = settings.effective_conversation_llm_endpoint
+        model = settings.effective_conversation_intent_model
+        api_key = settings.effective_conversation_llm_api_key
+
+        inner_runtime: AgentChatRuntime
+        if model is None:
+            inner_runtime = _UnavailableAgentChatRuntime(
+                "ReActAgent 未配置可用的 conversation model。"
+            )
+        elif provider == "openai":
+            if api_key is None:
+                inner_runtime = _UnavailableAgentChatRuntime(
+                    "ReActAgent 使用 openai provider 时缺少 API key。"
+                )
+            else:
+                inner_runtime = OpenAIChatAgentRuntime(
+                    api_key=api_key,
+                    model=model,
+                    base_url=endpoint,
+                    timeout_seconds=settings.conversation_intent_llm_timeout_seconds,
+                )
+        elif provider == "local":
+            inner_runtime = LocalChatAgentRuntime(
+                model=model,
+                base_url=endpoint,
+                timeout_seconds=settings.conversation_intent_llm_timeout_seconds,
+            )
+        else:
+            inner_runtime = _UnavailableAgentChatRuntime(
+                f"ReActAgent 不支持当前 conversation provider：{provider}"
+            )
+
+        return RecordingAgentChatRuntime(
+            inner=inner_runtime,
+            recorder=model_invocation_recorder,
+        )
+
+    @provide(scope=Scope.APP)
+    def provide_react_agent_kernel(
+        self,
+        turn_context_builder: AssistantTurnContextBuilder,
+        agent_chat_runtime: AgentChatRuntime,
+        tool_registry: ToolRegistry,
+        tool_invocation_recorder: MultiToolInvocationRecorder,
+        settings: Settings,
+    ) -> ReActAgentKernel:
+        return ReActAgentKernel(
+            turn_context_builder=turn_context_builder,
+            agent_runtime=agent_chat_runtime,
+            tool_registry=tool_registry,
+            tool_invocation_recorder=tool_invocation_recorder,
+            provider=settings.effective_conversation_llm_provider,
+            model=settings.effective_conversation_intent_model or "react-agent-unconfigured",
+            api_key_suffix=build_api_key_suffix(settings.effective_conversation_llm_api_key),
+        )
+
+    @provide(scope=Scope.APP)
     def provide_conversation_kernel_facade(
         self,
         turn_context_builder: AssistantTurnContextBuilder,
@@ -433,6 +529,7 @@ class ApplicationProvider(Provider):
         audit_service: AuditQueryService,
         reminder_service: ReminderApplicationService,
         conversation_kernel_facade: ConversationKernelFacade,
+        react_agent_kernel: ReActAgentKernel,
         assistant_turn_state_store: AssistantTurnStateStore,
         settings: Settings,
         model_invocation_recorder: MultiModelInvocationRecorder,
@@ -446,6 +543,8 @@ class ApplicationProvider(Provider):
             message_event_recorder=message_event_recorder,
             reminder_handler=ReminderConversationHandler(reminder_service),
             kernel_facade=conversation_kernel_facade,
+            react_kernel=react_agent_kernel,
+            conversation_use_react_agent=settings.conversation_use_react_agent,
             turn_state_store=assistant_turn_state_store,
             fallback_responder=LLMConversationFallbackResponder(
                 llm_gateway=llm_gateway,
